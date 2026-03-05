@@ -1,0 +1,9 @@
+.venv*
+**pyc**
+outputs
+mlruns
+.vscode/**
+data
+notebooks
+.amazonq/**
+workspace/**

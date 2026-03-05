@@ -1,0 +1,13 @@
+.git
+.vscode
+.venv
+.venv_core
+.venv_eval
+__pycache__
+*.pyc
+.pytest_cache
+outputs
+data/synthea1k/
+data_local
+workspace
+.DS_Store
