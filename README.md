@@ -1,93 +1,323 @@
-# ENDS.AEMPS
+# Herramienta de Datos Sintéticos para el ENDS
 
+<div style="display: flex; gap: 20px; align-items: center;">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Logotipo_del_Ministerio_para_la_Transformaci%C3%B3n_Digital_y_de_la_Funci%C3%B3n_P%C3%BAblica.svg/960px-Logotipo_del_Ministerio_para_la_Transformaci%C3%B3n_Digital_y_de_la_Funci%C3%B3n_P%C3%BAblica.svg.png" alt="drawing" width="200"/>
+        <img src="https://www.seguritecnia.es/wp-content/uploads/2024/07/ntt-data.jpg" alt="drawing" width="200"/>
+        </div>
 
+## Descripción
+Esta herramienta está diseñada para facilitar la generación de datos sintéticos para el Espacio Nacional de Datos de Salud (ENDS).
 
-## Getting started
+## 1. Instalación
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+### 1.1 Clonar y acceder al repositorio
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab-ic.scae.redsara.es/ends/ends.aemps.git
-git branch -M main
-git push -uf origin main
+```bash
+git clone https://umane.emeal.nttdata.com/git/analytics/projects/health/ends-pt/herramienta-datos-sinteticos.git
+cd herramienta-datos-sinteticos
 ```
 
-## Integrate with your tools
+### 1.2 Setup Automático (Windows y Linux)
 
-- [ ] [Set up project integrations](https://gitlab-ic.scae.redsara.es/ends/ends.aemps/-/settings/integrations)
+El script realiza automáticamente:
+- Instalación de **uv**
+- Instalación aislada de **Python 3.12.3**
+- Creación de entornos:
+  - `.venv_core`
+  - `.venv_eval`
 
-## Collaborate with your team
+#### Linux / WSL
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+```bash
+./scripts/setup.sh
+```
+si da errores de permiso revisar que tengas x haciendo ``ls -la``, puedes darle con:
 
-## Test and Deploy
+```bash
+chmod +x scripts/setup.sh
+```
 
-Use the built-in continuous integration in GitLab.
+#### Windows (PowerShell)
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+```powershell
+.\scripts\setup.ps1
+```
 
-***
+---
+## 2. Configuración
 
-# Editing this README
+La herramienta utiliza varios archivos de configuración ubicados en el directorio `config/` que permiten personalizar el comportamiento del sistema de generación y evaluación de datos sintéticos.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+> ⚠️ Lo único esencial a configurar es la ruta de los datos de entrada en `config/general_config.py`, llamada `DEFAULT_DATA_PATH`. El resto de configuraciones tienen valores por defecto que deberían funcionar sin tocarlos.
 
-## Suggestions for a good README
+### 2.1 Configuración General (`config/general_config.py`)
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+Este archivo contiene la configuración principal del proyecto. Las variables más importantes son:
 
-## Name
-Choose a self-explaining name for your project.
+#### Rutas de Datos
+```python
+# Ruta por defecto de los datos de entrada
+DEFAULT_DATA_PATH = "data/sintetico"
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+# Directorio raíz de las salidas
+OUTPUTS_ROOT = "outputs"
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+# Directorios para resultados de entrenamiento y simulación
+TRAINING_RESULTS_DIR = "outputs/training"
+SIMULATION_RESULTS_DIR = "outputs/simulation"
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Éstas son rutas relativas desde dentro del repositorio, la raíz del proyecto. La carpeta `data` no existe por defecto, tienes varias opciones:
+- Crear la carpeta `data` y añadir tus datos ahí, referenciándola en `DEFAULT_DATA_PATH`.
+- Crear la carpeta `data` y crear un link simbólico a otra carpeta donde tengas tus datos. Esta opción es útil si trabajas con datos grandes que no quieres copiar dentro del repositorio.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+  - En Linux/WSL:
+    ```bash
+    ln -s /ruta/a/mis_datos data/sintetico
+    ```
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+  - En Windows (PowerShell):
+    ```powershell
+    New-Item -ItemType Junction -Path ".\data\sintetico" -Target "C:\Users\...\datos"
+    ```
+- Modificar `DEFAULT_DATA_PATH` para apuntar a otra carpeta donde tengas tus datos directamente, usando una ruta absoluta:
+```python
+# Ejemplo de ruta absoluta
+DEFAULT_DATA_PATH = '/home/obustosm/workspace/test/herramienta-datos-sinteticos/data/sintetico'
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### 2.2 Configuración de Mostly AI (`config/mostly_ai_config.yaml`)
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+Este archivo define los parámetros del generador sintético de Mostly AI:
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+```yaml
+generator:
+  name: "generador_mostly_ai-"  # Prefijo del nombre del generador
+  description: "Entrenamiento modular con Mostly AI"
+  random_state: 1  # Semilla para reproducibilidad
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+model_settings:
+  max_training_time: 3
+  enable_model_report: False  # Generar reporte del modelo
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+  # Configuración de privacidad diferencial
+  differential_privacy:
+    max_epsilon: null  # Presupuesto de privacidad (null = sin límite)
+    delta: 0.00001  # Parámetro delta de privacidad diferencial
+    noise_multiplier: 1.5  # Multiplicador de ruido
+    max_grad_norm: 1.0  # Norma máxima del gradiente
+    value_protection_epsilon: 1.0  # Epsilon de protección de valores
+```
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### 2.3 Reglas Lógicas (`config/rules.yaml`)
 
-## License
-For open source projects, say how it is licensed.
+Define reglas de consistencia que se aplicarán a los datos sintéticos generados. Esto asegura que los datos mantengan coherencia semántica y temporal.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+```yaml
+rules:
+  # Regla de consistencia de fechas
+  - type: "date_consistency"
+    table_name: "procedure_occurrence"
+    origin_col: "procedure_datetime"
+    target_col: "procedure_end_datetime"
+    aux_col: "procedure_duration_days"
+
+  # Regla de consistencia de ranking semántico
+  - type: "semantic_ranking_consistency"
+    table_name: "test"
+    origin_col: "disease"
+    target_col: "medication"
+
+  - type: "semantic_ranking_consistency"
+    table_name: "test"
+    origin_col: "ispediatric"
+    target_col: "disease"
+```
+
+**Tipos de reglas disponibles:**
+
+1. **date_consistency**: Asegura que las fechas de inicio sean anteriores a las de fin y que la duración sea correcta.
+   - `origin_col`: Columna con la fecha de inicio
+   - `target_col`: Columna con la fecha de fin
+   - `aux_col`: Columna con la duración calculada
+
+2. **semantic_ranking_consistency**: Mantiene la distribución proporcional entre categorías agrupadas.
+   - `origin_col`: Columna de agrupación
+   - `target_col`: Columna objetivo a validar
+
+3. **semantic_proportional_consistency**: Similar al ranking pero enfocado en proporciones exactas.
+
+Consulta [docs/REGLAS_LOGICAS.md](docs/REGLAS_LOGICAS.md) para más detalles sobre el funcionamiento de las reglas lógicas.
+
+
+## 3. Ejecución
+
+### 3.1 Maneras de ejecutar
+#### Opción A: Scripts de Ayuda
+
+**Linux**
+```bash
+./scripts/run.sh {comando}
+```
+
+**Windows**
+```powershell
+.\scripts\run.ps1 {comando}
+```
+Los comandos disponibles son: 'train', 'sim', 'eval'.
+
+| Acción | Linux | Windows | Descripción |
+|------|------|---------|-------------|
+| Asistente | `./scripts/run.sh` | `.\scripts\run.ps1` | Te lleva al modo interactivo de train/sim directamente |
+| Entrenar | `./scripts/run.sh train` | `.\scripts\run.ps1 train` | Entrenamiento |
+| Simular | `./scripts/run.sh sim` | `.\scripts\run.ps1 sim` | Generación |
+| Evaluar | `./scripts/run.sh eval` | `.\scripts\run.ps1 eval` | `src.eval` |
+
+---
+
+#### Opción B: Ejecución manual del pipeline de entrenamiento/simulación
+
+##### Activar entorno Core
+
+**Linux**
+```bash
+source .venv_core/bin/activate
+```
+
+**Windows**
+```powershell
+.venv_core\Scripts\activate
+```
+
+##### Ejecución
+
+```bash
+python -m src.main [argumentos]
+```
+##### Argumentos
+- `--mode`
+  - `train` → entrenar y simular
+  - `simulation` → solo generar
+
+- `--files`
+  - Directorio: `data/mis_datos/`
+  - Lista: `data/a.csv data/b.xlsx`
+
+- `--sample-size`
+  - Número de registros a generar
+##### Ejemplos
+
+Entrenar y simular 1000 filas:
+```bash
+python -m src.main --mode train --files ./data/mis_datos/ --sample-size 1000
+```
+
+Entrenar sin simular:
+```bash
+python -m src.main --mode train --files \
+  data/sintetico/person.csv \
+  data/sintetico/procedure_occurrence.csv
+```
+
+
+#### Opción C: Ejecución manual del pipeline de evaluación
+
+Para ejecutar `src.eval`, activa el entorno:
+
+```bash
+.venv_eval
+```
+
+---
+
+## 4. Tests en VSCode
+
+La carpeta `tests/` contiene tests funcionales del pipeline. Puedes ejecutarlos directamente desde VSCode haciendo clic en el botón ▶️.
+
+### Configuración inicial (solo la primera vez)
+
+**Abre el proyecto en VSCode**:
+   - La extensión de Python debe estar instalada y debes tener el venv_core activado en VSCode. Para esto, abre la paleta de comandos (Ctrl+Shift+P) y selecciona "Python: Select Interpreter". Elige el intérprete que corresponda a `.venv_core`.
+   - VSCode detectará automáticamente los tests
+
+### Ejecutar tests
+
+1. Haz clic en el icono de **Testing** (🧪) en la barra lateral izquierda de VSCode
+2. Verás los tests organizados por categorías:
+   - `TestDataLoading` - Tests de carga de archivos (rápidos)
+   - `TestPreprocessing` - Tests de preprocesamiento (rápidos)
+   - `TestE2EPipeline` - Test completo del pipeline (lento, requiere Mostly AI)
+3. Haz clic en ▶️ junto a cualquier test para ejecutarlo
+
+## 🛠️ 5. Funcionalidades Principales
+
+| Fase | Funcionalidad | Descripción |
+|------|---------------|-------------|
+| **Ingesta** | Ficheros (Multi-formato) | De momento solo carga archivos. Soporta carga de CSV, Excel (.xlsx) y Parquet |
+| **Procesado** | Metadata + Preprocessing | Limpieza y preparación de datos muy básica, y extracción de metadatos (tipos de columnas, y relaciones entre tablas) |
+| **Entrenamiento** | Mostly AI | Genera un modelo (generador) basado en los datos reales |
+| **Simulación** | Generación | Permite crear desde unos pocos registros hasta millones de filas sintéticas |
+| **Evaluación** |	Métricas |	Análisis de fidelidad y privacidad (requiere entorno de evaluación) |
+
+---
+
+## 6. Formatter y Linter (Opcional)
+
+Para mantener el código limpio, organizado y libre de errores comunes, utilizamos **Ruff**. Ruff es una herramienta "todo en uno" para formatear, ordenador imports, ahcer linting...
+
+### 6.1 Configuración del entorno de desarrollo
+Una vez activado tu entorno virtual, instala las herramientas de desarrollo:
+
+```bash
+pip install ruff pre-commit
+```
+
+### 6.2 Activación de la Limpieza Automática (Pre-commit)
+Hemos configurado "hooks" de pre-commit. Esto es como un "robot guardián" que revisa tu código justo antes de cada git commit. Si encuentra fallos de estilo o errores, los corregirá automáticamente y te avisará.
+
+Para activar este guardián, ejecuta este comando una sola vez:
+
+```Bash
+pre-commit install
+```
+
+### 6.3 ¿Cómo trabajar con estas herramientas?
+- Formateo automático: Si usas VS Code, instala la extensión Ruff. El código se ordenará solo cada vez que guardes el archivo (Ctrl+S).
+
+- Al hacer un Commit: Cuando hagas git commit, verás que Ruff se ejecuta.
+
+- Si todo está bien, el commit se creará.
+
+   - Si Ruff hace cambios automáticos (como ordenar importaciones), el commit se detendrá. Simplemente añade esos cambios con git add . y vuelve a intentar el commit.
+
+   - Revisión manual: Si quieres revisar todo el proyecto sin hacer un commit, usa:
+
+   ```Bash
+   pre-commit run --all-files
+   ```
+
+### 6.4 Documentación de Docstrings
+Para mantener la documentación de nuestro código clara y consistente, seguimos el formato de docstrings siguiente:
+
+```python
+def mi_funcion(param1, param2):
+    """Descripción breve de lo que hace la función. 
+
+    Descripción más detallada si es necesario.
+
+    Args:
+        param1 (tipo): Descripción de param1.
+        param2 (tipo): Descripción de param2.
+
+    Returns:
+        tipo: Descripción de lo que devuelve la función.
+    Raises:
+        TipoError: Descripción de la condición que causa este error.
+
+    Example:
+        >>> resultado = mi_funcion(valor1, valor2)
+        >>> print(resultado)
+         resultado esperado
+    """
+    pass
+```
