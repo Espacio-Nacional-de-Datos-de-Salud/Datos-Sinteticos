@@ -28,7 +28,7 @@ switch ($cmd) {
     }
     "e" {
         $venv = ".venv_eval"
-        $module = "src.eval"
+        $module = "src.evaluation"
         $mode = $null
     }
     Default {

@@ -103,7 +103,7 @@ Centralizes parameters for metrics, statistical evaluation, and the evaluation s
 
 * **Essential for Users to Touch:**
   - `EVAL_DEFAULT_METRICS`: List of metrics to be calculated for each table. To disable heavy metrics like `DomiasMIA_BNAF`, comment them out here.
-  - `EVAL_PYTHON_PATH`: Path to the isolated virtual environment interpreter.
+  - `EVAL_PYTHON_PATH`: Path to the isolated virtual environment interpreter used by `python -m src.evaluation`.
 * **Generally No Need to Touch:**
   - Confidence levels, bootstrap sample sizes, and other statistical parameters.
 

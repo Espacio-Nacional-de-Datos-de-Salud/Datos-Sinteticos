@@ -4,21 +4,29 @@
 
 ## Introduction
 
-The evaluation system is a multi-layer architecture designed to assess the quality of generated synthetic data. The system uses **three layers of evaluation engines** working together:
+The evaluation system compares real and synthetic datasets by combining
+**synthcity metrics**, **project-specific custom metrics**, and
+**bootstrap-based statistics**.
 
 ```text
-MLflowEvaluationEngine (tracks results in MLflow)
+python -m src.evaluation / make eval / pipeline evaluate step
     ↓
-SynthCityEvaluationEngine (coordinates metric execution)
+src.evaluation.__main__              # CLI entry point
     ↓
-AbstractEvaluationEngine (defines the base interface)
+src.evaluation.orchestrator.run_evaluation()
+    ↓
+src.evaluation.runner.EvaluationRunner
+    ├── synthcity metrics via _synthcity_metrics.py
+    └── custom metrics via _custom_metrics.py
+    ↓
+src.core.tracking.EvaluationTracker  # writes reports + logs to MLflow
 ```
 
 The system provides:
 - **Custom Metrics**: In-house high-level implementations for privacy, correlation, and statistical fidelity.
 - **SynthCity Metrics**: Integration with the `synthcity` external library.
 - **Bootstrap Statistics**: A flexible statistical base with 9 built-in statistics and support for custom extensions.
-- **MLflow Tracking**: Automatically logs all metrics and artifacts in MLflow.
+- **MLflow Tracking**: Automatically logs metrics and evaluation artifacts into the parent simulation run when available.
 
 The evaluation system must run in a **separate virtual environment** to avoid dependency conflicts. This is especially important because `synthcity` has significant computational requirements and may conflict with other project dependencies.
 
@@ -30,14 +38,14 @@ The evaluation system must run in a **separate virtual environment** to avoid de
 
 ```text
 src/evaluation/
-├── __init__.py                          # Module initialization
-├── abstract_evaluation_engine.py        # Base abstract interface
-├── synthcity_evaluation_engine.py       # Main orchestrator
-├── mlflow_evaluation_engine.py          # MLflow tracking
-├── metrics.py                           # Custom metrics
+├── __init__.py                          # Public evaluation API
+├── __main__.py                          # CLI entry point (`python -m src.evaluation`)
+├── orchestrator.py                      # load data → preprocess → call runner → track
+├── runner.py                            # actual metric execution caller
+├── _synthcity_metrics.py                # synthcity adapter helpers
+├── _custom_metrics.py                   # metric adapter helpers
 ├── statistics.py                        # Base bootstrap statistics
-├── custom_statistics.py                 # Custom statistical extensions
-├── eval_cli.py                          # CLI entry point for subprocess
+├── custom_metrics/                      # Custom metric classes + custom statistics
 └── utils.py                             # Utility functions
 
 config/
@@ -52,13 +60,13 @@ config/
 
 | File | Purpose | Main Classes/Functions |
 | :--- | :--- | :--- |
-| **abstract_evaluation_engine.py** | Defines the base interface for all engines | `AbstractEvaluationEngine` (ABC) |
-| **synthcity_evaluation_engine.py** | Orchestrates the execution of all metrics, loads data, coordinates with SynthCity | `SynthCityEvaluationEngine`, `_run_custom_metrics()` |
-| **mlflow_evaluation_engine.py** | Wraps SynthCityEvaluationEngine with MLflow tracking | `MLflowEvaluationEngine` |
-| **metrics.py** | Implements custom evaluation metrics | `DCR`, `NNDR`, `CorrelationMatrixDistance`, `ConfidenceIntervalOverlap`, `AverageComplementaryTVD`, `KAnonymity` |
+| **__main__.py** | CLI entry point for standalone eval and subprocess eval | `main()` |
+| **orchestrator.py** | Loads files, preprocesses datasets, aligns schemas, runs evaluation, and delegates persistence to tracking | `run_evaluation()` |
+| **runner.py** | Splits requested metrics into synthcity vs project custom metrics and returns one unified report | `EvaluationRunner` |
+| **_synthcity_metrics.py** | Wraps `synthcity.metrics.Metrics.evaluate()` and data loader creation | `build_data_loaders()`, `evaluate_synthcity_metrics()` |
+| **_custom_metrics.py** | Runs project metric classes and appends their rows to the synthcity report | `run_custom_metrics()` |
+| **custom_metrics/** | Implements custom evaluation metrics and custom statistic extensions | `DCR`, `NNDR`, `CorrelationMatrixDistance`, `ConfidenceIntervalOverlap`, `AverageComplementaryTVD`, `KAnonymity`, `LDiversityPyCanon`, `CUSTOM_STATISTIC_MAP` |
 | **statistics.py** | Implements built-in statistics with bootstrap CI | `Statistic` (ABC), `create_statistic()`, `statistic_map` |
-| **custom_statistics.py** | Allows custom statistical extensions | `AgeStatistic`, `CUSTOM_STATISTIC_MAP` |
-| **eval_cli.py** | Entry point for subprocess execution | `main()` |
 | **config/evaluation/evaluation_config.py** | Evaluation parameters, defaults, and Python path resolution | `EVAL_DEFAULT_METRICS`, `CONFIDENCE_INTERVAL_LEVEL`, `NUM_BOOTSTRAP_SAMPLES`, `EVAL_PYTHON_PATH` |
 | **config/evaluation/statistics.yaml** | Configuration of which statistics to calculate on which columns | YAML statistical definitions |
 | **config/general_config.py** | Global system parameters, output paths, and tracking namespaces | `PROJECT_ROOT`, `MODELS_DIR`, `MLFLOW_TRACKING_URI` |
@@ -70,26 +78,22 @@ config/
 ### Execution Flow
 
 ```text
-MLflowEvaluationEngine.run(real_data, synthetic_data, ..., model_id, simulation_id, ...)
+run_evaluation(real_data_files_path, synthetic_files_path, eval_dir, ...)
     ↓
-1. Find/create simulation run in MLflow by `simulation_id`
-    ↓
-2. SynthCityEvaluationEngine.run(real_data, synthetic_data, ..., model_id, simulation_id, ...)
-    ↓
-    a. Load real and synthetic data as GenericDataLoader
-    b. Execute SynthCity metrics via Metrics.evaluate()
-    c. For each custom metric in ["custom"]:
-        - Instantiate metric class
-        - Call evaluate(real_data, synthetic_data)
-        - Parse results:
-          * `score` → single row
-          * `scores` → multiple rows (.real, .syn, etc.)
-          * `additional` → serializable JSON detail
-        - Add rows to report DataFrame
-    d. Return DataFrame with results
-    ↓
-3. Log metrics/artifacts in MLflow
-4. Save report as CSV
+1. Load real and synthetic CSVs with FileDataLoader
+2. Preprocess both sides with DataPreprocessor
+3. Align schemas/types with align_datasets_structure_and_types()
+4. Open EvaluationTracker(eval_dir, simulation_id)
+5. EvaluationRunner.run(...)
+    a. Select the single table being evaluated
+    b. Optionally drop ID / PK / FK columns using metadata.json
+    c. Split configured metrics into:
+       - synthcity metric groups (`sanity`, `stats`, `performance`, `detection`, `privacy`)
+       - project custom metrics (`custom`)
+    d. Replace synthcity `k-anonymization` with project `k_anonymity`
+    e. Run synthcity metrics via Metrics.evaluate()
+    f. Append rows from project custom metrics
+6. EvaluationTracker saves CSV/JSON artifacts and logs metrics to MLflow
 ```
 
 ## Privacy Metrics

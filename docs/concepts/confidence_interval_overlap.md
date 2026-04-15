@@ -32,7 +32,7 @@ The CIO metric is divided into two layers:
 ```text
 ┌─────────────────────────────────────────────────┐
 │      METRIC: ConfidenceIntervalOverlap         │
-│   (src/evaluation/metrics.py)                   │
+│ (src/evaluation/custom_metrics/confidence_interval_overlap.py) │
 │                                                 │
 │  Responsibilities:                             │
 │  • Load statistics configuration                │
@@ -62,7 +62,7 @@ graph TD
     B --> C{"What type?"}
     C -->|Built-in| D["MeanStatistic<br/>VarianceStatistic<br/>etc."]
     C -->|FormulaStatistic| E["Safe evaluation<br/>with whitelist"]
-    C -->|Custom Python| F["Custom module<br/>(custom_statistics.py)"]
+    C -->|Custom Python| F["Custom module<br/>(custom_metrics/custom_statistics.py)"]
     D --> G["calculate<br/>(per dataset)"]
     E --> G
     F --> G
@@ -285,7 +285,7 @@ class MyCustomStatistic(Statistic):
 
 ### 5.3 Location and Registration
 
-**File**: `src/evaluation/custom_statistics.py`
+**File**: `src/evaluation/custom_metrics/custom_statistics.py`
 
 ```python
 # Export in the CUSTOM_STATISTIC_MAP dictionary
@@ -299,10 +299,10 @@ CUSTOM_STATISTIC_MAP = {
 
 ```bash
 # Option 1: Environment variable
-export CUSTOM_STATISTICS_MODULE="src.evaluation.custom_statistics"
+export CUSTOM_STATISTICS_MODULE="src.evaluation.custom_metrics.custom_statistics"
 
 # Option 2: Directly in config/general_config.py
-CUSTOM_STATISTICS_MODULE = "src.evaluation.custom_statistics"
+CUSTOM_STATISTICS_MODULE = "src.evaluation.custom_metrics.custom_statistics"
 ```
 
 ### 5.5 Usage in YAML

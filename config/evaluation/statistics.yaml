@@ -65,7 +65,7 @@ statistics:
 #    formula: "({col} - {col}.mean()) / {col}.std()"
 
   # ============================================================================
-  # CUSTOM STATISTICS (from custom_statistics.py module)
+  # CUSTOM STATISTICS (from src/evaluation/custom_metrics/custom_statistics.py)
   # Uncomment to enable custom statistics. Requires CUSTOM_STATISTICS_MODULE
   # environment variable or configuration to be set.
   # ============================================================================
@@ -108,9 +108,9 @@ statistics:
   #      * "{col}.max() - {col}.min()" - range computation
   #    - All formula statistics automatically get bootstrap CI
   #
-  # 3. CUSTOM STATISTICS (from custom_statistics.py):
+  # 3. CUSTOM STATISTICS (from src/evaluation/custom_metrics/custom_statistics.py):
   #    - Enable by setting CUSTOM_STATISTICS_MODULE environment variable
-  #    - Example: export CUSTOM_STATISTICS_MODULE="src.evaluation.custom_statistics"
+  #    - Example: export CUSTOM_STATISTICS_MODULE="src.evaluation.custom_metrics.custom_statistics"
   #    - Available custom stats: coefficient_of_variation, interquartile_range, null_proportion
   #    - Users can extend by creating custom Statistic subclasses
   #

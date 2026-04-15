@@ -56,7 +56,7 @@ simulate:
 	$(CORE_PYTHON) -m src.main
 
 eval:
-	$(EVAL_PYTHON) -m src.eval
+	$(EVAL_PYTHON) -m src.evaluation
 
 pipeline:
 	$(CORE_PYTHON) -m src.pipeline --config $(CONFIG)

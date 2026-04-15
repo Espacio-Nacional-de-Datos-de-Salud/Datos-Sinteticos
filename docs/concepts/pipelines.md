@@ -176,9 +176,9 @@ export EVAL_PYTHON_PATH=/path/to/venv_eval/bin/python
 python -m src.pipeline --config config/pipelines/my_pipeline.yaml
 ```
 
-When `EVAL_PYTHON_PATH` is set, the pipeline launches `src.evaluation.eval_cli` as a
-subprocess using that interpreter. All stdout/stderr from the evaluation
-process is captured and forwarded to the pipeline log.
+When `EVAL_PYTHON_PATH` is set, the pipeline launches `python -m src.evaluation`
+as a subprocess using that interpreter. All stdout/stderr from the
+evaluation process is captured and forwarded to the pipeline log.
 
 When `EVAL_PYTHON_PATH` is **not** set (default), evaluation runs in-process
 as before, which requires `synthcity` to be installed in the active

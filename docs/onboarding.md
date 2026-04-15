@@ -30,9 +30,9 @@ written to [MLflow](concepts/tracking_and_mlflow.md).
 | :--- | :--- | :--- |
 | `src/main.py` | Entry point for single-run inspect/train/simulate | Rarely — behavior is driven by `execution_config.py` |
 | `src/pipeline.py` | Entry point for multi-step YAML-driven runs | When adding pipeline features |
-| `src/eval.py` | Entry point for standalone evaluation | Rarely |
+| `src/evaluation/__main__.py` | Entry point for standalone evaluation (`python -m src.evaluation`) | Rarely |
 | `src/core/` | Business logic: preprocessing, synthesis, tracking, rules, sanity checks | Where most day-to-day work happens |
-| `src/evaluation/` | Metrics, statistics, evaluation engines (isolated — runs in `.venv_eval`) | When adding/fixing metrics |
+| `src/evaluation/` | Evaluation orchestration, metric runners, statistics, and synthcity-facing helpers (isolated — runs in `.venv_eval`) | When adding/fixing metrics |
 | `src/api/`, `src/cli/` | Reserved for future REST API / CLI front-ends | Not yet implemented  |
 | `config/` | All configuration (see section 4) | Whenever you change defaults or add a rule |
 | `data/` | Input datasets (usually a symlink) | git-ignored |
@@ -49,7 +49,7 @@ This is the single biggest source of confusion. Use this matrix:
 | Scenario | Command | Underlying script | Venv |
 | :--- | :--- | :--- | :--- |
 | I want to inspect/train/simulate **one** dataset, one-off | `make inspect` / `make train` / `make simulate` | `src/main.py` | `.venv_core` |
-| I only want to **evaluate** an existing simulation (ad hoc) | `make eval` | `src/eval.py` | `.venv_eval` |
+| I only want to **evaluate** an existing simulation (ad hoc) | `make eval` | `python -m src.evaluation` | `.venv_eval` |
 | I want to run **many combinations** (sweeps, experiments, reruns) | `make pipeline CONFIG=...` | `src/pipeline.py` | `.venv_core` (+ `.venv_eval` for eval step) environment sorted automatically by the pipeline |
 
 Tips:
@@ -59,8 +59,9 @@ Tips:
 - Use `make inspect` → edit `autodetect.json` → `make train` when you
   need to fix autodetected PKs/FKs or encoding types. See
   [Setup & Execution Section 4](setup_and_config/setup_and_execution.md#4-recommended-end-to-end-flow).
-- Use `src/eval.py` only for a quick standalone evaluation outside any
-  pipeline. The pipeline's `evaluate:` step calls the same code internally.
+- Use `python -m src.evaluation` for a quick standalone evaluation outside
+  any pipeline. The pipeline's `evaluate:` step calls the same
+  `run_evaluation(...)` orchestration internally.
 
 
 ## 4. Configuration
@@ -105,9 +106,9 @@ Evaluation depends on `synthcity`, `torch`, and related packages that conflict d
 | `.venv_eval` | synthcity, torch, opacus, evaluation utilities (`requirements_evaluation.txt`) | `make eval`, pipeline's `evaluate:` step when `EVAL_PYTHON_PATH` is set |
 
 **How the pipeline bridges them:** when `EVAL_PYTHON_PATH` is exported,
-`src/pipeline.py` launches `src.evaluation.eval_cli` as a **subprocess**
-using that interpreter. stdout/stderr are forwarded to the pipeline log,
-so from the user's side it looks like a single run.
+`src/pipeline.py` launches `python -m src.evaluation` as a
+**subprocess** using that interpreter. stdout/stderr are forwarded to
+the pipeline log, so from the user's side it looks like a single run.
 
 > If you are writing code that imports `synthcity`, `torch`, or anything
 > from `requirements_evaluation.txt`, it lives in `src/evaluation/` and
