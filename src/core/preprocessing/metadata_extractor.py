@@ -109,17 +109,21 @@ class MetadataExtractor:
             # Possible FK names in other tables
             possible_names = {
                 pk,
+                f"preceding_{pk}",
                 f"{parent_name}_{pk}",
                 f"{parent_name}_id",
                 f"{parent_name[:-1]}_id",
             }
 
             for child_name, child_df in self.data.items():
-                if parent_name == child_name:
-                    continue
+                # Allow self-relationships
+                # if parent_name == child_name:
+                #    continue
 
                 matches = [col for col in child_df.columns if col in possible_names]
                 for candidate_fk in matches:
+                    if candidate_fk == pk and parent_name == child_name:
+                        continue  # Skip if same column in the same table
                     is_valid, reason = self._internal_sanity_check_relationship(
                         parent_df, pk, child_df, candidate_fk
                     )

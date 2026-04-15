@@ -481,7 +481,7 @@ def _run_evaluate_subprocess(
     cmd: list[str] = [
         EVAL_PYTHON_PATH,
         "-m",
-        "src.evaluation.eval_cli",
+        "src.evaluation",
         "--real-data",
         *step.real_data,
         "--synthetic-data",
@@ -525,19 +525,16 @@ def _run_evaluate_inprocess(
     simulation_id: str | None,
 ) -> None:
     """Run evaluation in the current process (requires synthcity in the active env)."""
-    from src.eval import main_eval
-    from src.evaluation.mlflow_evaluation_engine import MLflowEvaluationEngine
+    from src.evaluation import run_evaluation
     from src.evaluation.utils import setup_synthcity_environment
 
-    os.makedirs(eval_dir, exist_ok=True)
     setup_synthcity_environment(simulation_dir)
 
-    evaluator = MLflowEvaluationEngine(eval_results_dir=eval_dir)
     try:
-        main_eval(
+        run_evaluation(
             real_data_files_path=step.real_data,
             synthetic_files_path=synthetic_files,
-            evaluator=evaluator,
+            eval_dir=eval_dir,
             model_id=model_id,
             simulation_id=simulation_id,
         )
