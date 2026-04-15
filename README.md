@@ -19,7 +19,6 @@ This block covers how to install the tool, set up your development environment, 
 
 - **[Onboarding Guide](docs/onboarding.md)**: Mental model of the repo: entry points, config cascade, venv split, and first steps.
 - **[Setup & Execution](docs/setup_and_config/setup_and_execution.md)**: Setup scripts, virtual environments, `config/` reference, and the recommended end-to-end run flow (inspect → train → simulate → evaluate).
-- **[AWS SageMaker Setup](docs/setup_and_config/sagemaker.md)**: Guide to create your SageMaker user profile, use Code Editor with SSH from local VS Code, and optimize cost/storage usage.
 - **[Repository Guidelines](docs/repository_guidelines.md)**: This document is vital. It establishes the coding standards, repository structure, and development protocols.
 
 ---
