@@ -1,8 +1,8 @@
-"""Configuración centralizada de logging para el pipeline de datos sintéticos.
+"""Centralized logging configuration for the synthetic data pipeline.
 
-Proporciona un logger profesional que escribe simultáneamente a consola y a un
-archivo session.log dentro de la carpeta del run activo. Compatible con el modo
-CLI actual y preparado para consumo por API.
+Provides a production-style logger that writes simultaneously to console and to a
+session.log file inside the active run folder. Compatible with the current CLI mode
+and ready for API consumption.
 """
 
 import logging
@@ -12,6 +12,8 @@ import sys
 from config.general_config import LOG_DATE_FORMAT, LOG_FORMAT, LOG_LEVEL, SESSION_LOG_FILENAME
 
 _CONFIGURED_RUN_DIRS: set[str] = set()
+
+_pipeline_handler: logging.Handler | None = None
 
 _LEVEL_COLORS = {
     logging.DEBUG: "\033[36m",  # cyan
@@ -31,13 +33,13 @@ class _ColorFormatter(logging.Formatter):
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Obtiene un logger con el nombre dado, con handler de consola por defecto.
+    """Gets a logger with the given name, with a default console handler.
 
     Args:
-        name: Nombre del logger (típicamente __name__ del módulo).
+        name: Logger name (typically the module's __name__).
 
     Returns:
-        logging.Logger: Logger configurado.
+        logging.Logger: Configured logger.
     """
     logger = logging.getLogger(name)
 
@@ -49,17 +51,20 @@ def get_logger(name: str) -> logging.Logger:
         logger.addHandler(console_handler)
         logger.propagate = False
 
+    if _pipeline_handler is not None and _pipeline_handler not in logger.handlers:
+        logger.addHandler(_pipeline_handler)
+
     return logger
 
 
 def add_file_handler(logger: logging.Logger, run_directory: str) -> None:
-    """Añade un FileHandler al logger para escribir session.log en el directorio del run.
+    """Adds a FileHandler to the logger to write session.log in the run directory.
 
-    Idempotente: si ya se configuró un handler para ese directorio, no duplica.
+    Idempotent: if a handler was already configured for that directory, it is not duplicated.
 
     Args:
-        logger: Logger al que añadir el handler.
-        run_directory: Ruta al directorio del run donde crear session.log.
+        logger: Logger to which the handler is added.
+        run_directory: Path to the run directory where session.log is created.
     """
     log_path = os.path.join(run_directory, SESSION_LOG_FILENAME)
 
@@ -75,17 +80,54 @@ def add_file_handler(logger: logging.Logger, run_directory: str) -> None:
     _CONFIGURED_RUN_DIRS.add(log_path)
 
 
-def setup_run_logger(name: str, run_directory: str) -> logging.Logger:
-    """Crea y configura un logger completo para un run específico.
+_MODE_LABELS = {
+    "i": "INSPECT",
+    "t": "TRAIN",
+    "s": "SIMULATE",
+    "e": "EVALUATE",
+    "p": "PIPELINE",
+}
 
-    Combina handler de consola + archivo session.log en el directorio del run.
+
+def log_run_header(
+    logger: logging.Logger,
+    mode: str,
+    subtitle: str | None = None,
+    **fields: object,
+) -> None:
+    """Log a consistent banner announcing the selected mode and its key inputs.
+
+    ``mode`` accepts the single-letter codes used by ``execution_config`` (``i``,
+    ``t``, ``s``, ``e``, ``p``) or any free-form label. ``subtitle`` is meant for
+    the provenance line (e.g. ``"from inspection"`` vs ``"from raw files"``).
+    ``fields`` are rendered as aligned ``key : value`` pairs below the title.
+    """
+    label = _MODE_LABELS.get(mode, mode.upper())
+    title = f"RUN: {label}"
+    if subtitle:
+        title += f"  —  {subtitle}"
+
+    bar = "=" * 80
+    logger.info(bar)
+    logger.info(title)
+    if fields:
+        width = max(len(key) for key in fields)
+        for key, value in fields.items():
+            logger.info("  %-*s : %s", width, key, value)
+    logger.info(bar)
+
+
+def setup_run_logger(name: str, run_directory: str) -> logging.Logger:
+    """Creates and configures a full logger for a specific run.
+
+    Combines a console handler + session.log file in the run directory.
 
     Args:
-        name: Nombre del logger.
-        run_directory: Directorio del run donde persistir logs.
+        name: Logger name.
+        run_directory: Run directory where logs are persisted.
 
     Returns:
-        logging.Logger: Logger listo para usar.
+        logging.Logger: Logger ready to use.
     """
     logger = get_logger(name)
     add_file_handler(logger, run_directory)

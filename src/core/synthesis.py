@@ -1,4 +1,11 @@
-import json
+"""Synthesis engine wrapper around the Mostly AI SDK.
+
+Exposes ``MostlyAIEngine``, which loads configuration from
+``mostly_ai_config.yaml`` (optionally deep-merged with per-job overrides),
+trains a generator on the preprocessed tables, persists the ``generator.zip``
+artifact, and offers sampling helpers used by the simulation flow.
+"""
+
 import logging
 import os
 
@@ -6,70 +13,81 @@ import pandas as pd
 import yaml
 from config.general_config import (
     GENERATOR_ZIP_NAME,
-    METADATA_FILENAME,
-    MODEL_CARD_FILENAME,
-    MODEL_RUN_FOLDER_PREFIX,
-    MODELS_DIR,
-    RUN_TIMESTAMP,
-    LOG_LEVEL,
-    LOG_FORMAT,
     LOG_DATE_FORMAT,
-    SESSION_LOG_FILENAME
+    LOG_FORMAT,
+    LOG_LEVEL,
+    MODELS_DIR,
+    MOSTLY_LOCAL_PORT,
+    SESSION_LOG_FILENAME,
+    get_run_timestamp,
 )
 from mostlyai.sdk import MostlyAI
 from mostlyai.sdk.domain import Generator
 
 from src.core.errors import TableMetadataMissingError
 from src.core.logging_config import get_logger
+from src.core.utils import deep_merge
 
 logger = get_logger(__name__)
 
 
 class MostlyAIEngine:
-    """Motor de síntesis de datos usando Mostly AI.
+    """Data synthesis engine using Mostly AI.
 
-    Orquesta entrenamiento, carga y generación de datos sintéticos mediante
-    la SDK de Mostly AI, permitiendo configuración personalizada del modelo
-    y acceso a generadores entrenados previamente.
+    Orchestrates training, loading, and synthetic data generation through
+    the Mostly AI SDK, allowing custom model configuration
+    and access to previously trained generators.
     """
 
-    def __init__(self, config_path: str, run_dir: str | None = None, local: bool = True) -> None:
-        """Inicializa motor con configuración y conexión a Mostly AI.
+    def __init__(
+        self,
+        config_path: str,
+        run_dir: str | None = None,
+        local: bool = True,
+        config_overrides: dict | None = None,
+        local_dir: str | None = None,
+    ) -> None:
+        """Initializes the engine with configuration and connection to Mostly AI.
 
         Args:
-            config_path (str): Ruta a archivo YAML con configuración del generador.
-            local (bool): Si True, usa instancia local de Mostly AI. Defaults to True.
+            config_path (str): Path to a YAML file with generator configuration.
+            run_dir (str | None): Directory for session logging. Defaults to None.
+            local (bool): If True, uses a local Mostly AI instance. Defaults to True.
+            config_overrides (dict | None): Deep-merge overrides applied on top of the
+                base YAML config.  Only the keys you specify are changed; everything
+                else keeps its default value.
+            local_dir (str | None): Where mostlyai saves its results. Defaults to $HOME/mostlyai
         """
         if run_dir:
             self.setup_mostlyai_logging(run_directory=run_dir)
-        self.mostly = MostlyAI(local=local, local_port=8081)
+        self.mostly = MostlyAI(local=local, local_port=MOSTLY_LOCAL_PORT, local_dir=local_dir)
         with open(config_path) as f:
             self.config = yaml.safe_load(f)
-            self.config["generator"]["name"] += RUN_TIMESTAMP
+        if config_overrides:
+            self.config = deep_merge(self.config, config_overrides)
+        self.config["generator"]["name"] += get_run_timestamp()
 
-    def train(
-        self, data_dict: dict[str, pd.DataFrame], metadata: dict
-    ) -> Generator:
-        """Entrena generador sintético sobre datos preprocesados.
+    def train(self, data_dict: dict[str, pd.DataFrame], metadata: dict) -> Generator:
+        """Trains a synthetic generator on preprocessed data.
 
-        Configura tablas, aplica metadatos y modelo de configuración, luego
-        inicia entrenamiento.
+        Configures tables, applies metadata and model configuration, then
+        starts training.
 
         Args:
-            data_dict (dict[str, pd.DataFrame]): Datos preprocesados
-                {nombre_tabla: dataframe}.
-            metadata (dict): Metadatos con estructura de tablas, PKs, FKs y tipos.
+            data_dict (dict[str, pd.DataFrame]): Preprocessed data
+                {table_name: dataframe}.
+            metadata (dict): Metadata with table structure, PKs, FKs, and types.
 
         Returns:
-            Generator: Objeto generador entrenado (MostlyAI Generator).
+            Generator: Trained generator object (MostlyAI Generator).
 
         Raises:
-            ValueError: Si tabla en data_dict no tiene metadatos correspondiente.
-            Exception: Si entrenamiento falla en SDK de Mostly AI.
+            ValueError: If a table in data_dict has no corresponding metadata.
+            Exception: If training fails in the Mostly AI SDK.
 
         Example:
             >>> generator = engine.train(processed_data, metadata)
-            >>> print(generator.name)  # Nombre del generador entrenado
+            >>> print(generator.name)  # Name of the trained generator
         """
         tables_config = []
         for table_name, df in data_dict.items():
@@ -83,7 +101,7 @@ class MostlyAIEngine:
                 "data": df,
                 "tabular_model_configuration": self.config["model_settings"],
                 # TODO: [#1] can we select a specific type of model?
-                "primary_key": metadata_table["primary_key"],
+                "primary_key": metadata_table.get("primary_key"),
                 "foreign_keys": metadata_table.get("foreign_keys", []),
                 "columns": metadata_table["columns"],
             }
@@ -104,138 +122,50 @@ class MostlyAIEngine:
 
         return generator
 
-    def select_generator(self) -> tuple[Generator, str] | None:
-        """Selecciona interactivamente un generador entrenado para usar.
+    def load_generator_by_id(self, model_id: str) -> tuple[Generator, str]:
+        """Loads a trained generator by its model ID (non-interactive).
 
-        Lista carpetas de ejecución anteriores, extrae información de cada una
-        y permite al usuario seleccionar cual generador cargar del almacenamiento.
+        Args:
+            model_id: Model identifier (folder name under outputs/models/).
 
         Returns:
-            tuple[Generator, str] | None: Tupla (generator_obj, path_run_folder)
-            o None si no hay generadores o se cancela selección.
+            Tuple of (generator object, path to the model run folder).
 
         Raises:
-            Exception: Si falla carga de generador desde archivo ZIP.
-
-        Example:
-            >>> result = engine.select_generator()
-            >>> if result:
-            ...     gen, path = result
-            ...     print(f'Cargado: {gen.name}')
+            FileNotFoundError: If the model folder or generator.zip does not exist.
         """
-        import glob
-        import os
+        model_folder = os.path.join(MODELS_DIR, model_id)
+        if not os.path.isdir(model_folder):
+            raise FileNotFoundError(f"Model folder not found: {model_folder}")
 
-        # Definir ruta base donde están los runs
-        run_folders = sorted(
-            glob.glob(os.path.join(MODELS_DIR, MODEL_RUN_FOLDER_PREFIX + "_*")), reverse=True
-        )
+        generator_zip = os.path.join(model_folder, GENERATOR_ZIP_NAME)
+        if not os.path.exists(generator_zip):
+            raise FileNotFoundError(f"Generator file not found: {generator_zip}")
 
-        if not run_folders:
-            logger.warning("No se encontraron carpetas de ejecución en '%s'.", MODELS_DIR)
-            return None
+        logger.info("Loading generator from %s", generator_zip)
+        generator_obj = self.mostly.generators.import_from_file(generator_zip)
+        logger.info("Generator '%s' loaded successfully.", generator_obj.name)
 
-        available_options = []
-
-        # Recorrer carpetas y extraer info desde model_card.json y metadata.json
-        for folder in run_folders:
-            generator_zip = os.path.join(folder, GENERATOR_ZIP_NAME)
-            card_path = os.path.join(folder, MODEL_CARD_FILENAME)
-            metadata_path = os.path.join(folder, METADATA_FILENAME)
-
-            if not os.path.exists(generator_zip):
-                continue
-
-            try:
-                model_id = os.path.basename(folder)
-                timestamp = ""
-                tables = "N/A"
-
-                if os.path.exists(card_path):
-                    with open(card_path, encoding="utf-8") as f:
-                        card = json.load(f)
-                    timestamp = card.get("timestamp", "")
-
-                if os.path.exists(metadata_path):
-                    with open(metadata_path, encoding="utf-8") as f:
-                        meta = json.load(f)
-                    tables = ", ".join(t["name"] for t in meta.get("tables", []))
-
-                available_options.append(
-                    {
-                        "folder": folder,
-                        "model_id": model_id,
-                        "timestamp": timestamp,
-                        "tables": tables,
-                    }
-                )
-            except Exception as e:
-                logger.error("Error leyendo metadatos de %s: %s", folder, e)
-
-        if not available_options:
-            logger.warning("Se encontraron carpetas, pero sin generator.zip válidos.")
-            return None
-
-        # --- Mostrar Tabla ---
-        print("\n--- Runs Locales Disponibles (Outputs) ---")
-        print(f"{'Idx':<4} | {'Model ID':<30} | {'Timestamp':<17} | {'Tables'}")
-        print("-" * 100)
-
-        for idx, opt in enumerate(available_options):
-            tables_str = opt["tables"]
-            if len(tables_str) > 40:
-                tables_str = tables_str[:37] + "..."
-
-            print(f"[{idx:<2}] | {opt['model_id']:<30} | {opt['timestamp']:<17} | {tables_str}")
-
-        # --- Selección ---
-        while True:
-            try:
-                choice_input = input("\nIntroduce el índice (Idx) del run que quieres usar: ")
-                choice = int(choice_input)
-
-                if 0 <= choice < len(available_options):
-                    selected = available_options[choice]
-                    clean_id = selected["model_id"]
-                    path_run_folder = selected["folder"]
-
-                    logger.info("Run seleccionado: %s", selected["model_id"])
-                    logger.debug("ID recuperado: '%s'", clean_id)
-
-                    try:
-                        logger.info("Conectando con Mostly AI para obtener el objeto generador...")
-                        # Recuperamos el objeto limpio
-                        path_to_generator = os.path.join(path_run_folder, GENERATOR_ZIP_NAME)
-
-                        generator_obj = self.mostly.generators.import_from_file(path_to_generator)
-                        logger.info("Generador '%s' cargado correctamente.", generator_obj.name)
-                        return generator_obj, path_run_folder
-                    except Exception as api_error:
-                        logger.error("Error recuperando el generador de la API: %s", api_error)
-                        return None
-                else:
-                    print("Selección fuera de rango.")
-            except ValueError:
-                print("Entrada inválida. Introduce un número.")
+        return generator_obj, model_folder
 
     def simulate(
         self, generator: object, simulation_configuration: dict
     ) -> dict[str, pd.DataFrame]:
-        """Genera datos sintéticos usando generador entrenado.
+        """Generates synthetic data using a trained generator.
 
-        Inicia job de generación con configuración especificada y retorna
-        datos sintéticos en formato diccionario de DataFrames.
+        Starts a generation job with the specified configuration and returns
+        synthetic data in dictionary-of-DataFrames format.
 
         Args:
-            generator (object): Objeto generador entrenado (MostlyAI Generator).
-            simulation_configuration (dict): Config con {tables: [{name, configuration}, ...]}.
+            generator (object): Trained generator object (MostlyAI Generator).
+            simulation_configuration (dict): Config with {tables: [{name, configuration}, ...]}.
 
         Returns:
-            dict[str, pd.DataFrame]: Datos sintéticos generados
-                {nombre_tabla: dataframe}.
+            dict[str, pd.DataFrame]: Generated synthetic data
+                {table_name: dataframe}.
 
         Raises:
-            Exception: Si generación falla o configuración es inválida.
+            Exception: If generation fails or configuration is invalid.
 
         Example:
             >>> config = {"tables": [{"name": "users", "configuration": {...}}]}
@@ -257,9 +187,8 @@ class MostlyAIEngine:
         mostlyai_logger = logging.getLogger("mostlyai")
         mostlyai_logger.handlers.clear()
         session_log_path = os.path.join(run_directory, SESSION_LOG_FILENAME)
-        
+
         file_handler = logging.FileHandler(session_log_path, encoding="utf-8")
         file_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
         mostlyai_logger.addHandler(file_handler)
         mostlyai_logger.setLevel(LOG_LEVEL)
-

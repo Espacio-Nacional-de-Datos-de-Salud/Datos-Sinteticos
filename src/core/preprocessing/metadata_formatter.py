@@ -1,21 +1,24 @@
+from src.core.logging_config import get_logger
 from src.core.utils import ModelEncodingType
+
+logger = get_logger(__name__)
 
 
 class MetadataFormatter:
-    """Convierte metadatos extraídos al formato esperado por motor de síntesis.
+    """Converts extracted metadata to the format expected by the synthesis engine.
 
-    Transforma información de tablas, columnas, tipos y relaciones en estructura
-    JSON específica que el motor interpreta para configurar la generación sintética.
+    Transforms table, column, type, and relationship information into a
+    specific JSON structure that the engine interprets to configure synthetic generation.
 
     Args:
-        engine_name (str): Nombre del motor ('mostly' u otro). Defaults to \"mostly\".
+        engine_name (str): Engine name ('mostly' or another one). Defaults to \"mostly\".
     """
 
     def __init__(self, engine_name: str = "mostly") -> None:
-        """Inicializa formateador de metadatos para motor específico.
+        """Initializes the metadata formatter for a specific engine.
 
         Args:
-            engine_name (str): Nombre del motor. Defaults to \"mostly\".
+            engine_name (str): Engine name. Defaults to \"mostly\".
         """
         self.engine_name = engine_name
 
@@ -25,26 +28,25 @@ class MetadataFormatter:
         relationships_data: dict | None = None,
         types_data: dict | None = None,
     ) -> dict:
-        """Formatea metadatos en estructura esperada por motor de síntesis.
+        """Formats metadata in the structure expected by the synthesis engine.
 
-        Organiza información de tablas, columnas, tipos de datos y relaciones
-        en formato JSON que motor interpreta para configurar generación.
+        Organizes table, column, data type, and relationship information
+        into a JSON format that the engine interprets to configure generation.
 
         Args:
             data_dfs (dict[str, pd.DataFrame]): DataFrames procesados.
-            relationships_data (dict | None): PKs y FKs detectadas. Defaults to None.
-            types_data (dict | None): Tipos de codificación de columnas. Defaults to None.
+            relationships_data (dict | None): Detected PKs and FKs. Defaults to None.
+            types_data (dict | None): Column encoding types. Defaults to None.
 
         Returns:
-            dict: Metadatos formateados {tables: [{name, columns, foreign_keys, ...}, ...]}.
+            dict: Formatted metadata {tables: [{name, columns, foreign_keys, ...}, ...]}.
 
         Example:
             >>> formatter = MetadataFormatter()
             >>> metadata = formatter.format(data_dict, relationships, types)
-            >>> print(metadata['tables'][0].keys())
         """
 
-        print("--- Formatting metadata ---")
+        logger.info("--- Formatting metadata ---")
 
         relationships_data = relationships_data or {"pks": {}, "fks": []}
         types_data = types_data or {}
@@ -65,15 +67,18 @@ class MetadataFormatter:
             # B. Prepare FKs
             # Filter raw relationships where child == current table
             table_fks = []
-            raw_fks = [r for r in relationships_data["fks"] if r["child"] == name]
+            raw_fks = [
+                rel
+                for rel in relationships_data["fks"]
+                if rel["child"] == name and rel["fk_column"] in df.columns
+            ]
 
-            # Context heuristic (first one is context)
-            for i, rel in enumerate(raw_fks):
+            for rel in raw_fks:
                 table_fks.append(
                     {
                         "column": rel["fk_column"],
                         "referenced_table": rel["parent"],
-                        "is_context": (i == 0),  # Simple heuristic
+                        "is_context": bool(rel.get("is_context", False)),
                     }
                 )
 

@@ -6,13 +6,16 @@ generator:
 
 # Configuración del modelo tabular
 model_settings:
-  max_training_time: 3
-  enable_model_report: False
+  max_training_time: null
+  max_sample_size: null
+  max_epochs: 1
+  enable_model_report: True
+  batch_size: 16
 
-  # Configuración de privacidad diferencial
-  differential_privacy:
-    max_epsilon: null
-    delta: 0.00001
-    noise_multiplier: 1.5
-    max_grad_norm: 1.0
-    value_protection_epsilon: 1.0
+  # # Configuración de privacidad diferencial
+  # differential_privacy:
+  #   max_epsilon: null
+  #   delta: 0.00001
+  #   noise_multiplier: 1.5
+  #   max_grad_norm: 1.0
+  #   value_protection_epsilon: 1.0

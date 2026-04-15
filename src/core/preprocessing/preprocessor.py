@@ -1,10 +1,10 @@
-"""Orquestación del pipeline de preprocesamiento de datos para síntesis.
+"""Orchestration of the data preprocessing pipeline for synthesis.
 
-Coordina la limpieza de datos, validación de metadatos, aplicación de reglas
-lógicas de pre-procesamiento y generación de perfiles. Integra múltiples
-componentes (DataCleaner, MetadataExtractor, MetadataValidator, MetadataFormatter,
-LogicalRuleManager) en un flujo coherente que prepara datos crudos para entrenar
-el modelo de síntesis.
+Coordinates data cleaning, metadata validation, application of preprocessing
+logical rules, and profile generation. Integrates multiple
+components (DataCleaner, MetadataExtractor, MetadataValidator, MetadataFormatter,
+LogicalRuleManager) into a coherent flow that prepares raw data to train
+the synthesis model.
 """
 
 from typing import Any
@@ -15,97 +15,92 @@ from src.core.preprocessing.data_cleaner import DataCleaner
 from src.core.preprocessing.logical_rules import LogicalRuleManager
 from src.core.preprocessing.metadata_extractor import MetadataExtractor
 from src.core.preprocessing.metadata_formatter import MetadataFormatter
-from src.core.preprocessing.metadata_validator import MetadataValidator
 from src.core.preprocessing.profiling import generate_profile_report
-from src.core.preprocessing.utils import format_relationships
+from src.core.preprocessing.utils import (
+    assign_default_context_keys,
+    format_relationships,
+    infer_foreign_keys_consistency_rules,
+)
 
 
 class DataPreprocessor:
-    """Prepara datos crudos para entrenamiento mediante limpieza y extracción de metadatos.
+    """Prepares raw data for training through cleaning and metadata extraction.
 
-    Encapsula todo el flujo de transformación: limpieza inicial de datos, detección de
-    relaciones y tipos de columnas, validación interactiva (opcional) de metadatos,
-    aplicación de reglas lógicas y generación de perfiles de datos. Coordina múltiples
-    componentes para garantizar que los datos estén listos para el motor de síntesis.
+    Encapsulates the whole transformation flow: initial data cleaning, detection of
+    relationships and column types, optional interactive metadata validation,
+    application of logical rules, and data profile generation. Coordinates multiple
+    components to ensure data is ready for the synthesis engine.
 
     Args:
-        data_dict (dict[str, pd.DataFrame]): Diccionario de tablas crudas
-            {nombre_tabla: dataframe}. Puede contener múltiples tablas relacionales.
-        interactive_mode (bool): Si True, permite validación manual interactiva de
-            metadatos detectados (relaciones y tipos de columna). Si False, acepta
-            automáticamente los metadatos extraídos. Defaults to True.
+        data_dict (dict[str, pd.DataFrame]): Dictionary of raw tables
+            {table_name: dataframe}. It may contain multiple relational tables.
+            detected metadata (relationships and column types). If False, it
+            automatically accepts extracted metadata. Defaults to True.
 
     Attributes:
-        raw_data_dict (dict[str, pd.DataFrame]): Datos originales sin modificar.
-        processed_data_dict (dict[str, pd.DataFrame]): Datos después del procesamiento.
-        metadata (dict): Metadatos extraídos y formateados para el motor de síntesis.
-        rule_manager (LogicalRuleManager): Gestor de reglas lógicas pre y post-síntesis.
-        interactive_mode (bool): Modo de validación manual de metadatos.
+        raw_data_dict (dict[str, pd.DataFrame]): Original unmodified data.
+        processed_data_dict (dict[str, pd.DataFrame]): Data after processing.
+        metadata (dict): Metadata extracted and formatted for the synthesis engine.
+        rule_manager (LogicalRuleManager): Pre- and post-synthesis logical rule manager.
     """
 
-    def __init__(self, data_dict: dict[str, pd.DataFrame], interactive_mode: bool = True) -> None:
-        """Inicializa el preprocesador con un conjunto de tablas crudas.
+    def __init__(self, data_dict: dict[str, pd.DataFrame]) -> None:
+        """Initializes the preprocessor with a set of raw tables.
 
         Args:
-            data_dict (dict[str, pd.DataFrame]): Diccionario de tablas crudas
-                {nombre_tabla: dataframe}.
-            interactive_mode (bool): Si True, permite validación manual de metadatos.
-                Defaults to True.
+            data_dict (dict[str, pd.DataFrame]): Dictionary of raw tables
+                {table_name: dataframe}.
         """
         self.raw_data_dict = data_dict
         self.processed_data_dict = {name: df.copy() for name, df in data_dict.items()}
         self.metadata = {}
         self.rule_manager = LogicalRuleManager()
-        self.interactive_mode = interactive_mode
+        self.relationships: dict = {"pks": {}, "fks": []}
+        self.encoding_types: dict = {}
 
     def run(
         self, run_data_profiling: bool = False
     ) -> tuple[dict[str, pd.DataFrame], dict, LogicalRuleManager, Any | None]:
         """
-        Ejecuta el pipeline completo de preprocesamiento.
+        Runs the complete preprocessing pipeline.
 
-        1. Limpieza de datos (DataCleaner).
-        2. Gestión de Metadatos:
-            - Extracción de relaciones y tipos de datos (MetadataExtractor).
-            - Validación manual de metadatos (MetadataValidator) si interactive_mode=True.
-            - Formateo de metadatos para el motor de síntesis (MetadataFormatter).
-        3. Aplicación de reglas lógicas PRE (transformación de datos).
+        1. Data cleaning (DataCleaner).
+        2. Metadata management:
+            - Relationship and data-type extraction (MetadataExtractor).
+            - Metadata formatting for the synthesis engine (MetadataFormatter).
+        3. PRE logical-rule application (data transformation).
         4. Profiling (opcional).
 
         Args:
-            run_data_profiling (bool): Si es True, genera reporte HTML de los datos.
+            run_data_profiling (bool): If True, generates an HTML data report.
 
         Returns:
             tuple:
-                - Datos procesados.
-                - Metadatos (JSON dict).
+                - Processed data.
+                - Metadata (JSON dict).
                 - RuleManager.
-                - Objeto Profiling (o None).
+                - Profiling object (or None).
 
         Example:
-            >>> preprocessor = DataPreprocessor(raw_data_dict, interactive_mode=True)
-            >>> processed_data, metadata, rule_manager, data_profiles = preprocessor.run(run_data_profiling=True)
+            >>> preprocessor = DataPreprocessor(raw_data_dict)
+            >>> processed_data, metadata, rule_manager, data_profiles = preprocessor.run(
+            ...     run_data_profiling=True
+            ... )
         """
         cleaned_data = DataCleaner(self.raw_data_dict).run()
 
         metadata_extractor = MetadataExtractor(cleaned_data)
-        relationships = metadata_extractor.extract_relationships()
-        metadata_validator = None
+        relationships = {"pks": metadata_extractor.extract_primary_keys(), "fks": []}
 
-        if self.interactive_mode:
-            metadata_validator = MetadataValidator(engine_name="mostly")
-            relationships = metadata_validator.validate_relationships(
-                data_dfs=cleaned_data, relationships=relationships
-            )
+        relationships["fks"] = metadata_extractor.extract_foreign_keys(relationships["pks"])
+        relationships = assign_default_context_keys(relationships)
+        self.add_automatic_contextual_fk_propagation_rules(relationships)
 
         engineered_data = self.rule_manager.apply_all_pre(
             data_dict=cleaned_data, relationships=format_relationships(relationships)
         )
 
         encoding_types = MetadataExtractor(engineered_data).extract_encoding_types()
-        if self.interactive_mode and metadata_validator is not None:
-            encoding_types = metadata_validator.validate_encoding_types(types_data=encoding_types)
-
         metadata = MetadataFormatter(engine_name="mostly").format(
             data_dfs=engineered_data,
             relationships_data=relationships,
@@ -114,4 +109,40 @@ class DataPreprocessor:
 
         data_profiles = generate_profile_report(engineered_data) if run_data_profiling else None
 
+        self.processed_data_dict = engineered_data
+        self.metadata = metadata
+        self.relationships = relationships
+        self.encoding_types = encoding_types
+
         return engineered_data, metadata, self.rule_manager, data_profiles
+
+    def add_automatic_contextual_fk_propagation_rules(self, relationships: dict) -> None:
+        """Automatically adds logical rules to keep contextual foreign keys consistent.
+
+        Analyzes relationships between tables and generates rules that ensure values
+        of foreign keys marked as contextual are propagated correctly across
+        related tables during synthesis. This helps maintain referential
+        consistency in generated synthetic data.
+        """
+        existing_rule_keys = {
+            (
+                type(rule).__name__,
+                getattr(rule, "table_target", None),
+                getattr(rule, "table_origin", None),
+                getattr(rule, "target_col", None),
+                getattr(rule, "source_col", None),
+            )
+            for rule in self.rule_manager.rules
+        }
+        for inferred_rule in infer_foreign_keys_consistency_rules(relationships):
+            inferred_key = (
+                type(inferred_rule).__name__,
+                inferred_rule.table_target,
+                inferred_rule.table_origin,
+                inferred_rule.target_col,
+                inferred_rule.source_col,
+            )
+            if inferred_key in existing_rule_keys:
+                continue
+            self.rule_manager.add_rule(inferred_rule)
+            existing_rule_keys.add(inferred_key)

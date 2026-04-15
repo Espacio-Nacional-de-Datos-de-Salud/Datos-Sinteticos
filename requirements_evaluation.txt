@@ -10,3 +10,5 @@ tsai==0.4.0
 uvicorn
 ydata-profiling
 setuptools<82.0.0
+pycanon
+protobuf<=3.20.3

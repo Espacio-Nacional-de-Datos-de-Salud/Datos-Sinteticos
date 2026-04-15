@@ -5,6 +5,7 @@ This file centralized all configuration values that are
 shared across the entire project.
 """
 
+import contextvars
 import json
 import logging
 import os
@@ -12,17 +13,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.core.preprocessing.logical_rules import (
-    DateConsistencyRule,
-    SemanticProportionalConsistencyRule,
-    SemanticRankingConsistencyRule,
-)
-
 PROJECT_ROOT = Path(__file__).parent.parent
 DEFAULT_DATA_PATH = os.path.join(PROJECT_ROOT, "data")
 
 # Custom output directories
 OUTPUTS_ROOT = os.path.join(PROJECT_ROOT, "outputs")
+MOSTLYAI_DIR = os.path.join(OUTPUTS_ROOT, "mostlyai")
 MODELS_FOLDER_PREFIX = "models"
 MODEL_RUN_FOLDER_PREFIX = "model"
 MODELS_DIR = os.path.join(OUTPUTS_ROOT, MODELS_FOLDER_PREFIX)
@@ -30,49 +26,25 @@ SIMULATIONS_FOLDER_PREFIX = "simulations"
 SIMULATION_RUN_FOLDER_PREFIX = "simulation"
 SIMULATIONS_DIR = os.path.join(OUTPUTS_ROOT, SIMULATIONS_FOLDER_PREFIX)
 
+PIPELINES_FOLDER_PREFIX = "pipelines"
+PIPELINE_RUN_FOLDER_PREFIX = "pipeline"
+PIPELINES_DIR = os.path.join(OUTPUTS_ROOT, PIPELINES_FOLDER_PREFIX)
+NO_PIPELINE_ID = "none"
+
+INSPECTIONS_FOLDER_PREFIX = "inspections"
+INSPECTION_RUN_FOLDER_PREFIX = "inspection"
+INSPECTIONS_DIR = os.path.join(OUTPUTS_ROOT, INSPECTIONS_FOLDER_PREFIX)
+INSPECTION_CARD_FILENAME = "inspection_card.json"
+AUTODETECT_FILENAME = "autodetect.json"
+PROCESSED_DATA_DIRNAME = "processed_data"
+
 MOSTLYAI_CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "mostly_ai_config.yaml")
 RULES_CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "rules.yaml")
+STATISTICS_CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "evaluation", "statistics.yaml")
 
-# EVALUATION
-# ============================================================================
-EVAL_DEFAULT_METRICS = {
-    "custom": [
-        # custom metrics implemented ourselves
-        "nearest_neighbor_distance_ratio",
-        "correlation_matrix_distance",
-        "confidence_interval_overlap",
-    ],
-    "sanity": [
-        # "data_mismatch", # mismatched types, not included in doc
-        "common_rows_proportion",  # exact match score (EMS) 0-1, 1= all leaked
-        "nearest_syn_neighbor_distance",  # distance to closest record (DCR)
-        # "close_values_probability"
-    ],
-    "stats": [
-        "jensenshannon_dist",  # sqrt of Jensen-Shannon Divergence (JSD)
-        "inv_kl_divergence",  # inverse KL divergence (proxy for distribution overlap)
-    ],
-    "performance": [
-        "linear_model",  # TSTR with logistic/linear regression
-        "mlp",  # TSTR with MLP
-        #"xgb",  # TSTR with XGBoost
-    ],
-    "detection": ["detection_mlp"],  # synthetic vs real detection (AUC ~0.5 = good)
-    "privacy": [
-        "k-anonymization",  # in our report table at top of doc states k-map, while in text says k-anon
-        #'k-map',
-        "distinct l-diversity",
-        #'identifiability_score',
-        #"DomiasMIA_BNAF",  # Membership inference attack (MIA)
-    ],
-    # MISSING:
-    # Nearest Neighbor Distance Ratio
-    # Distancia de Matriz de Correlación (DMC)
-    # Confidence interval Overlap (CIO)
-}
+MOSTLY_LOCAL_PORT = 8082
 
-TSTR_TARGET_COLUMN = "expire_flag"
-TSTR_TASK_TYPE = "classification"  # or "regression"
+
 # ============================================================================
 # DEFAULT VALUES
 # ============================================================================
@@ -109,13 +81,30 @@ MLFLOW_EXPERIMENT_TRAINING = "SyntheticData-Training"
 MLFLOW_EXPERIMENT_SIMULATION = "SyntheticData-Simulation"
 
 
-RUN_TIMESTAMP = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+_RUN_TIMESTAMP: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "RUN_TIMESTAMP", default=pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+)
 
-RULE_MAP = {
-    "date_consistency": DateConsistencyRule,
-    "semantic_ranking_consistency": SemanticRankingConsistencyRule,
-    "semantic_proportional_consistency": SemanticProportionalConsistencyRule,
-}
+
+def get_run_timestamp() -> str:
+    """Get the ``RUN_TIMESTAMP`` for the current execution context.
+
+    Returns:
+        str: Timestamp string.
+    """
+    return _RUN_TIMESTAMP.get()
+
+
+def refresh_run_timestamp() -> str:
+    """Refresh ``RUN_TIMESTAMP`` to the current time for this context and return it.
+
+    Returns:
+        str: Updated timestamp with ``%Y%m%d_%H%M%S`` format.
+    """
+    new_ts = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    _RUN_TIMESTAMP.set(new_ts)
+    return new_ts
+
 
 # ============================================================================
 # SETTINGS

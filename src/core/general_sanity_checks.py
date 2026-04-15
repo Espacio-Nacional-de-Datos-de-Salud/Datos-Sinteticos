@@ -1,33 +1,106 @@
+"""General sanity checks for synthetic data.
+
+Runs structural validations that apply regardless of user-defined rules:
+referential integrity between primary keys and foreign keys and contextual
+consistency of derivable FK relationships. Results are aggregated into a
+single DataFrame consumed by the tracking layer.
+"""
+
 import pandas as pd
 
 from src.core.logging_config import get_logger
+from src.core.preprocessing.logical_rules import (
+    LogicalRuleManager,
+)
+from src.core.preprocessing_contextual_sanity_checks import (
+    _build_table_name_to_pks_mapping,
+    _collect_all_contextual_relationships_to_check,
+    _collect_all_fks_to_check,
+    _evaluate_single_contextual_fk_check,
+    _evaluate_single_referential_integrity_check,
+)
 
 logger = get_logger(__name__)
 
 
-def sanity_check_referential_integrity(
-    synthetic_data: dict[str, pd.DataFrame] | pd.DataFrame, metadata: dict
+def run_general_sanity_checks(
+    synthetic_data: dict[str, pd.DataFrame] | pd.DataFrame,
+    metadata: dict,
+    rule_manager: LogicalRuleManager | None = None,
 ) -> pd.DataFrame:
-    """Valida integridad referencial de claves foráneas en datos sintéticos.
+    """Runs all general sanity checks and unifies their results.
 
-    Genera una fila de reporte por cada relación FK encontrada en los metadatos,
-    con el mismo esquema que el reporte del RuleManager para poder combinarse
-    en un único CSV de sanity checks.
-
-    Si solo hay una tabla (o es un DataFrame suelto), retorna un DataFrame vacío
-    para que no aparezca en el reporte unificado.
+    Orchestrates structural checks independent of specific rules:
+    classic referential integrity and contextual consistency of derivable FKs.
 
     Args:
-        synthetic_data (dict[str, pd.DataFrame] | pd.DataFrame): Diccionario
-            de tablas sintéticas o DataFrame único.
-        metadata (dict): Metadatos con estructura de tablas, PKs y FKs.
+        synthetic_data (dict[str, pd.DataFrame] | pd.DataFrame): Dictionary
+            of synthetic tables or a single DataFrame.
+        metadata (dict): Tabular metadata.
+        rule_manager (LogicalRuleManager | None): Loaded rule manager to
+            incorporate derived FKs into the checks inventory. Defaults to None.
 
     Returns:
-        pd.DataFrame: Reporte con columnas [check, rule, table, status,
-            failed_rows, total_rows, details]. Vacío si no aplica.
+        pd.DataFrame: Concatenation of all general sanity checks with
+            esquema [type, check, rule, table, status, failed_rows, total_rows,
+            details]. Empty if none applies.
+    """
+
+    reports: list[pd.DataFrame] = []
+
+    referential_report = sanity_check_referential_integrity(
+        synthetic_data=synthetic_data,
+        metadata=metadata,
+        rule_manager=rule_manager,
+    )
+    if not referential_report.empty:
+        reports.append(referential_report)
+
+    contextual_report = sanity_check_contextual_fk_consistency(
+        synthetic_data=synthetic_data,
+        metadata=metadata,
+        rule_manager=rule_manager,
+    )
+    if not contextual_report.empty:
+        reports.append(contextual_report)
+
+    if not reports:
+        return pd.DataFrame()
+
+    return pd.concat(reports, ignore_index=True)
+
+
+def sanity_check_referential_integrity(
+    synthetic_data: dict[str, pd.DataFrame] | pd.DataFrame,
+    metadata: dict,
+    rule_manager: LogicalRuleManager | None = None,
+) -> pd.DataFrame:
+    """Validates referential integrity of foreign keys in synthetic data.
+
+    Produces one report row for each FK that should exist in the final
+    result. The checks inventory is built from ``metadata`` and,
+    optionally, from reconstruction rules in ``rule_manager``.
+    This also allows validating derived FKs that are no longer part of the
+    training schema.
+
+    If there is only one table (or a standalone DataFrame), it returns an empty DataFrame
+    so it does not appear in the unified report.
+
+    Args:
+        synthetic_data (dict[str, pd.DataFrame] | pd.DataFrame): Dictionary
+            of synthetic tables or a single DataFrame.
+        metadata (dict): Metadata with table structure, PKs, and FKs.
+        rule_manager (LogicalRuleManager | None): Rule manager used to
+            include derived FKs in the check inventory. Defaults to None.
+
+    Returns:
+        pd.DataFrame: Reporte con columnas [type, check, rule, table, status,
+            failed_rows, total_rows, details]. Empty if not applicable.
 
     Example:
-        >>> report = sanity_check_referential_integrity(synthetic_data, metadata)
+        >>> report = sanity_check_referential_integrity(
+        ...     synthetic_data, metadata, rule_manager
+        ... )
         >>> report[report['status'] == 'FAIL']
     """
 
@@ -41,114 +114,13 @@ def sanity_check_referential_integrity(
     logger.info("=" * 80)
 
     rows: list[dict] = []
+    table_pks = _build_table_name_to_pks_mapping(metadata)
 
-    # 2. Extract Primary Keys Mapping first {table_name: pk_column}
-    table_pks = {}
-    for table in metadata.get("tables", []):
-        if "primary_key" in table:
-            table_pks[table["name"]] = table["primary_key"]
+    for fk_check in _collect_all_fks_to_check(metadata, rule_manager):
+        rows.append(
+            _evaluate_single_referential_integrity_check(fk_check, synthetic_data, table_pks)
+        )
 
-    # 3. Iterate through tables to find Foreign Keys
-    for table_info in metadata.get("tables", []):
-        child_name = table_info["name"]
-
-        fks = table_info.get("foreign_keys", [])
-        if not fks:
-            continue
-
-        for fk in fks:
-            child_fk_col = fk["column"]
-            parent_name = fk["referenced_table"]
-            check_label = f"FK {child_name}.{child_fk_col} -> {parent_name}"
-
-            # A. Check if DataFrames exist
-            if child_name not in synthetic_data:
-                logger.warning("Skipping check: Table '%s' not found in data.", child_name)
-                rows.append(
-                    {
-                        "check": "referential_integrity",
-                        "rule": check_label,
-                        "table": child_name,
-                        "status": "SKIPPED",
-                        "failed_rows": 0,
-                        "total_rows": 0,
-                        "details": f"Table '{child_name}' not found in data",
-                    }
-                )
-                continue
-            if parent_name not in synthetic_data:
-                logger.warning("Skipping check: Parent table '%s' not found in data.", parent_name)
-                rows.append(
-                    {
-                        "check": "referential_integrity",
-                        "rule": check_label,
-                        "table": child_name,
-                        "status": "SKIPPED",
-                        "failed_rows": 0,
-                        "total_rows": 0,
-                        "details": f"Parent table '{parent_name}' not found in data",
-                    }
-                )
-                continue
-
-            # B. Check if Parent has a known PK
-            parent_pk_col = table_pks.get(parent_name)
-            if not parent_pk_col:
-                logger.warning(
-                    "Skipping %s->%s: PK for '%s' not found in metadata.",
-                    child_name,
-                    parent_name,
-                    parent_name,
-                )
-                rows.append(
-                    {
-                        "check": "referential_integrity",
-                        "rule": check_label,
-                        "table": child_name,
-                        "status": "SKIPPED",
-                        "failed_rows": 0,
-                        "total_rows": 0,
-                        "details": f"PK for '{parent_name}' not found in metadata",
-                    }
-                )
-                continue
-
-            # C. Perform the Math
-            parent_df = synthetic_data[parent_name]
-            child_df = synthetic_data[child_name]
-
-            valid_parent_ids = set(parent_df[parent_pk_col].dropna().unique())
-            child_fks = child_df[child_fk_col].dropna()
-
-            total_children = len(child_fks)
-
-            if total_children == 0:
-                orphan_count = 0
-            else:
-                orphan_count = int((~child_fks.isin(valid_parent_ids)).sum())
-
-            # D. Build row
-            if orphan_count == 0:
-                status = "PASS"
-                details = f"100% integrity ({total_children} rows)"
-            else:
-                success_rate = round(((total_children - orphan_count) / total_children) * 100, 2)
-                status = "FAIL"
-                details = f"{orphan_count} orphans, {success_rate}% integrity"
-
-            rows.append(
-                {
-                    "check": "referential_integrity",
-                    "rule": check_label,
-                    "table": child_name,
-                    "status": status,
-                    "failed_rows": orphan_count,
-                    "total_rows": total_children,
-                    "details": details,
-                }
-            )
-
-    # 4. Output
     if not rows:
         logger.info("No foreign keys found in metadata tables.")
         return pd.DataFrame()
@@ -161,75 +133,57 @@ def sanity_check_referential_integrity(
     return report_df
 
 
-def sanity_check_temporal_consistency(
-    df: pd.DataFrame, table_name: str, origin_col: str, target_col: str
+def sanity_check_contextual_fk_consistency(
+    synthetic_data: dict[str, pd.DataFrame] | pd.DataFrame,
+    metadata: dict,
+    rule_manager: LogicalRuleManager | None = None,
 ) -> pd.DataFrame:
-    """Valida coherencia temporal entre dos columnas tipo fecha.
+    """Validates consistency between a child FK and the FK derivable from its context.
 
-    Verifica que valores en columna de fin no sean anteriores a valores
-    en columna de inicio. Retorna filas con incoherencias detectadas.
+    Detects hierarchical relationships where a child table keeps a
+    ``context key`` to its parent and, additionally, there is an FK that can
+    be reconstructed from that parent. The check compares both values and reports
+    discrepancies with concrete examples of failed rows.
 
     Args:
-        df (pd.DataFrame): DataFrame a validar.
-        table_name (str): Nombre descriptivo de tabla (para reportes).
-        origin_col (str): Nombre columna de fecha inicio.
-        target_col (str): Nombre columna de fecha fin.
+        synthetic_data (dict[str, pd.DataFrame] | pd.DataFrame): Dictionary
+            of synthetic tables or a single DataFrame.
+        metadata (dict): Tabular metadata.
+        rule_manager (LogicalRuleManager | None): Rule manager used to
+            include derived FKs in the check inventory. Defaults to None.
 
     Returns:
-        pd.DataFrame: Filas con incoherencias (vacío si todas correctas).
+        pd.DataFrame: Reporte con columnas [type, check, rule, table, status,
+            failed_rows, total_rows, details]. Empty if not applicable.
 
     Example:
-        >>> failing_rows = sanity_check_temporal_consistency(
-        ...     df, 'procedure', 'start_date', 'end_date'
+        >>> report = sanity_check_contextual_fk_consistency(
+        ...     synthetic_data, metadata, rule_manager
         ... )
-        >>> if not failing.empty:
-        ...     print(f'Encontradas {len(failing)} incoherencias')
+        >>> report[report['status'] == 'FAIL']
     """
-    # Validar que las columnas existen
-    if origin_col not in df.columns or target_col not in df.columns:
-        logger.warning(
-            "Columnas %s o %s no encontradas en %s. Saltando check temporal.",
-            origin_col,
-            target_col,
-            table_name,
-        )
+
+    if isinstance(synthetic_data, pd.DataFrame) or len(synthetic_data) < 2:
+        logger.info("Single DataFrame or insufficient tables provided. No contextual checks.")
         return pd.DataFrame()
 
-    # Convertir a datetime
-    start_dates = pd.to_datetime(df[origin_col], errors="coerce")
-    end_dates = pd.to_datetime(df[target_col], errors="coerce")
+    logger.info("=" * 80)
+    logger.info("%s", f"{'CONTEXTUAL FK CONSISTENCY CHECK':^80}")
+    logger.info("=" * 80)
 
-    inconsistent_mask = start_dates > end_dates
+    rows: list[dict] = []
+    table_pks = _build_table_name_to_pks_mapping(metadata)
 
-    failing_rows = df[inconsistent_mask].copy()
+    for check in _collect_all_contextual_relationships_to_check(metadata, rule_manager):
+        rows.append(_evaluate_single_contextual_fk_check(check, synthetic_data, table_pks))
 
-    if not failing_rows.empty:
-        # Añadimos columnas informativas para ver el error fácilmente
-        failing_rows["error_type"] = "TEMPORAL_INCONSISTENCY"
-        failing_rows["table_origin"] = table_name
-        failing_rows["details"] = (
-            f"Start ({origin_col}): "
-            + failing_rows[origin_col].astype(str)
-            + " > End ({target_col}): "
-            + failing_rows[target_col].astype(str)
-        )
+    if not rows:
+        logger.info("No contextual FK consistency checks inferred.")
+        return pd.DataFrame()
 
-        count = len(failing_rows)
-        total = len(df)
-        logger.warning(
-            "%s: Encontrados %d/%d registros con incoherencia temporal (%s > %s)",
-            table_name,
-            count,
-            total,
-            origin_col,
-            target_col,
-        )
-    else:
-        logger.info(
-            "%s: Coherencia temporal correcta (%s <= %s)",
-            table_name,
-            origin_col,
-            target_col,
-        )
+    report_df = pd.DataFrame(rows)
 
-    return failing_rows
+    logger.info("\n%s", report_df.to_string(index=False))
+    logger.info("=" * 80)
+
+    return report_df

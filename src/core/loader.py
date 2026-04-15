@@ -1,3 +1,11 @@
+"""Data loading abstractions for the synthetic data pipeline.
+
+Defines the ``DataLoader`` abstract interface and a ``FileDataLoader``
+implementation that reads CSV, Excel, and Parquet files (single paths or
+directories) into a ``{table_name: DataFrame}`` dictionary used across the
+inspection, training, and evaluation flows.
+"""
+
 import os
 from abc import ABC, abstractmethod
 
@@ -11,52 +19,51 @@ logger = get_logger(__name__)
 
 
 class DataLoader(ABC):
-    """Interfaz abstracta para cargar datos desde diferentes fuentes.
+    """Abstract interface for loading data from different sources.
 
-    Define el contrato que deben cumplir todas las implementaciones de cargadores
-    de datos, garantizando una entrada estándar al pipeline de procesamiento.
+    Defines the contract that all data loader implementations must follow,
+    guaranteeing a standard input to the processing pipeline.
     """
 
     @abstractmethod
     def load(self, source: str | list[str], **kwargs) -> dict[str, pd.DataFrame]:
-        """Carga datos de una o múltiples fuentes en DataFrames.
+        """Loads data from one or multiple sources into DataFrames.
 
         Args:
-            source (str | list[str]): Ruta(s) a archivo(s) de datos o directorio.
-            **kwargs: Argumentos adicionales específicos de cada implementación.
+            source (str | list[str]): Path(s) to data file(s) or directory.
+            **kwargs: Additional arguments specific to each implementation.
 
         Returns:
-            dict[str, pd.DataFrame]: Diccionario {nombre_tabla: dataframe} donde
-                nombre_tabla se deriva del nombre del archivo.
+            dict[str, pd.DataFrame]: Dictionary {table_name: dataframe} where
+                table_name is derived from the file name.
         """
         pass
 
 
 class FileDataLoader(DataLoader):
-    """Carga datos desde archivos locales (CSV, Excel, Parquet).
+    """Loads data from local files (CSV, Excel, Parquet).
 
-    Soporta múltiples formatos y convierte cada archivo en una tabla dentro
-    de un diccionario de DataFrames, usando el nombre del archivo como clave.
+    Supports multiple formats and converts each file into a table within
+    a dictionary of DataFrames, using the file name as the key.
     """
 
     def load(self, source_paths: str | list[str], **kwargs) -> dict[str, pd.DataFrame]:
-        """Carga uno o múltiples archivos locales en un diccionario de DataFrames.
+        """Loads one or multiple local files into a dictionary of DataFrames.
 
         Args:
-            source_paths (str | list[str]): Ruta a archivo/directorio o lista de rutas.
-            **kwargs: Argumentos opcionales como 'sep' para delimitador CSV personalizado.
+            source_paths (str | list[str]): Path to file/directory or list of paths.
+            **kwargs: Optional arguments such as 'sep' for custom CSV delimiter.
 
         Returns:
-            dict[str, pd.DataFrame]: Diccionario {nombre_tabla: dataframe}.
+            dict[str, pd.DataFrame]: Dictionary {table_name: dataframe}.
 
         Raises:
-            ValueError: Si no se carga ninguna tabla válida.
-            RuntimeError: Si ocurre error al procesar un archivo.
+            ValueError: If no valid table is loaded.
+            RuntimeError: If an error occurs while processing a file.
 
         Example:
             >>> loader = FileDataLoader()
             >>> data = loader.load('data/users.csv')
-            >>> print(data.keys())  # dict_keys(['users'])
         """
         loaded_data = {}
 

@@ -1,73 +1,103 @@
+import json
 import os
+import re
 
 import pandas as pd
 import synthcity.logger as log
-from config.general_config import (
-    DEFAULT_DATA_PATH,
-    SIMULATION_RUN_FOLDER_PREFIX,
-    SIMULATIONS_DIR,
-)
 
 from src.core.logging_config import get_logger
-from src.core.utils import interactive_file_selection
 
 logger = get_logger(__name__)
 
 
-def select_original_files() -> list[str]:
-    """
-    Solicita al usuario un directorio base y permite seleccionar archivos originales.
+def get_id_columns(data: pd.DataFrame, metadata_path: str | None = None) -> list[str]:
+    """Identify ID columns to exclude from evaluation.
 
-    Returns:
-        list[str]: Lista de rutas a los archivos originales seleccionados.
-
-    Raises:
-        None.
-
-    Example:
-        >>> archivos = select_original_files()
-        >>> print(len(archivos))
-        3
-    """
-    user_path = input(
-        f"Directorio base para buscar archivos originales (Enter para '{DEFAULT_DATA_PATH}'): "
-    ).strip()
-    base_dir = user_path if user_path else DEFAULT_DATA_PATH
-    return interactive_file_selection(base_dir)
-
-
-def select_synthetic_files(original_files: list[str]) -> tuple[list[str], str]:
-    """
-    Solicita un directorio base y permite seleccionar el run con datos sinteticos.
+    ID columns are identified by:
+    1. Column names matching patterns like 'id', 'idk', '*_id', 'id_*' (case-insensitive)
+    2. Columns listed as primary keys in metadata.json
+    3. Columns listed as foreign keys in metadata.json
 
     Args:
-        original_files (list[str]): Rutas de los archivos originales.
+        data (pd.DataFrame): Dataset to analyze.
+        metadata_path (str | None): Path to metadata.json. If None, key constraints are not checked.
 
     Returns:
-        tuple[list[str], str]: Lista de rutas a los archivos sinteticos y el
-        directorio del run seleccionado.
-
-    Example:
-        >>> sint, run_dir = select_synthetic_files(["/data/tabla.csv"])
-        >>> print(run_dir)
-        /outputs/simulation/run_20260206_132709
+        list[str]: List of column names to exclude.
     """
-    selected_tables = [os.path.basename(f) for f in original_files]
+    id_columns = []
 
-    user_path = input(
-        f"Directorio base para buscar archivos sintéticos: (Enter para '{SIMULATIONS_DIR}'): "
-    ).strip()
-    base_dir = user_path if user_path else SIMULATIONS_DIR
+    # Pattern matching for ID-like column names
+    id_pattern = re.compile(r"^id|_id$|^idk$|_idk$", re.IGNORECASE)
+    for col in data.columns:
+        if id_pattern.search(col):
+            id_columns.append(col)
+            logger.debug(f"Identified ID column by name pattern: {col}")
 
-    return interactive_result_selection(base_dir, selected_tables)
+    # Load metadata to check for primary/foreign keys
+    if metadata_path and os.path.exists(metadata_path):
+        try:
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+
+            tables = metadata.get("tables", [])
+            for table in tables:
+                # Check primary keys
+                primary_key = table.get("primary_key")
+                if primary_key:
+                    if isinstance(primary_key, str):
+                        if primary_key in data.columns and primary_key not in id_columns:
+                            id_columns.append(primary_key)
+                            logger.debug(f"Identified primary key column: {primary_key}")
+                    elif isinstance(primary_key, list):
+                        for pk in primary_key:
+                            if pk in data.columns and pk not in id_columns:
+                                id_columns.append(pk)
+                                logger.debug(f"Identified primary key column: {pk}")
+
+                # Check foreign keys
+                foreign_keys = table.get("foreign_keys", [])
+                for fk in foreign_keys:
+                    if isinstance(fk, str) and fk in data.columns and fk not in id_columns:
+                        id_columns.append(fk)
+                        logger.debug(f"Identified foreign key column: {fk}")
+                    elif isinstance(fk, dict):
+                        fk_col = fk.get("column")
+                        if fk_col and fk_col in data.columns and fk_col not in id_columns:
+                            id_columns.append(fk_col)
+                            logger.debug(f"Identified foreign key column: {fk_col}")
+
+        except Exception as e:
+            logger.warning(f"Failed to load metadata from {metadata_path}: {e}")
+
+    return id_columns
 
 
-def setup_synthcity_environment(run_directory: str):
-    """
-    Configura Synthcity para usar el directorio del run para logs y cache.
+def filter_id_columns(data: pd.DataFrame, metadata_path: str | None = None) -> pd.DataFrame:
+    """Remove ID columns from dataset.
 
     Args:
-        run_directory (str): Ruta del directorio del run.
+        data (pd.DataFrame): Dataset to filter.
+        metadata_path (str | None): Path to metadata.json file.
+
+    Returns:
+        pd.DataFrame: Dataset with ID columns removed.
+    """
+    id_columns = get_id_columns(data, metadata_path)
+    if id_columns:
+        logger.info(f"Removing ID columns from evaluation: {id_columns}")
+        data = data.drop(columns=id_columns, errors="ignore")
+    return data
+
+
+def setup_synthcity_environment(run_directory: str) -> None:
+    """Configure Synthcity to use the run directory for logs and cache.
+
+    Args:
+        run_directory (str): Run directory path.
+
+    Returns:
+        None: Function configures process environment in place.
 
     Example:
         >>> setup_synthcity_environment("/outputs/simulation/run_20260206_132709")
@@ -79,16 +109,15 @@ def setup_synthcity_environment(run_directory: str):
 def align_datasets_structure_and_types(
     data_original: dict[str, pd.DataFrame], data_synthetic: dict[str, pd.DataFrame]
 ) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
-    """
-    Alinea nombres de tablas, interseca columnas y homogeneiza tipos de datos.
+    """Align table names, intersect columns, and homogenize data types.
 
     Args:
-        data_original (dict[str, pd.DataFrame]): Tablas originales.
-        data_synthetic (dict[str, pd.DataFrame]): Tablas sinteticas.
+        data_original (dict[str, pd.DataFrame]): Original tables.
+        data_synthetic (dict[str, pd.DataFrame]): Synthetic tables.
 
     Returns:
-        tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]: Diccionarios
-        alineados de datos originales y sinteticos.
+        tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]: Aligned dictionaries
+            for original and synthetic data.
 
     Example:
         >>> orig, synth = align_datasets_structure_and_types({"t": df1}, {"t": df2})
@@ -135,75 +164,3 @@ def align_datasets_structure_and_types(
                 aligned_synthetic[table][col] = aligned_synthetic[table][col].astype(str)
 
     return aligned_original, aligned_synthetic
-
-
-def interactive_result_selection(
-    base_directory: str, real_table_names: list
-) -> tuple[list[str], str]:
-    """
-    Busca simulaciones con versiones sinteticas de las tablas y permite seleccionar uno.
-
-    Args:
-        base_directory (str): Directorio donde buscar carpetas 'simulation_'.
-        real_table_names (list): Nombres de las tablas reales a buscar.
-    Returns:
-        tuple[list[str], str]: Lista de rutas de tablas sinteticas y el
-        directorio del run. Si falla, devuelve ([], "").
-
-    Example:
-        >>> files, run_dir = interactive_result_selection("/outputs/simulation", ["t.csv"])
-        >>> print(files)
-        ['/outputs/simulation/run_20260206_132709/synthetic_dataset/t_synthetic.csv']
-    """
-    valid_runs = []
-
-    if not os.path.exists(base_directory):
-        print(f"Error: Directory '{base_directory}' does not exist.")
-        return [], ""
-
-    for run_folder in os.listdir(base_directory):
-        run_path = os.path.join(base_directory, run_folder)
-
-        if os.path.isdir(run_path) and run_folder.startswith(SIMULATION_RUN_FOLDER_PREFIX + "_"):
-            synthetic_dir = os.path.join(run_path, "synthetic_data")
-
-            if os.path.isdir(synthetic_dir):
-                run_files = []
-                all_tables_found = True
-
-                for table_full_name in real_table_names:
-                    name, ext = os.path.splitext(table_full_name)
-
-                    potential_file = f"{name}_synthetic{ext}"
-                    full_path = os.path.join(synthetic_dir, potential_file)
-
-                    if os.path.exists(full_path):
-                        run_files.append(full_path)
-                    else:
-                        all_tables_found = False
-                        break
-
-                if all_tables_found:
-                    valid_runs.append({"run_name": run_folder, "files": run_files})
-
-    if not valid_runs:
-        print(f"No se encontraron simulations que contengan todas las tablas: {real_table_names}")
-        return [], ""
-
-    print(f"\nRuns encontrados con las tablas {real_table_names}:")
-    for i, run_info in enumerate(valid_runs):
-        print(f"  [{i}] {run_info['run_name']}")
-
-    seleccion = input("\nSelecciona el índice del run a cargar: ").strip()
-
-    try:
-        idx = int(seleccion)
-        if 0 <= idx < len(valid_runs):
-            selected_run = valid_runs[idx]
-            run_directory = os.path.join(base_directory, selected_run["run_name"])
-            return selected_run["files"], run_directory
-    except (ValueError, IndexError):
-        pass
-
-    print("Selección no válida.")
-    return [], ""

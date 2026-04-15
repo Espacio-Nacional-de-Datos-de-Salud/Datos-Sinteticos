@@ -2,26 +2,29 @@ from typing import Any
 
 import pandas as pd
 
+from src.core.logging_config import get_logger
 from src.core.utils import ModelEncodingType, auto_detect_encoding_type
+
+logger = get_logger(__name__)
 
 
 class MetadataExtractor:
-    """Extrae metadatos estructurales de un conjunto de tablas relacionales.
+    """Extracts structural metadata from a set of relational tables.
 
-    Analiza datos para detectar hechos estructurales como relaciones entre tablas
-    (claves primarias y foráneas) y tipos de codificación de columnas mediante
-    heurísticas de nomenclatura y análisis de valores, sin acoplarse a ningún
-    formato de salida específico.
+    Analyzes data to detect structural facts such as table relationships
+    (primary and foreign keys) and column encoding types through
+    naming heuristics and value analysis, without coupling to any
+    specific output format.
 
     Args:
-        data (dict[str, pd.DataFrame]): Diccionario de tablas crudas con estructura
-            {nombre_tabla: dataframe}.
+        data (dict[str, pd.DataFrame]): Dictionary of raw tables with structure
+            {table_name: dataframe}.
 
     Attributes:
-        data (dict[str, pd.DataFrame]): Las tablas crudas almacenadas.
+        data (dict[str, pd.DataFrame]): Stored raw tables.
 
     Raises:
-        ValueError: Si `data` es None o está vacío.
+        ValueError: If `data` is None or empty.
 
     Example:
         >>> data = {'users': users_df, 'orders': orders_df}
@@ -31,91 +34,25 @@ class MetadataExtractor:
     """
 
     def __init__(self, data: dict[str, pd.DataFrame]) -> None:
-        """Inicializa el extractor de metadatos con un conjunto de tablas.
+        """Initializes the metadata extractor with a set of tables.
 
         Args:
-            data (dict[str, pd.DataFrame]): Diccionario con tablas crudas
-                {nombre_tabla: dataframe}.
+            data (dict[str, pd.DataFrame]): Dictionary with raw tables
+                {table_name: dataframe}.
         """
         self.data = data
 
-    def extract_relationships(self) -> dict[str, Any]:
-        """Detecta claves primarias y relaciones foráneas entre tablas.
+    def extract_primary_keys(self) -> dict[str, str]:
+        """Identifies primary keys in each table using heuristics.
 
-        Ejecuta dos pasos secuenciales: primero detecta claves primarias (PKs)
-        en cada tabla, luego usa esas PKs para identificar posibles claves foráneas
-        (FKs) en otras tablas. Utiliza heurísticas de nomenclatura y validación
-        de integridad referencial para evitar falsos positivos.
-
-        Returns:
-            dict[str, Any]: Diccionario con dos claves:
-                - 'pks': dict[str, str] mapeo {nombre_tabla: columna_pk}
-                - 'fks': list[dict] relaciones detectadas con estructura:
-                    {
-                        'parent': str nombre tabla padre,
-                        'child': str nombre tabla hija,
-                        'fk_column': str columna FK en tabla hija,
-                        'pk_column': str columna PK en tabla padre
-                    }
-
-        Example:
-            >>> extractor = MetadataExtractor(data)
-            >>> result = extractor.extract_relationships()
-            >>> print(result['pks'])  # {'users': 'id', 'orders': 'order_id'}
-            >>> print(result['fks'])  # [{'parent': 'users', 'child': 'orders', ...}]
-        """
-        print("--- Detecting relationships ---")
-        pks = self._detect_pks()
-        fks = self._detect_fks(pks)
-        return {"pks": pks, "fks": fks}
-
-    def extract_encoding_types(
-        self, pks: dict[str, str] | None = None
-    ) -> dict[str, dict[str, Any]]:
-        """Detecta tipos de codificación para cada columna de cada tabla.
-
-        Analiza el contenido de cada columna para clasificarla según su tipo de
-        codificación (numérica, categórica, etc.) usando heurísticas basadas en
-        tipos de datos y análisis de valores. Si se proporcionan las PKs, las excluye
-        del análisis detallado para optimizar la detección.
-
-        Args:
-            pks (dict[str, str] | None, optional): Mapeo de claves primarias
-                {nombre_tabla: columna_pk}. Si es None, se analiza cada columna
-                independientemente. Defaults to None.
+        Applies two sequential strategies: first it searches columns with
+        typical PK names (id, {table}_id, etc.), and if no match is found,
+        it analyzes all columns to find those with unique values
+        without null values. Prints warnings for tables with no detected PK.
 
         Returns:
-            dict[str, dict[str, Any]]: Mapeo jerárquico
-                {nombre_tabla: {nombre_columna: tipo_codificacion, ...}, ...}
-                donde tipo_codificacion es un ModelEncodingType.
-
-        Example:
-            >>> extractor = MetadataExtractor(data)
-            >>> pks = {'users': 'user_id'}
-            >>> types = extractor.extract_encoding_types(pks)
-            >>> print(types['users']['age'])  # ModelEncodingType.tabular_numeric_auto
-        """
-        print("--- Detecting encoding types ---")
-        types_map = {}
-        for name, df in self.data.items():
-            # If we know the PK, we avoid analyzing it as a categorical
-            table_pk = pks.get(name) if pks else None
-            types_map[name] = self._detect_table_types(df, table_pk)
-        return types_map
-
-    # --- Internal Detection Logic ---
-
-    def _detect_pks(self) -> dict[str, str]:
-        """Identifica claves primarias en cada tabla mediante heurísticas.
-
-        Aplica dos estrategias secuenciales: primero busca columnas con nombres
-        típicos de PKs (id, {tabla}_id, etc.), y si no encuentra coincidencia,
-        analiza todas las columnas para encontrar las que tengan valores únicos
-        sin valores nulos. Imprime advertencias para tablas sin PK detectada.
-
-        Returns:
-            dict[str, str]: Mapeo {nombre_tabla: columna_pk}. Omite tablas
-                donde no se detectó PK.
+            dict[str, str]: Mapping {table_name: pk_column}. Skips tables
+                where no PK was detected.
         """
         pks = {}
         for name, df in self.data.items():
@@ -140,29 +77,29 @@ class MetadataExtractor:
             if pk:
                 pks[name] = pk
             else:
-                print(f"   [!] No se pudo inferir PK para la tabla '{name}'")
+                logger.error(f"   [!] No se pudo inferir PK para la tabla '{name}'")
         return pks
 
-    def _detect_fks(self, pks: dict[str, str]) -> list[dict[str, str]]:
-        """Detecta relaciones de claves foráneas entre tablas.
+    def extract_foreign_keys(self, pks: dict[str, str]) -> list[dict[str, str]]:
+        """Detects foreign-key relationships between tables.
 
-        Para cada tabla padre (identificada por su PK), busca candidatos de
-        claves foráneas en otras tablas usando heurísticas de nombres. Valida
-        cada candidato mediante chequeo de integridad referencial antes de
-        incluirlo en las relaciones detectadas. Imprime resultados (✅) y
-        descartes (⚠️) en consola durante el proceso.
+        For each parent table (identified by its PK), it searches foreign-key
+        candidates in other tables using naming heuristics. It validates
+        each candidate through a referential-integrity check before
+        including it in detected relationships. Prints results (✅) and
+        discards (⚠️) to console during the process.
 
         Args:
-            pks (dict[str, str]): Mapeo de claves primarias detectadas
-                {nombre_tabla: columna_pk}.
+            pks (dict[str, str]): Mapping of detected primary keys
+                {table_name: pk_column}.
 
         Returns:
-            list[dict[str, str]]: Lista de relaciones validadas, cada una con:
+            list[dict[str, str]]: List of validated relationships, each with:
                 {
-                    'parent': str nombre tabla padre,
-                    'child': str nombre tabla hija,
-                    'fk_column': str nombre columna FK en tabla hija,
-                    'pk_column': str nombre columna PK en tabla padre
+                    'parent': str parent table name,
+                    'child': str child table name,
+                    'fk_column': str FK column name in child table,
+                    'pk_column': str PK column name in parent table
                 }
         """
         relationships = []
@@ -195,29 +132,66 @@ class MetadataExtractor:
                                 "pk_column": pk,  # Storing this helps downstream tools
                             }
                         )
-                        print(f"✅ Relación: {child_name}.{candidate_fk} -> {parent_name}.{pk}")
+                        logger.info(
+                            f"✅ Relación: {child_name}.{candidate_fk} -> {parent_name}.{pk}"
+                        )
                     else:
-                        print(
+                        logger.warning(
                             f"⚠️ Descartada: {child_name}.{candidate_fk} -> {parent_name}.{pk} ({reason})"
                         )
         return relationships
 
-    def _detect_table_types(self, df: pd.DataFrame, pk_col: str | None = None) -> dict[str, Any]:
-        """Detecta tipos de codificación para cada columna de una tabla.
+    def extract_encoding_types(
+        self, pks: dict[str, str] | None = None
+    ) -> dict[str, dict[str, Any]]:
+        """Detects encoding types for each column of each table.
 
-        Clasifica cada columna como numérica o categórica mediante análisis inicial,
-        luego aplica heurísticas avanzadas a columnas categóricas (excepto la PK)
-        para identificar tipos específicos como texto, fecha, etc. Excluye la PK
-        del análisis detallado por eficiencia.
+        Analyzes each column's content to classify it by encoding type
+        (numeric, categorical, etc.) using heuristics based on
+        data types and value analysis. If PKs are provided, it excludes them
+        from detailed analysis to optimize detection.
+
+        Args:
+            pks (dict[str, str] | None, optional): Mapping of primary keys
+                {table_name: pk_column}. If None, each column is analyzed
+                independently. Defaults to None.
+
+        Returns:
+            dict[str, dict[str, Any]]: Hierarchical mapping
+                {table_name: {column_name: encoding_type, ...}, ...}
+                where encoding_type is a ModelEncodingType.
+
+        Example:
+            >>> extractor = MetadataExtractor(data)
+            >>> pks = {'users': 'user_id'}
+            >>> types = extractor.extract_encoding_types(pks)
+        """
+        logger.info("--- Detecting encoding types ---")
+        types_map = {}
+        for name, df in self.data.items():
+            # If we know the PK, we avoid analyzing it as a categorical
+            table_pk = pks.get(name) if pks else None
+            types_map[name] = self._detect_table_types(df, table_pk)
+        return types_map
+
+    # --- Internal Detection Logic ---
+
+    def _detect_table_types(self, df: pd.DataFrame, pk_col: str | None = None) -> dict[str, Any]:
+        """Detects encoding types for each column in a table.
+
+        Classifies each column as numeric or categorical through initial analysis,
+        then applies advanced heuristics to categorical columns (except the PK)
+        to identify specific types such as text, date, etc. Excludes the PK
+        from detailed analysis for efficiency.
 
         Args:
             df (pd.DataFrame): DataFrame de la tabla a analizar.
-            pk_col (str | None, optional): Nombre de la columna PK a excluir
-                del análisis detallado. Defaults to None.
+            pk_col (str | None, optional): Name of the PK column to exclude
+                from detailed analysis. Defaults to None.
 
         Returns:
-            dict[str, Any]: Mapeo {nombre_columna: ModelEncodingType} para
-                cada columna de la tabla.
+            dict[str, Any]: Mapping {column_name: ModelEncodingType} for
+                each table column.
         """
         col_types = {}
         for col in df.columns:
@@ -241,26 +215,26 @@ class MetadataExtractor:
         child_df: pd.DataFrame,
         fk_col: str,
     ) -> tuple[bool, str]:
-        """Valida la integridad de una potencial relación de clave foránea.
+        """Validates the integrity of a potential foreign-key relationship.
 
-        Realiza tres validaciones: compatibilidad de tipos de datos entre PK y FK,
-        chequeo de huérfanos (valores FK sin correspondencia en PK), y cálculo de
-        tasa de integridad referencial. Una relación es válida si los tipos son
-        compatibles y el porcentaje de huérfanos no excede el 10%.
+        Performs three validations: data type compatibility between PK and FK,
+        orphan check (FK values with no PK match), and referential-integrity
+        rate calculation. A relationship is valid if types are
+        compatible and the orphan percentage does not exceed 10%.
 
         Args:
-            parent_df (pd.DataFrame): DataFrame de la tabla padre.
-            pk_col (str): Nombre de la columna PK en tabla padre.
-            child_df (pd.DataFrame): DataFrame de la tabla hija.
-            fk_col (str): Nombre de la columna FK en tabla hija.
+            parent_df (pd.DataFrame): DataFrame of the parent table.
+            pk_col (str): Name of the PK column in the parent table.
+            child_df (pd.DataFrame): DataFrame of the child table.
+            fk_col (str): Name of the FK column in the child table.
 
         Returns:
-            tuple[bool, str]: Tupla (es_válida, mensaje) donde:
-                - bool: True si la relación es válida, False en caso contrario.
-                - str: Descripción del resultado o razón del rechazo.
+            tuple[bool, str]: Tuple (is_valid, message) where:
+                - bool: True if the relationship is valid, False otherwise.
+                - str: Result description or rejection reason.
 
         Raises:
-            KeyError: Si pk_col no existe en parent_df o fk_col no existe en child_df.
+            KeyError: If pk_col does not exist in parent_df or fk_col does not exist in child_df.
         """
         if parent_df[pk_col].dtype.kind != child_df[fk_col].dtype.kind:
             return False, "Tipos incompatibles"

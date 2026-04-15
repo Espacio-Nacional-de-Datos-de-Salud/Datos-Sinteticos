@@ -19,3 +19,4 @@ pytest
 setuptools<82.0.0
 
 pandas
+ruff

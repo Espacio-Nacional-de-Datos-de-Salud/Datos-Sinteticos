@@ -16,25 +16,23 @@ if ([string]::IsNullOrWhiteSpace($cmd)) {
 
 # 2. HANDLE SCRIPT MODE (Mapping shorthand to actual Python flags)
 switch ($cmd) {
-    "train" {
+    "t" {
         $venv = ".venv_core"
         $module = "src.main"
-        # We explicitly map 'train' to '--mode train'
-        $mappedArgs = @("--mode", "t")
+        $mode = "t"
     }
-    "sim" {
+    "s" {
         $venv = ".venv_core"
         $module = "src.main"
-        # We explicitly map 'sim' to '--mode simulation'
-        $mappedArgs = @("--mode", "s")
+        $mode = "s"
     }
-    "eval" {
+    "e" {
         $venv = ".venv_eval"
         $module = "src.eval"
-        $mappedArgs = @()
+        $mode = $null
     }
     Default {
-        Write-Host "Usage: .\scripts\run.ps1 {train|sim|eval}" -ForegroundColor Yellow
+        Write-Host "Usage: .\scripts\run.ps1 {t|s|e}" -ForegroundColor Yellow
         Write-Host "Or run without arguments for the Interactive Assistant." -ForegroundColor Cyan
         exit
     }
@@ -48,5 +46,11 @@ if (!(Test-Path $pythonPath)) {
 }
 
 Write-Host "--- Running $cmd mode ---" -ForegroundColor Cyan
-# This executes: python -m src.main --mode train [other_args]
-& $pythonPath -m $module $mappedArgs $remainingArgs
+
+if ($module -eq "src.main" -and $null -ne $mode) {
+    $configPath = "config\execution_config.py"
+    (Get-Content $configPath -Raw) -replace 'EXECUTION_MODE:\s*str\s*=\s*".*"', "EXECUTION_MODE: str = `"$mode`"" | Set-Content $configPath
+    & $pythonPath -m $module
+} else {
+    & $pythonPath -m $module $remainingArgs
+}

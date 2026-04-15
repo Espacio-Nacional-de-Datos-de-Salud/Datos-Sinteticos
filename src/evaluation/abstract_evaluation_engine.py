@@ -5,10 +5,10 @@ import pandas as pd
 
 class AbstractEvaluationEngine(ABC):
     def __init__(self, eval_results_dir: str | None):
-        """Inicializa el motor de evaluación abstracto.
+        """Initializes the abstract evaluation engine.
 
         Args:
-            eval_results_dir (str | None): Directorio donde se guardarán los resultados de evaluación.
+            eval_results_dir (str | None): Directory where evaluation results will be saved.
         """
         self.eval_results_dir = eval_results_dir
 
@@ -19,22 +19,29 @@ class AbstractEvaluationEngine(ABC):
         synthetic_data_dict: dict[str, pd.DataFrame],
         target_column: str | None = None,
         task_type: str = "classification",
+        model_id: str | None = None,
+        simulation_id: str | None = None,
+        metadata_path: str | None = None,
     ) -> pd.DataFrame:
-        """Interfaz estándar para todos los motores de evaluación.
+        """Standard interface for all evaluation engines.
 
-        Ejecuta métricas de evaluación en los datos reales y sintéticos proporcionados.
+        Runs evaluation metrics on the provided real and synthetic data.
 
         Args:
-            real_data_dict (dict[str, pd.DataFrame]): Diccionario con datos reales donde las claves
-                son nombres de tablas y los valores son DataFrames.
-            synthetic_data_dict (dict[str, pd.DataFrame]): Diccionario con datos sintéticos donde las
-                claves son nombres de tablas y los valores son DataFrames.
-            target_column (str | None): Nombre de la columna objetivo para métricas de desempeño.
-                Por defecto es None.
-            task_type (str): Tipo de tarea de aprendizaje automático. Por defecto es 'classification'.
+            real_data_dict (dict[str, pd.DataFrame]): Dictionary with real data where keys
+                are table names and values are DataFrames.
+            synthetic_data_dict (dict[str, pd.DataFrame]): Dictionary with synthetic data where
+                keys are table names and values are DataFrames.
+            target_column (str | None): Name of the target column for performance metrics.
+                Default is None.
+            task_type (str): Type of machine learning task. Default is 'classification'.
+            model_id (str | None): Optional model ID for lineage tracking.
+            simulation_id (str | None): Optional simulation ID for result association.
+            metadata_path (str | None): Path to the metadata.json file to identify ID columns.
+                Default is None.
 
         Returns:
-            pd.DataFrame: DataFrame con métricas como índice o filas.
+            pd.DataFrame: DataFrame with metrics as index or rows.
 
         Example:
             >>> eval_engine = EvaluationEngine(eval_results_dir='eval_results/')
@@ -42,8 +49,8 @@ class AbstractEvaluationEngine(ABC):
             ...     real_data_dict=real_data,
             ...     synthetic_data_dict=synthetic_data,
             ...     target_column='target',
-            ...     task_type='classification'
+            ...     task_type='classification',
+            ...     metadata_path='path/to/metadata.json'
             ... )
-            >>> print(report)
         """
         pass
