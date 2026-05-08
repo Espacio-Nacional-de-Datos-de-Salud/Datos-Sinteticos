@@ -1,18 +1,21 @@
 services:
   backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: synthetic-data-backend
+    command: sh -c "python -m backend.src.services.configs bootstrap && uvicorn backend.src.api.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
       - MLFLOW_TRACKING_URI=http://mlflow:5000
     volumes:
-      - outputs:/app/outputs
-      - ./data:/app/data
-      - ./config:/app/config
-      - ./mlruns:/app/mlruns
-      - ./mlflow.db:/app/mlflow.db
+      - outputs:/app/backend/outputs
+      - ./backend/data:/app/backend/data
+      - ./backend/config:/app/backend/config
+      - ./backend/mlruns:/app/backend/mlruns
+      - ./backend/mlflow.db:/app/backend/mlflow.db
     depends_on:
       - mlflow
 
@@ -21,36 +24,27 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./mlflow.db:/mlflow/mlflow.db
-      - ./mlruns:/mlflow/mlruns
+      - ./backend/mlflow.db:/mlflow/mlflow.db
+      - ./backend/mlruns:/mlflow/mlruns
     command: >
-      mlflow server 
-      --host 0.0.0.0 
-      --port 5000
-      --allowed-hosts "*"
-#      --default-artifact-root /mlflow/mlruns 
+      mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts "*"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: synthetic-data-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - WATCHPACK_POLLING=true
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
 
 volumes:
-    outputs:
-  # ============================================================================
-  # FRONTEND SERVICE (COMMENTED OUT - TO BE IMPLEMENTED IN FUTURE)
-  # ============================================================================
-  # Uncomment and configure this section when ready to integrate frontend service
-  #
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #   container_name: synthetic-data-frontend
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - REACT_APP_API_URL=http://backend:5000
-  #   volumes:
-  #     - ./frontend/src:/app/src
-  #   networks:
-  #     - sagemaker
-  #   depends_on:
-  #     - backend
-  #
-  # ============================================================================
+  outputs:

@@ -1,0 +1,6 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Editable runtime config. Managed by the application (UI / API / `make config`).
+# Edits here are persistent until the config is reset to its example template.
+# ─────────────────────────────────────────────────────────────────────────────
+
+rules: []

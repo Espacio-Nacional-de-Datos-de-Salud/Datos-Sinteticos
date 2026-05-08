@@ -1,0 +1,94 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Editable runtime config. Managed by the application (UI / API / `make config`).
+# Edits here are persistent until the config is reset to its example template.
+# ─────────────────────────────────────────────────────────────────────────────
+
+execution:
+  drop_id_columns_from_metrics: true  # detects and drops id / primary-foreign keys
+
+metrics:
+  default:
+    custom:
+      - dcr
+      - nndr
+      - correlation_matrix_distance
+      - confidence_interval_overlap
+      - average_complementary_tvd
+    sanity:
+      - common_rows_proportion
+    stats:
+      - jensenshannon_dist
+      - inv_kl_divergence
+    performance:
+      - linear_model
+      - mlp
+    detection:
+      - detection_mlp
+    privacy:
+      - k-anonymization
+      # - distinct l-diversity
+      # - DomiasMIA_BNAF  # Membership inference attack - VERY HEAVY
+
+  # Subsets of quasi-identifiers for k-anonymity. If null, uses all pairwise combinations.
+  quasi_identifier_subsets: null
+  sensitive_columns: null
+
+  confidence_interval_level: 0.95
+  num_bootstrap_samples: 10000
+  average_complementary_tvd_n_bins: 10
+
+  tstr:
+    target_column: "expire_flag"
+    task_type: "classification"
+
+# ============================================================================
+# STATISTICS
+# ============================================================================
+# Built-in operations: mean, median, mode, variance, skewness, kurtosis,
+# range, quantile. All get bootstrap 95% CIs.
+#
+# Formula-based: operation "custom_formula" with formula key; use {col} as
+# placeholder. Supported: np, pd, min, max, sum, mean, std, var.
+#
+# Custom statistics: require CUSTOM_STATISTICS_MODULE env var pointing at a
+# module of Statistic subclasses (e.g.
+# src.evaluation.custom_metrics.custom_statistics).
+statistics:
+  - operation: "mean"
+    table: "dataset_prueba_tecnica_v2"
+    col: "gender"
+
+  - operation: "median"
+    table: "dataset_prueba_tecnica_v2"
+    col: "gender"
+
+  - operation: "mode"
+    table: "dataset_prueba_tecnica_v2"
+    col: "gender"
+
+  - operation: "variance"
+    table: "dataset_prueba_tecnica_v2"
+    col: "gender"
+
+  - operation: "skewness"
+    table: "dataset_prueba_tecnica_v2"
+    col: "gender"
+
+  - operation: "kurtosis"
+    table: "dataset_prueba_tecnica_v2"
+    col: "gender"
+
+  - operation: "quantile"
+    table: "dataset_prueba_tecnica_v2"
+    col: "gender"
+    quantile: 0.25
+
+  - operation: "quantile"
+    table: "dataset_prueba_tecnica_v2"
+    col: "gender"
+    quantile: 0.75
+
+  - operation: "age"
+    table: "dataset_prueba_tecnica_v2"
+    convert_to_categorical: False
+    columns: {"col": "dob", "col2": "admittime"}

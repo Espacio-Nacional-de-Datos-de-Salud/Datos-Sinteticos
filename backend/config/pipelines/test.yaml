@@ -1,0 +1,97 @@
+jobs:
+  - name: combo__train_inspection_id-inspection-20260507-161918__max_epochs-1
+    config:
+      mostly_ai:
+        model_settings:
+          max_epochs: 1
+    train:
+      inspection_id: inspection_20260507_152447
+    simulate:
+      sample_size: 1000
+      synthetic_data_file_format: csv
+    evaluate:
+      real_data: []
+  - name: combo__train_inspection_id-inspection-20260507-161918__max_epochs-2
+    config:
+      mostly_ai:
+        model_settings:
+          max_epochs: 2
+    train:
+      inspection_id: inspection_20260507_152447
+    simulate:
+      sample_size: 1000
+      synthetic_data_file_format: csv
+    evaluate:
+      real_data: []
+  - name: combo__train_inspection_id-inspection-20260507-152447__max_epochs-1
+    config:
+      mostly_ai:
+        model_settings:
+          max_epochs: 1
+    train:
+      inspection_id: inspection_20260507_152447
+    simulate:
+      sample_size: 1000
+      synthetic_data_file_format: csv
+    evaluate:
+      real_data: []
+  - name: combo__train_inspection_id-inspection-20260507-152447__max_epochs-2
+    config:
+      mostly_ai:
+        model_settings:
+          max_epochs: 2
+    train:
+      inspection_id: inspection_20260507_152447
+    simulate:
+      sample_size: 1000
+      synthetic_data_file_format: csv
+    evaluate:
+      real_data: []
+  - name: combo__train_inspection_id-inspection-20260507-102904__max_epochs-1
+    config:
+      mostly_ai:
+        model_settings:
+          max_epochs: 1
+    train:
+      inspection_id: inspection_20260507_102904
+    simulate:
+      sample_size: 1000
+      synthetic_data_file_format: csv
+    evaluate:
+      real_data: []
+  - name: combo__train_inspection_id-inspection-20260507-102904__max_epochs-2
+    config:
+      mostly_ai:
+        model_settings:
+          max_epochs: 2
+    train:
+      inspection_id: inspection_20260507_102904
+    simulate:
+      sample_size: 1000
+      synthetic_data_file_format: csv
+    evaluate:
+      real_data: []
+  - name: combo__train_inspection_id-inspection-20260506-225122__max_epochs-1
+    config:
+      mostly_ai:
+        model_settings:
+          max_epochs: 1
+    train:
+      inspection_id: inspection_20260506_225122
+    simulate:
+      sample_size: 1000
+      synthetic_data_file_format: csv
+    evaluate:
+      real_data: []
+  - name: combo__train_inspection_id-inspection-20260506-225122__max_epochs-2
+    config:
+      mostly_ai:
+        model_settings:
+          max_epochs: 2
+    train:
+      inspection_id: inspection_20260506_225122
+    simulate:
+      sample_size: 1000
+      synthetic_data_file_format: csv
+    evaluate:
+      real_data: []

@@ -5,7 +5,7 @@
 Run multiple synthetic-data jobs in sequence from a single YAML file.
 
 ```bash
-python -m src.pipeline --config config/pipelines/my_pipeline.yaml
+python -m src.pipeline --config backend/config/pipelines/my_pipeline.yaml
 ```
 
 ## How It Works
@@ -59,16 +59,19 @@ outputs/
 ├── pipelines/
 │   └── pipeline_20260311_143000/
 │       ├── session.log              # combined log of all jobs
-│       └── pipeline_summary.json    # references to every job's outputs
+│       └── pipeline_card.json    # references to every job's outputs
 ├── models/
 │   ├── model_20260311_143001/       # job 1 training artifacts
 │   └── model_20260311_143200/       # job 2 training artifacts
-└── simulations/
-    ├── simulation_20260311_143001/   # job 1 simulation artifacts
-    └── simulation_20260311_143200/   # job 2 simulation artifacts
+├── simulations/
+│   ├── simulation_20260311_143001/   # job 1 simulation artifacts
+│   └── simulation_20260311_143200/   # job 2 simulation artifacts
+└── evaluations/
+    ├── evaluation_20260311_143001/   # job 1 evaluation artifacts
+    └── evaluation_20260311_143200/   # job 2 evaluation artifacts
 ```
 
-- **`pipeline_summary.json`** links each job name to its `model_id` and
+- **`pipeline_card.json`** links each job name to its `model_id` and
   `simulation_id` so you can trace which output came from which job.
 - **`session.log`** captures the combined log of every job in the pipeline.
 - Individual model/simulation folders contain the same artifacts as standalone
@@ -78,6 +81,26 @@ outputs/
 Every model card and sim card includes a `pipeline_id` field so you can filter
 MLflow runs that belong to the same pipeline execution.
 
+### Pipeline Card Lifecycle
+
+The card is rewritten after every job finishes, so the on-disk state always
+reflects which jobs have already produced artifacts — even if the process
+is killed mid-pipeline. Each job entry includes its own `status`
+(`completed` if it produced a model or simulation, `failed` otherwise),
+and the top-level `status` field can take four values:
+
+| Status | Meaning |
+| :--- | :--- |
+| `in_progress` | The tracker is still open, or the process crashed without closing it. |
+| `completed` | Exited cleanly and every job finished with `status == "completed"`. |
+| `partial` | At least one job produced artifacts and at least one did not (either another job failed or the pipeline was interrupted after some jobs had already succeeded). |
+| `failed` | No job produced any artifact. |
+
+This distinction matters for cleanup (see below): only `failed` pipelines
+are considered disposable — `partial` runs keep valuable artifacts and
+are preserved.
+
+
 ## Full Example
 
 ```yaml
@@ -85,7 +108,7 @@ jobs:
   # Train + simulate with custom rules and Mostly AI hyperparameters
   - name: "high_privacy_dataset"
     config:
-      rules_config: "config/pipelines/rules/rules_pipeline_job1.yaml"
+      rules_config: "backend/config/pipelines/rules/rules_pipeline_job1.yaml"
       mostly_ai:
         model_settings:
           max_epochs: 500
@@ -125,16 +148,16 @@ jobs:
 
 Each job can optionally include a `config` section to override global settings
 **only for that job**. When omitted, the job uses the defaults from
-`config/general_config.py` and `config/mostly_ai_config.yaml`.
+`backend/config/general.yaml` and `backend/config/mostly_ai.yaml`.
 
 ### `rules_config`
 
-Path to a job-specific rules YAML (same format as `config/rules.yaml`).
-Defaults to the global `RULES_CONFIG_PATH`.
+Path to a job-specific rules YAML (same format as `backend/config/rules.yaml`).
+Defaults to the active `rules` config.
 
 ### `mostly_ai`
 
-Deep-merge overrides applied on top of `config/mostly_ai_config.yaml`. Only
+Deep-merge overrides applied on top of `backend/config/mostly_ai.yaml`. Only
 the keys you specify are changed; everything else keeps its default.
 
 ```yaml
@@ -173,7 +196,7 @@ venv_eval/bin/pip install -r requirements_evaluation.txt
 
 ```bash
 export EVAL_PYTHON_PATH=/path/to/venv_eval/bin/python
-python -m src.pipeline --config config/pipelines/my_pipeline.yaml
+python -m src.pipeline --config backend/config/pipelines/my_pipeline.yaml
 ```
 
 When `EVAL_PYTHON_PATH` is set, the pipeline launches `python -m src.evaluation`

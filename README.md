@@ -13,22 +13,27 @@ This repository's documentation is divided into three main areas: Setup, Core Co
 
 ---
 
+## 0. Before starting
+
+- **[Onboarding Guide](docs/setup/onboarding.md)**: Mental model of the repo: entry points, config cascade, venv split, and first steps.
+- **[AWS SageMaker Setup](docs/setup/sagemaker.md)**: Guide to create your SageMaker user profile, use Code Editor with SSH from local VS Code, and optimize cost/storage usage.
+
 ## 1. Setup
 
 This block covers how to install the tool, set up your development environment, and configure the project parameters for your basic runs.
 
-- **[Onboarding Guide](docs/onboarding.md)**: Mental model of the repo: entry points, config cascade, venv split, and first steps.
-- **[Setup & Execution](docs/setup_and_config/setup_and_execution.md)**: Setup scripts, virtual environments, `config/` reference, and the recommended end-to-end run flow (inspect → train → simulate → evaluate).
-- **[Repository Guidelines](docs/repository_guidelines.md)**: This document is vital. It establishes the coding standards, repository structure, and development protocols.
+- **[Setup](docs/setup/setup.md)**: Setup scripts, virtual environments, `config/` reference, and quickly lift the frontend and backend.
+- **[Execution Details](docs/setup/execution.md)**: Run the tool with more fine-grained control, using the CLI and the recommended end-to-end run flow (inspect → train → simulate → evaluate), or lifting the API and frontend separately.
 
 ---
 
-## 2. Core Concepts
+## 2. Concepts
 
-This section explains the inner components, capabilities, and workflows related to various parts of the synthetic data framework.
+- **[Repository Guidelines](docs/setup/repository_guidelines.md)**: This document is vital. It establishes the coding standards, repository structure, and development protocols.
 
 ### 2.1 Preprocessing
 - **[Logical Rules](docs/concepts/logical_rules.md)**: Details on enforcing date inequalities, numeric constraints, and semantic consistency.
+- **[OMOP Data](docs/concepts/omop.md)**: Definition of model, issues that we face, recommended preprocessing.
 
 ### 2.2 Training
 - **[Pipelines](docs/concepts/pipelines.md)**: Explanation of the core training and generation pipelines.
@@ -46,8 +51,10 @@ This section explains the inner components, capabilities, and workflows related 
 
 ## 3. Deployment
 
+- **[API](docs/deployment/api.md)**: Explanation for our REST API.
+- **[Frontend](docs/deployment/frontend.md)**: Explanation for our frontend, from the basic concepts to its execution.
 - **[Docker Setup](docs/deployment/docker.md)**: Instructions for building and running images/containers.
-- **[API](docs/deployment/api.md)**: Placeholder for our upcoming programmatic REST API capabilities.
+- **[Testing Guide](docs/setup/testing.md)**: How and why to use tests to ensure all endpoints work as expected with a single command.
 
 ---
 

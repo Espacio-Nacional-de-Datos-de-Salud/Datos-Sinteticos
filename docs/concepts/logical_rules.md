@@ -254,6 +254,67 @@ rules:
     aux_col: "bounded_dob"
 ```
 
+### 5.2 Derived Columns — `DateToAgeRule`, `NumericThresholdRule`, `NumericBucketRule`
+
+Derived columns are computed in PRE (so they are part of training metadata) and
+recomputed in POST to guarantee consistency. These rules do not remove source
+columns by default; they only add or overwrite the derived target column.
+
+Optional behavior:
+- `drop_origin: true` removes the source column after PRE. In this mode the
+  source column is not reconstructed in POST, and the derived column is not
+  recomputed if the source column is missing.
+
+#### 5.2.1 Date to Age — `DateToAgeRule`
+Derives an integer age in years from a date column and either a fixed reference date
+or a per-row reference date column.
+
+```yaml
+rules:
+  - type: "date_to_age"
+    table_origin: "patients"
+    origin_col: "dob"
+    table_target: "patients"
+    target_col: "age"
+    reference_date: "2026-04-24"
+    drop_origin: true
+
+  - type: "date_to_age"
+    table_origin: "visits"
+    origin_col: "dob"
+    table_target: "visits"
+    target_col: "age_at_visit"
+    reference_date_col: "visit_date"
+```
+
+#### 5.2.2 Numeric Threshold — `NumericThresholdRule`
+Derives a boolean-like column from a numeric threshold.
+
+```yaml
+rules:
+  - type: "numeric_threshold"
+    table_origin: "patients"
+    origin_col: "age"
+    table_target: "patients"
+    target_col: "is_adult"
+    threshold: 18
+    operator: ">="
+```
+
+#### 5.2.3 Numeric Buckets — `NumericBucketRule`
+Derives a categorical column by bucketing numeric values.
+
+```yaml
+rules:
+  - type: "numeric_bucket"
+    table_origin: "patients"
+    origin_col: "age"
+    table_target: "patients"
+    target_col: "age_group"
+    bins: [0, 18, 65, 120]
+    labels: ["minor", "adult", "senior"]
+```
+
 The third example uses a **constant constraint** instead of `origin_col`.
 
 ```mermaid
@@ -467,17 +528,25 @@ This rule is used to reconstruct **redundant foreign keys** (FKs) ensuring struc
 #### 5.4.1 Problem
 In relational or health database schemas (like OMOP), it is common for a "child" table to contain multiple references (FKs) to its direct and indirect ancestors. For example, a `condition_occurrence` table may have a `visit_occurrence_id` (direct context) and a `person_id` (indirect context, which also belongs to the visit). If we let the model try to guess both, it will break the referential structure (it will assign a visit of patient A, but randomly generate that the `person_id` is B).
 
+MostlyAI allows for the definition of one relation as the `context` key. This relation is prioritized over the others. In order to allow for future developments with other synthetic data SDKs, we have additionally chosen to implement a `direct` value, which defines relations between tables as essential. This prioritizes this relation and ensures it will be maintained during processing steps, allowing other relations to build off of it.
+
 #### 5.4.2 Solution
 The rule removes redundancy during training and restores it deterministically from the parent table after generation.
+It has currently been tested for context depths of up to 3.
 
 PRE:
-1. Remove the redundant foreign key `target_col`.
+1. Programatically determine context and direct keys
+    This has been successful in our testing. Uses a greedy algorithm. Ranks relations by access to the most other relations. We then make these FKs `anchors`, and the most connected one the context key. This way we try to make the context key the link to the most logically important table, and we maintain all other necessary columns be setting their relations to direct. Through these anchors, we can access all other tables and we allow for relations to pass through multiple levels.
+2. ForeignKeysConsistencyRules are automatically created for these relations
+3. (*Optional*) After inspection user can choose to change context and direct keys. Inferred rules are updated.
+4. Before training, Remove the redundant foreign key `target_col`.
    *(Ex: remove `person_id` from the diagnosis table, leaving only `visit_occurrence_id`)*
 
 POST:
 1. Obtain the parent table joined via `relationships`.
 2. Reconstruct the `target_col` of the child table by copying it from the source_col of the parent.
    *(Ex: `diagnosis.person_id = visit.person_id`)*
+3. Delete the other columns that have been added by the join. Ensure that we maintain columns that are required by other rules.
 
 SANITY CHECK:
 - Returns `FAIL` (CONTEXT_FK_INCONSISTENCY) if `child.target_col != parent.source_col`.

@@ -1,80 +1,197 @@
-.PHONY: help setup inspect train simulate eval pipeline format lint models simulations inspections clean
+.PHONY: help setup config clean-config reset-config local cli inspect train simulate eval pipeline format lint ty test test-eval coverage models simulations inspections evaluations pipelines api frontend compose clean
 
 SHELL := /bin/bash
-.ONESHELL:
 
 DEFAULT_GOAL := help
 
-CONFIG ?= config/pipelines/my_pipeline.yaml
-EXEC_CONFIG := config/execution_config.py
+CONFIG ?= backend/config/pipelines/my_pipeline.yaml
+GENERAL_CONFIG ?= backend/config/general.yaml
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+	DOCKER_COMPOSE = docker-compose
+else
+	DOCKER_COMPOSE = docker compose
+endif
 
-CORE_PYTHON := .venv_core/bin/python
-EVAL_PYTHON := .venv_eval/bin/python
+
+API_HOST ?= 0.0.0.0
+API_PORT ?= 8000
+FRONTEND_PORT ?= 3000
+FRONTEND_DIR := frontend
+NODE_MIN_VERSION ?= 20.9.0
+NODE_VERSION ?= 20
+NVM_VERSION ?= v0.40.3
+NVM_DIR ?= $(HOME)/.nvm
+
+CORE_PYTHON := $(CURDIR)/.venv_core/bin/python
+EVAL_PYTHON := $(CURDIR)/.venv_eval/bin/python
 RUFF := $(CORE_PYTHON) -m ruff
+TY := $(CORE_PYTHON) -m ty
+
+# SageMaker instances tend to have weaker single-thread CPU than dev laptops,
+# which dominates Next.js dev compile time. Detect via the resource-metadata
+# file that only exists inside SageMaker, and drop source maps in dev there
+# (errors point to bundled output instead of original source — acceptable
+# tradeoff for the speedup). No-op on Mac/WSL/local Linux.
+NEXT_DEV_FLAGS := $(shell [ -f /opt/ml/metadata/resource-metadata.json ] && echo "--disable-source-maps" || echo "")
 
 define set_mode
-$(CORE_PYTHON) -c "import re, pathlib; p = pathlib.Path('$(EXEC_CONFIG)'); p.write_text(re.sub(r'EXECUTION_MODE:\s*str\s*=\s*\".*\"', 'EXECUTION_MODE: str = \"$(1)\"', p.read_text()))"
+$(CORE_PYTHON) -c "from pathlib import Path; import sys, yaml; path = Path('$(GENERAL_CONFIG)');\
+path.exists() or sys.exit(f'Missing {path}. Run make config first.');\
+data = yaml.safe_load(path.read_text()) or {};\
+data.setdefault('execution', {})['mode'] = '$(1)';\
+path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=False))"
+endef
+
+
+define frontend_env
+if command -v node >/dev/null 2>&1 && node -e "const [maj, min, patch] = process.versions.node.split('.').map(Number); const [reqMaj, reqMin, reqPatch] = '$(NODE_MIN_VERSION)'.split('.').map(Number); process.exit(maj > reqMaj || (maj === reqMaj && (min > reqMin || (min === reqMin && patch >= reqPatch))) ? 0 : 1)"; then \
+	echo "Using Node.js $$(node -p 'process.versions.node')"; \
+else \
+	echo "Node.js >= $(NODE_MIN_VERSION) is required for the frontend."; \
+	if [ ! -s "$(NVM_DIR)/nvm.sh" ]; then \
+		echo "Installing nvm $(NVM_VERSION)..."; \
+		curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$(NVM_VERSION)/install.sh | bash; \
+	fi; \
+	. "$(NVM_DIR)/nvm.sh"; \
+	echo "Installing Node.js $(NODE_VERSION) via nvm..."; \
+	nvm install $(NODE_VERSION); \
+	nvm use $(NODE_VERSION); \
+	nvm alias default $(NODE_VERSION) >/dev/null; \
+fi; \
+$(1)
 endef
 
 help:
 	@printf "Available targets:\n"
+	@printf "\nSetup:\n"
 	@printf "  make setup        Install uv, Python 3.12.3, and both virtual environments\n"
+	@printf "  make config       Create real backend/config/*.yaml files from *.example.yaml templates (non-destructive)\n"
+	@printf "  make clean-config Delete every real backend/config/*.yaml (keeps *.example.yaml templates)\n"
+	@printf "\nExecution (backend):\n"
+	@printf "  make cli          Open the interactive backend CLI wizard\n"
 	@printf "  make inspect      Run inspection mode (MODE=i): load+autodetect, persist session for review\n"
-	@printf "  make train        Run training mode (MODE=t); set INSPECTION_ID in execution_config to train from an inspection\n"
+	@printf "  make train        Run training mode (MODE=t); set execution.inspection_id in backend/config/general.yaml to train from an inspection\n"
 	@printf "  make simulate     Run simulation mode (MODE=s)\n"
 	@printf "  make eval         Run evaluation mode (MODE=e)\n"
 	@printf "  make pipeline     Run the full pipeline mode (MODE=p, CONFIG=path/to.yaml)\n"
-	@printf "  make format       Format Python code with ruff\n"
-	@printf "  make lint         Run ruff check\n"
+	@printf "\nCatalogs:\n"
 	@printf "  make inspections  List available inspection sessions\n"
 	@printf "  make models       List available trained models\n"
 	@printf "  make simulations  List available simulations\n"
-	@printf "  make clean        Remove common local build caches\n"
+	@printf "  make evaluations  List available evaluations\n"
+	@printf "  make pipelines    List available pipeline configurations\n"
+	@printf "\nServices:\n"
+	@printf "  make api          Start backend API locally (uvicorn, API_PORT=%s)\n" "$(API_PORT)"
+	@printf "  make frontend     Start frontend locally (auto-installs deps if missing)\n"
+	@printf "  make local        Start backend + frontend together in one terminal\n"
+	@printf "\nDocker / Compose:\n"
+	@printf "  make compose      Build and start compose services (foreground)\n"
+	@printf "\nDev:\n"
+	@printf "  make clean        Remove generated run artifacts and local caches\n"
+	@printf "  make format       Format Python code with ruff\n"
+	@printf "  make lint         Run ruff check\n"
+	@printf "  make ty           Run type checking with Ty\n"
+	@printf "  make test         Run all tests with pytest (excludes tests/eval/)\n"
+	@printf "  make test-eval    Run evaluation tests under .venv_eval\n"
+	@printf "  make coverage     Run tests with coverage report (HTML in htmlcov/)\n"
 
 setup:
-	@echo "Checking for uv..."
-	command -v uv >/dev/null 2>&1 || { echo "Installing uv..."; curl -kLsSf https://astral.sh/uv/install.sh | sh; source "$$HOME/.local/bin/env"; }
-	uv python install 3.12.3
-	echo "Building core environment (.venv_core)..."
-	uv venv .venv_core --python 3.12.3
-	uv pip install -r requirements_core.txt --python .venv_core/bin/python
-	echo "Building evaluation environment (.venv_eval)..."
-	uv venv .venv_eval --python 3.12.3
-	uv pip install -r requirements_evaluation.txt --python .venv_eval/bin/python
+	@export PATH="$$HOME/.local/bin:$$PATH"; \
+	echo "Checking for uv..."; \
+	command -v uv >/dev/null 2>&1 || { echo "Installing uv..."; curl -kLsSf https://astral.sh/uv/install.sh | sh; }; \
+	uv python install 3.12.3; \
+	echo "Building core environment (.venv_core)..."; \
+	if [ ! -x .venv_core/bin/python ]; then rm -rf .venv_core; uv venv .venv_core --python 3.12.3; fi; \
+	uv pip install -r backend/requirements_core.txt --python .venv_core/bin/python; \
+	echo "Building evaluation environment (.venv_eval)..."; \
+	if [ ! -x .venv_eval/bin/python ]; then rm -rf .venv_eval; uv venv .venv_eval --python 3.12.3; fi; \
+	uv pip install -r backend/requirements_evaluation.txt --python .venv_eval/bin/python
+	@echo "Installing frontend dependencies..."
+	@$(call frontend_env,cd $(FRONTEND_DIR) && if [ -f package-lock.json ]; then npm ci; else npm install; fi)
+	@echo "Creating configuration files..."
+	$(CORE_PYTHON) -m backend.src.services.configs bootstrap
 	@echo "Setup complete."
+
+config:
+	$(CORE_PYTHON) -m backend.src.services.configs bootstrap
+
+clean-config:
+	$(CORE_PYTHON) -m backend.src.services.configs clean
+
+cli:
+	$(CORE_PYTHON) -m backend.src.cli
 
 inspect:
 	$(call set_mode,i)
-	$(CORE_PYTHON) -m src.main
+	$(CORE_PYTHON) -m backend.src.cli --mode i
 
 train:
 	$(call set_mode,t)
-	$(CORE_PYTHON) -m src.main
+	$(CORE_PYTHON) -m backend.src.cli --mode t
 
 simulate:
 	$(call set_mode,s)
-	$(CORE_PYTHON) -m src.main
+	$(CORE_PYTHON) -m backend.src.cli --mode s
 
 eval:
-	$(EVAL_PYTHON) -m src.evaluation
+	$(EVAL_PYTHON) -m backend.src.evaluation
 
 pipeline:
-	$(CORE_PYTHON) -m src.pipeline --config $(CONFIG)
+	$(CORE_PYTHON) -m backend.src.pipeline --config $(CONFIG)
 
 format:
-	$(RUFF) format .
+	cd backend && $(RUFF) format .
 
 lint:
-	$(RUFF) check .
+	cd backend && $(RUFF) check .
 
-models:
-	$(CORE_PYTHON) -m src.core.list_available_models --format table
+ty:
+	cd backend && $(TY) check .
 
-simulations:
-	$(CORE_PYTHON) -m src.core.list_available_simulations --format table
+test:
+	$(CORE_PYTHON) -m pytest tests/ --ignore=tests/eval
+
+test-eval:
+	$(EVAL_PYTHON) -m pytest tests/eval/
+
+coverage:
+	rm -f .coverage
+	$(CORE_PYTHON) -m pytest tests/ --ignore=tests/eval \
+		--cov=backend/src --cov-report= --cov-append
+	$(EVAL_PYTHON) -m pytest tests/eval/ \
+		--cov=backend/src --cov-report=term-missing \
+		--cov-report=html:htmlcov --cov-append
+	@echo "HTML report: htmlcov/index.html"
 
 inspections:
-	$(CORE_PYTHON) -m src.core.list_available_inspections --format table
+	$(CORE_PYTHON) -m backend.src.core.catalog.inspections --format table
+
+models:
+	$(CORE_PYTHON) -m backend.src.core.catalog.models --format table
+
+simulations:
+	$(CORE_PYTHON) -m backend.src.core.catalog.simulations --format table
+
+evaluations:
+	$(CORE_PYTHON) -m backend.src.core.catalog.evaluations --format table
+
+pipelines:
+	$(CORE_PYTHON) -m backend.src.core.catalog.pipelines --format table
+
+api:
+	$(CORE_PYTHON) -m uvicorn backend.src.api.main:app --reload --host $(API_HOST) --port $(API_PORT)
+
+frontend:
+	@$(call frontend_env,cd $(FRONTEND_DIR) && if [ ! -d node_modules ]; then echo "node_modules not found; installing frontend dependencies..."; if [ -f package-lock.json ]; then npm ci; else npm install; fi; fi && NEXT_PUBLIC_API_URL=/api API_PROXY_TARGET=http://localhost:$(API_PORT) NEXT_PUBLIC_ALLOW_SERVER_FILES=true npm run dev -- --port $(FRONTEND_PORT) $(NEXT_DEV_FLAGS))
+
+local:
+	@$(CORE_PYTHON) -m uvicorn backend.src.api.main:app --reload --host $(API_HOST) --port $(API_PORT) & API_PID=$$!; trap 'kill $$API_PID' EXIT INT TERM; $(call frontend_env,cd $(FRONTEND_DIR) && if [ ! -d node_modules ]; then echo "node_modules not found; installing frontend dependencies..."; if [ -f package-lock.json ]; then npm ci; else npm install; fi; fi && NEXT_PUBLIC_API_URL=/api API_PROXY_TARGET=http://localhost:$(API_PORT) NEXT_PUBLIC_ALLOW_SERVER_FILES=true npm run dev -- --port $(FRONTEND_PORT) $(NEXT_DEV_FLAGS))
+
+compose:
+	$(DOCKER_COMPOSE) up --build
 
 clean:
-	find . -type d -name '__pycache__' -prune -exec rm -rf {} + && rm -rf .ruff_cache .pytest_cache
+	$(CORE_PYTHON) -m backend.src.core.catalog.cleanup
+	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+	rm -rf .ruff_cache .pytest_cache backend/.ruff_cache backend/.pytest_cache

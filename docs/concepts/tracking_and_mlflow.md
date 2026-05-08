@@ -32,7 +32,7 @@ When training, a folder named `model_YYYYMMDD_HHMMSS` (exact date and time) is c
 | `model_card.json` | Model identifier, date, a digital fingerprint (SHA-256) of each input data file, and model-level Mostly AI statistics computed from an internal sample sized to the training data |
 | `metadata.json` | Description of the tables and columns used |
 | `generator.zip` | The trained model, ready to generate data |
-| `rule_manager.pkl` | The logical rules applied during training |
+| `rule_manager.json` | The logical rules applied during training |
 | `train.log` | The complete record of everything that happened during training |
 | `configs/` | An exact copy of all configuration files used |
 

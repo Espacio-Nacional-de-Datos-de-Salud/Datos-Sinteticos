@@ -155,7 +155,7 @@ If you pass a specific `batch_size` (like `12` in your config), it is used direc
 
 ## 7. Privacy Configuration
 
-Privacy settings in `mostly_ai_config.yaml` operate in two independent layers: **Value Protection** (on by default) and **Differential Privacy** (opt-in). They differ in where they act: value protection shapes the data before and after training; differential privacy modifies the training process itself by injecting noise into gradients.
+Privacy settings in `mostly_ai.yaml` operate in two independent layers: **Value Protection** (on by default) and **Differential Privacy** (opt-in). They differ in where they act: value protection shapes the data before and after training; differential privacy modifies the training process itself by injecting noise into gradients.
 
 ### Layer 1 — Value Protection
 

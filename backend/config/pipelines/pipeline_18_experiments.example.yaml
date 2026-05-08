@@ -1,0 +1,476 @@
+# =============================================================================
+# Pipeline: First systematic experiment — model size, DP, and training settings
+#
+# IMPORTANT: max_training_time is in MINUTES (not seconds!).
+#            The engine converts it to seconds internally.
+#            Early stopping (patience=4 epochs) usually triggers first.
+#
+# Hyperparameter axes explored:
+#   - model:                     MOSTLY_AI/Small / Medium / Large
+#   - differential_privacy:      none / epsilon=50 (light) / epsilon=10 (medium) / epsilon=5 (strict)
+#   - enable_flexible_generation: True (default) / False (better accuracy, no conditional gen)
+#   - max_training_time:         20 / 40 / 60 / 90 minutes (per table complexity)
+#
+# Time budget:
+#   - Single table:   20 min
+#   - 2-table:        40 min
+#   - 3-table:        60 min
+#   - 5-table:        90 min
+#
+# Structure:
+#   Block A (jobs 1-9):   prueba_tecnica_v2 — full hyperparameter sweep
+#   Block B (jobs 10-13): person + visit_occurrence — representative 2-table
+#   Block C (jobs 14-16): 3-table clinical pathway
+#   Block D (jobs 17-18): 5-table heavy
+#
+# Run with:
+#   python -m src.pipeline --config config/pipeline_50_experiments.yaml
+# =============================================================================
+
+jobs:
+
+  # ===========================================================================
+  #  BLOCK A — prueba_tecnica_v2: full hyperparameter sweep  (jobs 1-9)
+  #  All use batch_size=null (auto) and max_epochs=1000 (early stopping governs)
+  # ===========================================================================
+
+  # Job 1: Small model, no DP, flexible generation ON (fast baseline)
+  # - name: "test"
+  #   config:
+  #     mostly_ai:
+  #       model_settings:
+  #         max_training_time: 2
+  #         model: "MOSTLY_AI/Small"
+  #   train:
+  #     files:
+  #       - "data/synthea100k-processed/person.parquet"
+  #   simulate:
+  #     sample_size: 50000
+  #   evaluate:
+  #     real_data:
+  #       - "data/synthea100k-processed/person.parquet"
+
+  # - name: "prueba_small_nodp_flex"
+  #   config:
+  #     mostly_ai:
+  #       model_settings:
+  #         max_training_time: 20
+  #         max_epochs: 1000
+  #         batch_size: null
+  #         model: "MOSTLY_AI/Small"
+  #         enable_flexible_generation: true
+  #   train:
+  #     files:
+  #       - "data/dataset_prueba_tecnica_v2.csv"
+  #   simulate:
+  #     sample_size: 50000
+  #   evaluate:
+  #     real_data:
+  #       - "data/dataset_prueba_tecnica_v2.csv"
+
+  # # Job 2: Medium model, no DP, flexible generation ON (engine default baseline)
+  # - name: "prueba_medium_nodp_flex"
+  #   config:
+  #     mostly_ai:
+  #       model_settings:
+  #         max_training_time: 20
+  #         max_epochs: 1000
+  #         batch_size: null
+  #         model: "MOSTLY_AI/Medium"
+  #         enable_flexible_generation: true
+  #   train:
+  #     files:
+  #       - "data/dataset_prueba_tecnica_v2.csv"
+  #   simulate:
+  #     sample_size: 50000
+  #   evaluate:
+  #     real_data:
+  #       - "data/dataset_prueba_tecnica_v2.csv"
+
+  # # Job 3: Large model, no DP, flexible generation ON
+  # - name: "prueba_large_nodp_flex"
+  #   config:
+  #     mostly_ai:
+  #       model_settings:
+  #         max_training_time: 20
+  #         max_epochs: 1000
+  #         batch_size: null
+  #         model: "MOSTLY_AI/Large"
+  #         enable_flexible_generation: true
+  #   train:
+  #     files:
+  #       - "data/dataset_prueba_tecnica_v2.csv"
+  #   simulate:
+  #     sample_size: 50000
+  #   evaluate:
+  #     real_data:
+  #       - "data/dataset_prueba_tecnica_v2.csv"
+
+  # Job 4: Medium model, no DP, flexible generation OFF (fixed column order — better accuracy)
+  - name: "prueba_medium_nodp_noflex"
+    config:
+      mostly_ai:
+        model_settings:
+          max_training_time: 20
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Medium"
+          enable_flexible_generation: false
+    train:
+      files:
+        - "data/dataset_prueba_tecnica_v2.csv"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+
+  # Job 5: Large model, no DP, flexible generation OFF (best quality target)
+  - name: "prueba_large_nodp_noflex"
+    config:
+      mostly_ai:
+        model_settings:
+          max_training_time: 90
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Large"
+          enable_flexible_generation: false
+    train:
+      files:
+        - "data/dataset_prueba_tecnica_v2.csv"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+
+  # Job 6: Medium model, DP epsilon=50 (light privacy — minimal quality impact)
+  - name: "prueba_medium_dp_eps50"
+    config:
+      mostly_ai:
+        model_settings:
+          max_training_time: 20
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Medium"
+          enable_flexible_generation: true
+          differential_privacy:
+            max_epsilon: 50
+            noise_multiplier: 1.0
+    train:
+      files:
+        - "data/dataset_prueba_tecnica_v2.csv"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+
+  # Job 7: Medium model, DP epsilon=10 (medium privacy)
+  - name: "prueba_medium_dp_eps10"
+    config:
+      mostly_ai:
+        model_settings:
+          max_training_time: 20
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Medium"
+          enable_flexible_generation: true
+          differential_privacy:
+            max_epsilon: 10
+            noise_multiplier: 2.0
+    train:
+      files:
+        - "data/dataset_prueba_tecnica_v2.csv"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+
+  # Job 8: Medium model, DP epsilon=5 (strict privacy — highest noise)
+  - name: "prueba_medium_dp_eps5"
+    config:
+      mostly_ai:
+        model_settings:
+          max_training_time: 20
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Medium"
+          enable_flexible_generation: true
+          differential_privacy:
+            max_epsilon: 5
+            noise_multiplier: 3.0
+    train:
+      files:
+        - "data/dataset_prueba_tecnica_v2.csv"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+
+  # Job 9: Large model, DP epsilon=10 (medium privacy + larger capacity)
+  - name: "prueba_large_dp_eps10"
+    config:
+      mostly_ai:
+        model_settings:
+          max_training_time: 20
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Large"
+          enable_flexible_generation: true
+          differential_privacy:
+            max_epsilon: 10
+            noise_multiplier: 2.0
+    train:
+      files:
+        - "data/dataset_prueba_tecnica_v2.csv"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+
+
+  # ===========================================================================
+  #  BLOCK B — person + visit_occurrence: 2-table  (jobs 10-13)
+  # ===========================================================================
+
+  # Job 10: Medium model, no DP — 2-table baseline
+  - name: "pair_person_visit_medium_nodp"
+    config:
+      rules_config: "config/rules_person_visit.yaml"
+      mostly_ai:
+        model_settings:
+          max_training_time: 40
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Medium"
+          enable_flexible_generation: true
+    train:
+      files:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+
+  # Job 11: Large model, no DP
+  - name: "pair_person_visit_large_nodp"
+    config:
+      rules_config: "config/rules_person_visit.yaml"
+      mostly_ai:
+        model_settings:
+          max_training_time: 40
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Large"
+          enable_flexible_generation: false
+    train:
+      files:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+
+  # Job 12: Medium model, DP epsilon=10
+  - name: "pair_person_visit_medium_dp_eps10"
+    config:
+      rules_config: "config/rules_person_visit.yaml"
+      mostly_ai:
+        model_settings:
+          max_training_time: 40
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Medium"
+          enable_flexible_generation: true
+          differential_privacy:
+            max_epsilon: 10
+            noise_multiplier: 2.0
+    train:
+      files:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+
+  # Job 13: Large model, DP epsilon=5 (strict privacy + large capacity)
+  - name: "pair_person_visit_large_dp_eps5"
+    config:
+      rules_config: "config/rules_person_visit.yaml"
+      mostly_ai:
+        model_settings:
+          max_training_time: 40
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Large"
+          enable_flexible_generation: true
+          differential_privacy:
+            max_epsilon: 5
+            noise_multiplier: 3.0
+    train:
+      files:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+
+
+  # ===========================================================================
+  #  BLOCK C — 3-table clinical pathway  (jobs 14-16)
+  # ===========================================================================
+
+  # Job 14: Medium model, no DP — 3-table baseline
+  - name: "triple_person_visit_condition_medium_nodp"
+    config:
+      rules_config: "config/rules_clinical_dates.yaml"
+      mostly_ai:
+        model_settings:
+          max_training_time: 60
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Medium"
+          enable_flexible_generation: true
+    train:
+      files:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+        - "data/synthea100k-processed/condition_occurrence.parquet"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+        - "data/synthea100k-processed/condition_occurrence.parquet"
+
+  # Job 15: Large model, no DP, no flexible gen (best quality target)
+  - name: "triple_person_visit_condition_large_nodp"
+    config:
+      rules_config: "config/rules_clinical_dates.yaml"
+      mostly_ai:
+        model_settings:
+          max_training_time: 60
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Large"
+          enable_flexible_generation: false
+    train:
+      files:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+        - "data/synthea100k-processed/condition_occurrence.parquet"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+        - "data/synthea100k-processed/condition_occurrence.parquet"
+
+  # Job 16: Medium model, DP epsilon=10 — privacy-preserving 3-table
+  - name: "triple_person_visit_condition_medium_dp_eps10"
+    config:
+      rules_config: "config/rules_clinical_dates.yaml"
+      mostly_ai:
+        model_settings:
+          max_training_time: 60
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Medium"
+          enable_flexible_generation: true
+          differential_privacy:
+            max_epsilon: 10
+            noise_multiplier: 2.0
+    train:
+      files:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+        - "data/synthea100k-processed/condition_occurrence.parquet"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+        - "data/synthea100k-processed/condition_occurrence.parquet"
+
+
+  # ===========================================================================
+  #  BLOCK D — 5-table heavy clinical  (jobs 17-18)
+  # ===========================================================================
+
+  # Job 17: Medium model, no DP — 5-table baseline
+  - name: "heavy_clinical_core_medium_nodp"
+    config:
+      rules_config: "config/rules_full_clinical.yaml"
+      mostly_ai:
+        model_settings:
+          max_training_time: 90
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Medium"
+          enable_flexible_generation: true
+    train:
+      files:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+        - "data/synthea100k-processed/condition_occurrence.parquet"
+        - "data/synthea100k-processed/drug_exposure.parquet"
+        - "data/synthea100k-processed/measurement.parquet"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+        - "data/synthea100k-processed/condition_occurrence.parquet"
+        - "data/synthea100k-processed/drug_exposure.parquet"
+        - "data/synthea100k-processed/measurement.parquet"
+
+  # Job 18: Large model, DP epsilon=10 — privacy-preserving 5-table
+  - name: "heavy_clinical_core_large_dp_eps10"
+    config:
+      rules_config: "config/rules_full_clinical.yaml"
+      mostly_ai:
+        model_settings:
+          max_training_time: 90
+          max_epochs: 1000
+          batch_size: null
+          model: "MOSTLY_AI/Large"
+          enable_flexible_generation: true
+          differential_privacy:
+            max_epsilon: 10
+            noise_multiplier: 2.0
+    train:
+      files:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+        - "data/synthea100k-processed/condition_occurrence.parquet"
+        - "data/synthea100k-processed/drug_exposure.parquet"
+        - "data/synthea100k-processed/measurement.parquet"
+    simulate:
+      sample_size: 50000
+    evaluate:
+      real_data:
+        - "data/synthea100k-processed/person.parquet"
+        - "data/synthea100k-processed/visit_occurrence.parquet"
+        - "data/synthea100k-processed/condition_occurrence.parquet"
+        - "data/synthea100k-processed/drug_exposure.parquet"
+        - "data/synthea100k-processed/measurement.parquet"

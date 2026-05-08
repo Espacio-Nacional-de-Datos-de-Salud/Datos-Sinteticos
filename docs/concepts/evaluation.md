@@ -4,7 +4,7 @@
 
 ## Introduction
 
-The evaluation system compares real and synthetic datasets by combining
+Evaluation is an independent step that compares real and synthetic datasets by combining
 **synthcity metrics**, **project-specific custom metrics**, and
 **bootstrap-based statistics**.
 
@@ -48,12 +48,16 @@ src/evaluation/
 ├── custom_metrics/                      # Custom metric classes + custom statistics
 └── utils.py                             # Utility functions
 
-config/
-├── evaluation/
-│   ├── evaluation_config.py             # Evaluation parameters & logic
-│   └── statistics.yaml                  # Statistics configuration
-├── general_config.py                    # Global system paths & tracking
-└── ...
+backend/
+├── config/
+│   ├── evaluation.yaml                  # Metrics + statistics list (YAML values, gitignored)
+│   ├── general.yaml                     # Runtime settings + execution params (gitignored)
+│   ├── *.example.yaml                   # Committed templates copied by `make config`
+│   └── ...
+└── src/config/
+    ├── evaluation.py                    # YAML loader + env-driven resolvers
+    ├── general.py                       # Paths, MLflow/SageMaker wiring, logging
+    └── execution.py                     # ExecutionConfig dataclass + loader
 ```
 
 ### File Descriptions
@@ -67,9 +71,9 @@ config/
 | **_custom_metrics.py** | Runs project metric classes and appends their rows to the synthcity report | `run_custom_metrics()` |
 | **custom_metrics/** | Implements custom evaluation metrics and custom statistic extensions | `DCR`, `NNDR`, `CorrelationMatrixDistance`, `ConfidenceIntervalOverlap`, `AverageComplementaryTVD`, `KAnonymity`, `LDiversityPyCanon`, `CUSTOM_STATISTIC_MAP` |
 | **statistics.py** | Implements built-in statistics with bootstrap CI | `Statistic` (ABC), `create_statistic()`, `statistic_map` |
-| **config/evaluation/evaluation_config.py** | Evaluation parameters, defaults, and Python path resolution | `EVAL_DEFAULT_METRICS`, `CONFIDENCE_INTERVAL_LEVEL`, `NUM_BOOTSTRAP_SAMPLES`, `EVAL_PYTHON_PATH` |
-| **config/evaluation/statistics.yaml** | Configuration of which statistics to calculate on which columns | YAML statistical definitions |
-| **config/general_config.py** | Global system parameters, output paths, and tracking namespaces | `PROJECT_ROOT`, `MODELS_DIR`, `MLFLOW_TRACKING_URI` |
+| **backend/src/config/evaluation.py** | Loads `evaluation.yaml` and resolves env-driven settings | `EVAL_DEFAULT_METRICS`, `CONFIDENCE_INTERVAL_LEVEL`, `NUM_BOOTSTRAP_SAMPLES`, `EVAL_PYTHON_PATH` |
+| **backend/config/evaluation.yaml** | Metrics configuration + list of which statistics to calculate on which columns (committed template at `evaluation.example.yaml`) | `metrics.*`, `statistics:` |
+| **backend/src/config/general.py** | Global system parameters, output paths, and tracking namespaces | `PROJECT_ROOT`, `MODELS_DIR`, `MLFLOW_TRACKING_URI` |
 
 ---
 

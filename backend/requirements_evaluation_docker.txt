@@ -1,0 +1,48 @@
+# Docker-specific eval requirements.
+#
+# synthcity==0.2.12 is installed separately with --no-deps (see Dockerfile) to
+# avoid the decaf-synthetic-data -> torchtext dependency which has no aarch64
+# wheel for torchtext>=0.10. All other synthcity deps are listed here.
+#
+# For local development use requirements_evaluation.txt instead.
+
+# Base (same as requirements_evaluation.txt minus synthcity)
+mlflow
+sagemaker-mlflow
+numpy==1.26.4
+opacus==1.4.1
+torch==2.2.2
+torchaudio==2.2.2
+torchvision==0.17.2
+tsai==0.4.0
+uvicorn
+ydata-profiling
+setuptools<82.0.0
+pycanon
+protobuf<=3.20.3
+
+# Synthcity transitive deps (excluding decaf-synthetic-data and torchtext)
+arfpy
+be-great
+cloudpickle
+fastai==2.7.19
+fastcore==1.7.29
+fflows
+geomloss
+importlib-metadata
+lifelines
+loguru
+monai
+networkx==2.8.8
+nflows
+optuna
+pgmpy==0.1.26
+pycox
+pykeops
+redis
+scikit-learn
+scipy
+shap
+tenacity
+xgboost
+xgbse

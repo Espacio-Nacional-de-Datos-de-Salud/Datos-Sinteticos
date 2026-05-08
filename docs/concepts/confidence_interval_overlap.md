@@ -58,7 +58,7 @@ The CIO metric is divided into two layers:
 
 ```mermaid
 graph TD
-    A["YAML Config<br/>(statistics.yaml)"] --> B["create_statistic<br/>(Factory)"]
+    A["YAML Config<br/>(evaluation.yaml → statistics:)"] --> B["create_statistic<br/>(Factory)"]
     B --> C{"What type?"}
     C -->|Built-in| D["MeanStatistic<br/>VarianceStatistic<br/>etc."]
     C -->|FormulaStatistic| E["Safe evaluation<br/>with whitelist"]
@@ -88,7 +88,7 @@ graph TD
 | **kurtosis** | Excess kurtosis | Measures tails (heavy/light) | Tail behavior |
 | **quantile** | Generic percentiles | $Q_p$ : value at percentile p | Specific points (e.g., Q1, Q3) |
 
-### 2.2 Configuration in `statistics.yaml`
+### 2.2 Configuration in `evaluation.yaml` (`statistics:` key)
 
 Each statistic requires:
 - `operation`: name of the statistic.
@@ -152,8 +152,8 @@ In our case: $\alpha = 1 - 0.95 = 0.05$ → 2.5 and 97.5 percentiles.
 
 | Parameter | Current Value | Location | Notes |
 | :--- | :--- | :--- | :--- |
-| Number of resamplings | 10,000 | `config/general_config.py`<br/>`NUM_BOOTSTRAP_SAMPLES` | ↑ = more precise but slower |
-| Confidence level | 0.95 | `config/general_config.py`<br/>`CONFIDENCE_INTERVAL_LEVEL` | 0.95 = 95% CI |
+| Number of resamplings | 10,000 | `backend/config/evaluation.yaml`<br/>`metrics.num_bootstrap_samples` | ↑ = more precise but slower |
+| Confidence level | 0.95 | `backend/config/evaluation.yaml`<br/>`metrics.confidence_interval_level` | 0.95 = 95% CI |
 
 ---
 
@@ -301,8 +301,8 @@ CUSTOM_STATISTIC_MAP = {
 # Option 1: Environment variable
 export CUSTOM_STATISTICS_MODULE="src.evaluation.custom_metrics.custom_statistics"
 
-# Option 2: Directly in config/general_config.py
-CUSTOM_STATISTICS_MODULE = "src.evaluation.custom_metrics.custom_statistics"
+# Option 2: Set it inline in backend/src/config/evaluation.py (not recommended;
+# the env var is the supported override).
 ```
 
 ### 5.5 Usage in YAML
