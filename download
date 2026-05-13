@@ -1,0 +1,21 @@
+.venv*
+**pyc**
+outputs
+mlruns
+.vscode/**
+data
+notebooks/*
+!notebooks/analysis_24_experiments.ipynb
+.**
+workspace/**
+# Real config files (copied from *.example.yaml via `make config`).
+backend/config/*.yaml
+!backend/config/*.example.yaml
+backend/config/pipelines/*.yaml
+!backend/config/pipelines/*.example.yaml
+backend/config/pipelines/rules/*.yaml
+!backend/config/pipelines/rules/*.example.yaml
+mlflow.db
+frontend/node_modules/**
+.coverage
+frontend/src/lib/api-types.ts

@@ -1,7 +1,7 @@
 """Pydantic schemas for evaluation endpoints."""
 
 from backend.src.api.schemas.jobs import JobProgress
-from backend.src.core.validation import SIMULATION_ID_PATTERN
+from backend.src.domain.id_validation import SIMULATION_ID_PATTERN
 from pydantic import BaseModel, Field
 
 

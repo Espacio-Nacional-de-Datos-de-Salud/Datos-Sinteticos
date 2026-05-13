@@ -1,4 +1,4 @@
-"""Tests for `backend.src.services.artifacts.load_generator_artifacts`.
+"""Tests for `backend.src.sessions.artifacts.load_generator_artifacts`.
 
 The function is a thin coordinator over `MostlyAIEngine` plus two metadata
 loaders. Tests mock those collaborators to verify the wiring: the engine is
@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.src.services import artifacts as artifacts_module
+from backend.src.sessions import artifacts as artifacts_module
 
 
 def test_load_generator_artifacts_wires_collaborators(

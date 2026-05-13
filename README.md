@@ -5,59 +5,60 @@
         <img src="https://www.seguritecnia.es/wp-content/uploads/2024/07/ntt-data.jpg" alt="drawing" width="200"/>
         </div>
 
-## Description
-This tool is designed to facilitate the generation of synthetic data for the National Health Data Space (ENDS) in Spain.
-
-This repository's documentation is divided into three main areas: Setup, Core Concepts, and Deployment.
-
+This tool generates synthetic tabular health data for the National Health Data Space (ENDS) in Spain.
 
 ---
 
-## 0. Before starting
+## 0. Pick your path
 
-- **[Onboarding Guide](docs/setup/onboarding.md)**: Mental model of the repo: entry points, config cascade, venv split, and first steps.
-- **[AWS SageMaker Setup](docs/setup/sagemaker.md)**: Guide to create your SageMaker user profile, use Code Editor with SSH from local VS Code, and optimize cost/storage usage.
+Each path is a **single ordered doc**. Start with the one that
+matches what you'll do — the deep-reference docs (Configuration,
+API, Backend Layout, etc.) are linked from inside each path, not read
+front-to-back.
 
-## 1. Setup
-
-This block covers how to install the tool, set up your development environment, and configure the project parameters for your basic runs.
-
-- **[Setup](docs/setup/setup.md)**: Setup scripts, virtual environments, `config/` reference, and quickly lift the frontend and backend.
-- **[Execution Details](docs/setup/execution.md)**: Run the tool with more fine-grained control, using the CLI and the recommended end-to-end run flow (inspect → train → simulate → evaluate), or lifting the API and frontend separately.
-
----
-
-## 2. Concepts
-
-- **[Repository Guidelines](docs/setup/repository_guidelines.md)**: This document is vital. It establishes the coding standards, repository structure, and development protocols.
-
-### 2.1 Preprocessing
-- **[Logical Rules](docs/concepts/logical_rules.md)**: Details on enforcing date inequalities, numeric constraints, and semantic consistency.
-- **[OMOP Data](docs/concepts/omop.md)**: Definition of model, issues that we face, recommended preprocessing.
-
-### 2.2 Training
-- **[Pipelines](docs/concepts/pipelines.md)**: Explanation of the core training and generation pipelines.
-- **[Tracking & MLFlow](docs/concepts/tracking_and_mlflow.md)**: Experiment tracking, session logging, and generating model/simulation cards.
-- **[Mostly AI](docs/concepts/mostly_ai.md)**: How the Mostly AI tabular generation engine is customized and triggered.
-
-
-
-### 2.3 Simulation
-- **[Conditional Generation](docs/concepts/conditional_generation.md)**: How to generate data based on existing column values and its differences with logical rules.
-
-### 2.4 Evaluation
-- **[Evaluation & Metrics](docs/concepts/evaluation.md)**: How fidelity, privacy, and detection metrics measure the quality of synthetic data versus the original records.
----
-
-## 3. Deployment
-
-- **[API](docs/deployment/api.md)**: Explanation for our REST API.
-- **[Frontend](docs/deployment/frontend.md)**: Explanation for our frontend, from the basic concepts to its execution.
-- **[Docker Setup](docs/deployment/docker.md)**: Instructions for building and running images/containers.
-- **[Testing Guide](docs/setup/testing.md)**: How and why to use tests to ensure all endpoints work as expected with a single command.
+| If you want to… | Read |
+| :--- | :--- |
+| 🚀 **Use the tool from a browser** (Docker or `make local`) | **[Use the UI](docs/setup/use_ui.md)** |
+| 💻 **Use the tool from the terminal** (interactive wizard or `make` one-shots) | **[Use the CLI](docs/setup/use_cli.md)** |
+| 🛠 **Maintain or extend the codebase** | **[Developer Onboarding](docs/setup/onboarding.md)** |
+| ☁️ **Run on AWS SageMaker** | **[SageMaker Setup](docs/setup/sagemaker.md)** (in addition to one of the above) |
 
 ---
 
-## 4. Troubleshooting
+## 1. Reference docs (linked from the paths above)
 
-- **[Batch Size Errors](docs/concepts/batch_size_errors.md)**: Troubleshooting guidelines regarding memory and mostly AI batch size constraints.
+- **[Installation](docs/setup/install.md)** — `make setup`, venvs, config bootstrap. The single source of install steps.
+- **[Configuration](docs/setup/configuration.md)** — every YAML knob under `backend/config/`.
+- **[Repository Guidelines](docs/setup/repository_guidelines.md)** — coding standards, commit style, docstring format.
+- **[Testing](docs/setup/testing.md)** — `make test` (core venv) and `make test-eval` (eval venv).
+- **[WSL Quick Setup](docs/setup/wsl_setup.md)** · **[GitLab Access](docs/setup/gitlab.md)**.
+
+---
+
+## 2. Architecture & concepts (week-2 reading)
+
+Read these when you need them — not before.
+
+### Codebase architecture
+- **[Backend Layout](docs/concepts/backend_layout.md)** — tour of `backend/src/`: the five layers and the one-direction import rule.
+- **[Adding a Feature](docs/concepts/adding_a_feature.md)** — end-to-end walkthrough of a change crossing every backend layer + the frontend.
+
+### Data-side concepts
+- **[OMOP Data](docs/concepts/omop.md)** — common data model, issues, preprocessing.
+- **[Logical Rules](docs/concepts/logical_rules.md)** — enforcing date inequalities, numeric constraints, semantic consistency.
+- **[Conditional Generation](docs/concepts/conditional_generation.md)** — generating data conditioned on existing column values.
+- **[Pipelines](docs/concepts/pipelines.md)** — the YAML-driven multi-job engine.
+- **[Mostly AI](docs/concepts/mostly_ai.md)** — how the tabular generator is customised.
+- **[Evaluation & Metrics](docs/concepts/evaluation.md)** — fidelity, privacy, and detection metrics.
+
+### Deployment & runtime
+- **[API](docs/deployment/api.md)** — REST endpoints and schemas.
+- **[Frontend](docs/deployment/frontend.md)** — the Next.js app.
+- **[Docker](docs/deployment/docker.md)** — compose files, image structure, volume model.
+- **[EC2](docs/deployment/ec2.md)** — running on a bare EC2 box.
+
+---
+
+## 3. Troubleshooting
+
+- **[Batch Size Errors](docs/concepts/batch_size_errors.md)** — memory and Mostly AI batch-size constraints.

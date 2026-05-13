@@ -45,7 +45,7 @@ Perform evaluation on an existing simulation folder. Useful for re-running metri
 evaluate:
   real_data: ["data/person.csv"]
   simulation_id: "simulation_20260311_143001"
-  model_id: "model_20260311_143001" # optional; enables MLflow lineage
+  model_id: "model_20260311_143001" # optional; records model lineage on the eval card
 ```
 
 Artifacts flow automatically within a job. Any step can be omitted.
@@ -78,8 +78,8 @@ outputs/
   runs (generator.zip, metadata.json, model_card.json, synthetic CSVs, sanity
   reports, etc.).
 
-Every model card and sim card includes a `pipeline_id` field so you can filter
-MLflow runs that belong to the same pipeline execution.
+Every model card and sim card includes a `pipeline_id` field so you can group
+runs that belong to the same pipeline execution.
 
 ### Pipeline Card Lifecycle
 

@@ -1,4 +1,4 @@
-"""Tests for `backend.src.core.preprocessing.logical_rules` domain logic.
+"""Tests for `backend.src.domain.preprocessing.logical_rules` domain logic.
 
 Each logical rule class implements three phases: `apply_pre` (encode before
 synthesis), `apply_post` (decode after synthesis), and `sanity_check` (validate
@@ -9,20 +9,36 @@ behavior, domain-specific edge cases, and violation detection. Also tests
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 import pytest
 
-from backend.src.core.errors import RelationshipNotDefinedError
-from backend.src.core.preprocessing.logical_rules import (
+from backend.src.infrastructure.errors import RelationshipNotDefinedError
+from backend.src.infrastructure.errors import RuleConcatenationError, RuleSuperimpositionError
+from backend.src.domain.preprocessing.logical_rules import (
     DateInequalityRule,
     DateToAgeRule,
     ForeignKeysConsistencyRule,
+    LogicalRule,
     LogicalRuleManager,
     NumericBucketRule,
     NumericInequalityRule,
+    NumericThresholdRule,
     SemanticProportionalConsistencyRule,
 )
+
+
+@dataclass
+class _DummyRule(LogicalRule):
+    target_col: str = None
+    origin_col: str = None
+    source_col: str = None
+    aux_col: str = None
+
+    def apply_pre(self, df: pd.DataFrame) -> pd.DataFrame:
+        return df
 
 
 def _midpoint_uniform_scalar(lower: float, upper: float) -> float:
@@ -68,7 +84,7 @@ def test_manager_applies_rule_through_multihop_join_and_strips_origin_columns() 
                 table_origin="patients",
                 table_target="conditions",
                 origin_col="birth_date",
-                target_col="age_at_condition",
+                aux_col="age_at_condition",
                 reference_date_col="condition_start_date",
             )
         ]
@@ -215,7 +231,7 @@ def test_date_to_age_can_drop_and_reconstruct_origin_column() -> None:
     rule = DateToAgeRule(
         table_target="patients",
         origin_col="birth_date",
-        target_col="age",
+        aux_col="age",
         reference_date="2020-01-01",
         drop_origin=True,
         reconstruct_origin=True,
@@ -239,7 +255,7 @@ def test_numeric_bucket_can_drop_and_reconstruct_origin_within_bucket(
     rule = NumericBucketRule(
         table_target="patients",
         origin_col="age",
-        target_col="age_bucket",
+        aux_col="age_bucket",
         bins=[0, 18, 65],
         labels=["minor", "adult"],
         drop_origin=True,
@@ -334,3 +350,311 @@ def test_manager_raises_relationship_error_when_join_rule_has_no_relationships()
                 "visits": pd.DataFrame({"visit_id": [10], "person_id": [100]}),
             }
         )
+
+
+def test_detect_rule_interactions_raises_on_superimposition() -> None:
+    manager = LogicalRuleManager(rules=[_DummyRule(table_target="patients", target_col="age")])
+
+    with pytest.raises(RuleSuperimpositionError):
+        manager._detect_rule_interactions(
+            _DummyRule(table_target="patients", target_col="age")
+        )
+
+
+def test_detect_rule_interactions_no_op() -> None:
+    manager = LogicalRuleManager(rules=[])
+    manager.concat_rules = []
+
+    first = _DummyRule(table_target="visits", table_origin="patients", target_col="visit_id")
+    second = _DummyRule(table_target="patients", table_origin="visits", target_col="patient_id")
+    manager.rules.append(first)
+
+    manager._detect_rule_interactions(second)
+
+    assert manager.concat_rules == []
+
+
+def test_sort_concat_rules_orders_by_dependency_chain() -> None:
+    manager = LogicalRuleManager(rules=[])
+    manager.concat_rules = []
+
+    rule_create_bucket = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        target_col="age_bucket",
+    )
+    rule_use_bucket = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age_bucket",
+        target_col="is_adult",
+    )
+
+    manager.concat_rules = [rule_use_bucket, rule_create_bucket]
+
+    sorted_rules = manager._sort_concat_rules(
+        {"patients.age", "patients.age_bucket", "patients.is_adult"}
+    )
+
+    assert sorted_rules == [rule_create_bucket, rule_use_bucket]
+
+
+def test_sort_concat_rules_orders_by_aux_dependency() -> None:
+    manager = LogicalRuleManager(rules=[])
+    manager.concat_rules = []
+
+    rule_create_aux = _DummyRule(
+        table_target="visits",
+        target_col="visit_end_date",
+        aux_col="duration_visit_end_date",
+    )
+    rule_use_aux = _DummyRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="duration_visit_end_date",
+        target_col="stay_class",
+    )
+
+    manager.concat_rules = [rule_use_aux, rule_create_aux]
+
+    sorted_rules = manager._sort_concat_rules(
+        {"visits.visit_end_date", "visits.stay_class"}
+    )
+
+    assert sorted_rules == [rule_create_aux, rule_use_aux]
+
+
+def test_sort_concat_rules_handles_derived_rules() -> None:
+    manager = LogicalRuleManager(rules=[])
+    manager.concat_rules = []
+
+    rule_bucket = NumericBucketRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="age_bucket",
+        bins=[0, 18, 65],
+        labels=["minor", "adult"],
+    )
+    rule_threshold = NumericThresholdRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age_bucket",
+        aux_col="is_adult",
+        threshold=1,
+        operator=">=",
+        true_value=True,
+        false_value=False,
+    )
+
+    manager.concat_rules = [rule_threshold, rule_bucket]
+
+    sorted_rules = manager._sort_concat_rules(
+        {
+            "patients.age",
+        }
+    )
+
+    assert sorted_rules == [rule_bucket, rule_threshold]
+
+
+def test_sort_concat_rules_orders_derived_and_numeric_dependency() -> None:
+    manager = LogicalRuleManager(rules=[])
+    manager.concat_rules = []
+
+    rule_age = DateToAgeRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="birth_date",
+        aux_col="age",
+        reference_date="2020-01-01",
+    )
+    rule_is_adult = NumericThresholdRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="is_adult",
+        threshold=18,
+        operator=">=",
+        true_value=True,
+        false_value=False,
+    )
+
+    manager.concat_rules = [rule_is_adult, rule_age]
+
+    sorted_rules = manager._sort_concat_rules(
+        {
+            "patients.birth_date",
+        }
+    )
+
+    assert sorted_rules == [rule_age, rule_is_adult]
+
+
+def test_sort_concat_rules_orders_three_rule_chain_with_semantic_consistency() -> None:
+    manager = LogicalRuleManager(rules=[])
+    manager.concat_rules = []
+
+    rule_age = DateToAgeRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="birth_date",
+        aux_col="age",
+        reference_date="2020-01-01",
+    )
+    rule_is_senior = NumericThresholdRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="is_senior",
+        threshold=65,
+        operator=">=",
+        true_value=True,
+        false_value=False,
+    )
+    rule_diagnosis = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="is_senior",
+        target_col="diagnosis",
+    )
+
+    manager.concat_rules = [rule_diagnosis, rule_is_senior, rule_age]
+
+    sorted_rules = manager._sort_concat_rules(
+        {
+            "patients.birth_date",
+            "patients.diagnosis",
+        }
+    )
+
+    assert sorted_rules == [rule_age, rule_is_senior, rule_diagnosis]
+
+
+def test_sort_concat_rules_skips_when_origin_column_missing() -> None:
+    manager = LogicalRuleManager(rules=[])
+    manager.concat_rules = []
+
+    rule_missing_origin = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="missing_col",
+        target_col="derived",
+    )
+
+    manager.concat_rules = [rule_missing_origin]
+
+    sorted_rules = manager._sort_concat_rules({"patients.age"})
+
+    assert sorted_rules == []
+
+def test_sort_concat_rules_detects_cycles() -> None:
+    manager = LogicalRuleManager(rules=[])
+    manager.concat_rules = []
+
+    rule_a = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="b",
+        target_col="a",
+    )
+    rule_b = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="a",
+        target_col="b",
+    )
+
+    manager.concat_rules = [rule_a, rule_b]
+
+    with pytest.raises(RuleConcatenationError):
+        manager._sort_concat_rules({"patients.a", "patients.b"})
+
+def test_multiple_concat_rules() -> None:
+    manager = LogicalRuleManager()
+
+    rule_a = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="b",
+        target_col="a",
+    )
+    rule_b = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="c",
+        target_col="b",
+    )
+    rule_c = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        target_col="c",
+    )
+    manager.concat_rules = [rule_b, rule_c, rule_a]
+
+    sorted_rules = manager._sort_concat_rules({"patients.age", "patients.a", "patients.b", "patients.c"})
+
+    assert sorted_rules == [rule_c, rule_b, rule_a]
+
+
+def test_sort_concat_rules_with_two_independent_chains() -> None:
+    manager = LogicalRuleManager()
+
+    rule_a = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="b",
+        target_col="a",
+    )
+    rule_b = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="c",
+        target_col="b",
+    )
+    rule_c = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        target_col="c",
+    )
+    rule_x = _DummyRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="y",
+        target_col="x",
+    )
+    rule_y = _DummyRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="z",
+        target_col="y",
+    )
+    rule_z = _DummyRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="visit_date",
+        target_col="z",
+    )
+
+    manager.concat_rules = [rule_b, rule_x, rule_z, rule_c, rule_y, rule_a]
+
+    sorted_rules = manager._sort_concat_rules(
+        {
+            "patients.age",
+            "patients.a",
+            "patients.b",
+            "patients.c",
+            "visits.visit_date",
+            "visits.x",
+            "visits.y",
+            "visits.z",
+        }
+    )
+
+    assert len(sorted_rules) == 6
+    positions = {id(rule): idx for idx, rule in enumerate(sorted_rules)}
+
+    assert positions[id(rule_c)] < positions[id(rule_b)] < positions[id(rule_a)]
+    assert positions[id(rule_z)] < positions[id(rule_y)] < positions[id(rule_x)]

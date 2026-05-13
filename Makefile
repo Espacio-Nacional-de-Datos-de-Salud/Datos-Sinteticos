@@ -1,4 +1,4 @@
-.PHONY: help setup config clean-config reset-config local cli inspect train simulate eval pipeline format lint ty test test-eval coverage models simulations inspections evaluations pipelines api frontend compose clean
+.PHONY: help setup config clean-config reset-config local cli inspect train simulate eval pipeline format lint ty test test-eval coverage models simulations inspections evaluations pipelines api frontend compose compose-api compose-cli compose-prod compose-stop clean copy-repo
 
 SHELL := /bin/bash
 
@@ -86,9 +86,14 @@ help:
 	@printf "  make frontend     Start frontend locally (auto-installs deps if missing)\n"
 	@printf "  make local        Start backend + frontend together in one terminal\n"
 	@printf "\nDocker / Compose:\n"
-	@printf "  make compose      Build and start compose services (foreground)\n"
+	@printf "  make compose          Build and start services in dev mode (auto-merges compose.override.yaml)\n"
+	@printf "  make compose-api      Build and start backend only, detached (API on port 8000)\n"
+	@printf "  make compose-cli      Build and start backend, then open interactive CLI\n"
+	@printf "  make compose-prod     Build and start services in prod mode (no bind mounts, baked config)\n"
+	@printf "  make compose-stop     Stop and remove all running compose containers\n"
 	@printf "\nDev:\n"
 	@printf "  make clean        Remove generated run artifacts and local caches\n"
+	@printf "  make copy-repo    Create a clean copy of the repo in the parent folder (excludes venvs, deps, outputs, etc.)\n"
 	@printf "  make format       Format Python code with ruff\n"
 	@printf "  make lint         Run ruff check\n"
 	@printf "  make ty           Run type checking with Ty\n"
@@ -110,14 +115,14 @@ setup:
 	@echo "Installing frontend dependencies..."
 	@$(call frontend_env,cd $(FRONTEND_DIR) && if [ -f package-lock.json ]; then npm ci; else npm install; fi)
 	@echo "Creating configuration files..."
-	$(CORE_PYTHON) -m backend.src.services.configs bootstrap
+	$(CORE_PYTHON) -m backend.src.sessions.configs bootstrap
 	@echo "Setup complete."
 
 config:
-	$(CORE_PYTHON) -m backend.src.services.configs bootstrap
+	$(CORE_PYTHON) -m backend.src.sessions.configs bootstrap
 
 clean-config:
-	$(CORE_PYTHON) -m backend.src.services.configs clean
+	$(CORE_PYTHON) -m backend.src.sessions.configs clean
 
 cli:
 	$(CORE_PYTHON) -m backend.src.cli
@@ -135,10 +140,10 @@ simulate:
 	$(CORE_PYTHON) -m backend.src.cli --mode s
 
 eval:
-	$(EVAL_PYTHON) -m backend.src.evaluation
+	$(EVAL_PYTHON) -m backend.src.domain.evaluation
 
 pipeline:
-	$(CORE_PYTHON) -m backend.src.pipeline --config $(CONFIG)
+	$(CORE_PYTHON) -m backend.src.domain.pipeline --config $(CONFIG)
 
 format:
 	cd backend && $(RUFF) format .
@@ -165,19 +170,19 @@ coverage:
 	@echo "HTML report: htmlcov/index.html"
 
 inspections:
-	$(CORE_PYTHON) -m backend.src.core.catalog.inspections --format table
+	$(CORE_PYTHON) -m backend.src.runs.catalog.inspections --format table
 
 models:
-	$(CORE_PYTHON) -m backend.src.core.catalog.models --format table
+	$(CORE_PYTHON) -m backend.src.runs.catalog.models --format table
 
 simulations:
-	$(CORE_PYTHON) -m backend.src.core.catalog.simulations --format table
+	$(CORE_PYTHON) -m backend.src.runs.catalog.simulations --format table
 
 evaluations:
-	$(CORE_PYTHON) -m backend.src.core.catalog.evaluations --format table
+	$(CORE_PYTHON) -m backend.src.runs.catalog.evaluations --format table
 
 pipelines:
-	$(CORE_PYTHON) -m backend.src.core.catalog.pipelines --format table
+	$(CORE_PYTHON) -m backend.src.runs.catalog.pipelines --format table
 
 api:
 	$(CORE_PYTHON) -m uvicorn backend.src.api.main:app --reload --host $(API_HOST) --port $(API_PORT)
@@ -191,7 +196,38 @@ local:
 compose:
 	$(DOCKER_COMPOSE) up --build
 
+compose-api:
+	$(DOCKER_COMPOSE) up --build -d backend
+	@echo "Backend API running at http://localhost:$(API_PORT)/docs"
+
+compose-cli:
+	$(DOCKER_COMPOSE) up --build -d backend
+	$(DOCKER_COMPOSE) exec backend python -m backend.src.cli
+
+compose-prod:
+	$(DOCKER_COMPOSE) -f compose.yaml up --build
+
+compose-stop:
+	$(DOCKER_COMPOSE) down
+
 clean:
-	$(CORE_PYTHON) -m backend.src.core.catalog.cleanup
+	$(CORE_PYTHON) -m backend.src.runs.catalog.cleanup
 	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
 	rm -rf .ruff_cache .pytest_cache backend/.ruff_cache backend/.pytest_cache
+
+DIST_NAME := $(shell basename $(CURDIR))_clean
+DIST_PATH := ../$(DIST_NAME)
+
+copy-repo:
+	@echo "📦 Creating clean copy in $(DIST_PATH)..."
+	@rm -rf $(DIST_PATH)
+	@mkdir -p $(DIST_PATH)
+	@git archive HEAD | tar -x -C $(DIST_PATH)
+	@mkdir -p $(DIST_PATH)/backend/data/uploads
+	@echo "📄 Copying selected data files..."
+	@cp backend/data/uploads/person.csv $(DIST_PATH)/backend/data/uploads/ 2>/dev/null || echo "⚠️ Warning: person.csv not found"
+	@cp backend/data/uploads/condition_occurrence.csv $(DIST_PATH)/backend/data/uploads/ 2>/dev/null || echo "⚠️ Warning: condition_occurrence.csv not found"
+	@cp backend/data/uploads/visit_occurrence.csv $(DIST_PATH)/backend/data/uploads/ 2>/dev/null || echo "⚠️ Warning: visit_occurrence.csv not found"
+	@cp backend/data/uploads/dataset_prueba_tecnica_v2.csv $(DIST_PATH)/backend/data/uploads/ 2>/dev/null || echo "⚠️ Warning: prueba tecnica dataset not found"
+	@echo "✅ Done. Clean copy created at: $(DIST_PATH)"
+

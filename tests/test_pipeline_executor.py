@@ -1,7 +1,7 @@
-"""Tests for `backend.src.pipeline.executor`.
+"""Tests for `backend.src.domain.pipeline.executor`.
 
 The executor wires the train/simulate/evaluate services into a sequential
-pipeline. These tests mock the underlying service flows to verify:
+pipeline. These tests mock the underlying session modules to verify:
 
 - per-job override resolution merges user config with defaults
 - each step dispatcher passes the right arguments to its service
@@ -20,8 +20,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from backend.src.pipeline import executor as executor_module
-from backend.src.pipeline.config_classes import (
+from backend.src.domain.pipeline import executor as executor_module
+from backend.src.domain.pipeline.config_classes import (
     EvaluateStepConfig,
     JobConfigOverrides,
     PipelineConfig,
@@ -93,7 +93,7 @@ def test_resolve_job_config_ignores_partial_general_keys(
 def _patch_run_training_flow(monkeypatch: pytest.MonkeyPatch, return_value):
     """Replace `run_training_flow` with a mock returning a fixed result."""
     fake = MagicMock(return_value=return_value)
-    import backend.src.services.training as training_mod
+    import backend.src.sessions.training as training_mod
 
     monkeypatch.setattr(training_mod, "run_training_flow", fake)
     return fake
@@ -135,7 +135,7 @@ def test_run_train_step_returns_full_artifact_tuple_on_success(
 def _patch_simulation_flow(monkeypatch: pytest.MonkeyPatch, return_value):
     """Replace `run_simulation_flow` with a mock returning a fixed result."""
     fake = MagicMock(return_value=return_value)
-    import backend.src.services.simulation as simulation_mod
+    import backend.src.sessions.simulation as simulation_mod
 
     monkeypatch.setattr(simulation_mod, "run_simulation_flow", fake)
     return fake
@@ -168,7 +168,7 @@ def test_run_simulate_step_loads_artifacts_when_no_inline_generator(
 ) -> None:
     fake_sim = _patch_simulation_flow(monkeypatch, "sim_2")
 
-    import backend.src.services.artifacts as artifacts_mod
+    import backend.src.sessions.artifacts as artifacts_mod
 
     fake_loader = MagicMock(return_value=("GEN_LOADED", {"m": 1}, "RM_LOADED"))
     monkeypatch.setattr(artifacts_mod, "load_generator_artifacts", fake_loader)
@@ -202,7 +202,7 @@ def test_run_simulate_step_returns_none_when_no_model_or_generator(
 def test_run_simulate_step_returns_none_when_artifact_loading_fails(
     stub_resolve_config_path: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import backend.src.services.artifacts as artifacts_mod
+    import backend.src.sessions.artifacts as artifacts_mod
 
     monkeypatch.setattr(
         artifacts_mod,
@@ -226,7 +226,7 @@ def test_run_simulate_step_returns_none_when_artifact_loading_fails(
 
 def _patch_evaluation_service(monkeypatch: pytest.MonkeyPatch, eval_id: str | None):
     """Replace evaluation service functions with mocks. Returns (init_mock, flow_mock)."""
-    import backend.src.services.evaluation as evaluation_mod
+    import backend.src.sessions.evaluation as evaluation_mod
 
     fake_session = SimpleNamespace(evaluation_id="eval_pre")
     init = MagicMock(return_value=fake_session)
@@ -300,7 +300,7 @@ def test_run_evaluate_step_requires_model_id() -> None:
 def test_run_evaluate_step_returns_none_on_service_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import backend.src.services.evaluation as evaluation_mod
+    import backend.src.sessions.evaluation as evaluation_mod
 
     monkeypatch.setattr(
         evaluation_mod,

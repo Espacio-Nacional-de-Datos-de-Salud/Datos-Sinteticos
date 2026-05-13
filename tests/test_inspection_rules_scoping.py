@@ -1,4 +1,4 @@
-"""Tests for `backend.src.services.inspection` rules config path resolution.
+"""Tests for `backend.src.sessions.inspection` rules config path resolution.
 
 Verifies that `resolve_inspection_rules_config_path` prefers the snapshot
 rules file (captured during inspection creation) over the global rules config,
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.src.services import inspection as inspection_service
+from backend.src.sessions import inspection as inspection_service
 
 
 @pytest.fixture

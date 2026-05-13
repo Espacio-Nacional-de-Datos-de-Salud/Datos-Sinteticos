@@ -1,4 +1,4 @@
-[<-- Back to Setup](setup.md)
+[<-- Back to Installation](install.md)
 
 # Quick WSL Setup
 
@@ -21,4 +21,4 @@ If you can't find it, you should find Ubuntu by opening a Terminal, and clicking
 ## Linux User
 For the Linux user setup I recommend using your linux username for simplicity, if not remember your password you will need to run the Ubuntu terminal as admin for `sudo` commands.
 
-[<-- Back to Setup](setup.md)
+[<-- Back to Installation](install.md)

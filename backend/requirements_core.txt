@@ -7,14 +7,13 @@ peft==0.18.1
 model2vec==0.7.0
 huggingface-hub==0.36.0
 mostlyai[local]==5.10.1
-sagemaker-mlflow
-mlflow>=2.13.2
 protobuf<6.0
 # streamlit
 ydata-profiling
 # great-expectations
 pytest
 pytest-cov
+networkx # believe this is covered by another dep, adding just in case
 
 # Path Fix Conflict with Outdated YDATA
 setuptools<82.0.0

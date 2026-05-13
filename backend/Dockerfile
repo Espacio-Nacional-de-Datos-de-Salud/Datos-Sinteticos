@@ -44,6 +44,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 WORKDIR /app
 COPY src ./backend/src
+COPY config ./backend/config
 RUN touch ./backend/__init__.py
 # pycox crea su carpeta datasets/data en site-packages al importarse,
 # solo hay que dar permisos a esa ruta (no a todo el venv_eval, que es lentísimo).

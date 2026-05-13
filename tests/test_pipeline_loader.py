@@ -1,4 +1,4 @@
-"""Tests for `backend.src.pipeline.loader.load_pipeline_config`.
+"""Tests for `backend.src.domain.pipeline.loader.load_pipeline_config`.
 
 The loader translates YAML pipeline configs into typed dataclasses. These
 tests cover schema validation (missing top-level key, missing file), per-step
@@ -14,7 +14,7 @@ import pytest
 import yaml
 
 from backend.src.config.general import DEFAULT_SAMPLE_SIZE
-from backend.src.pipeline.loader import load_pipeline_config
+from backend.src.domain.pipeline.loader import load_pipeline_config
 
 
 def _write_yaml(path: Path, payload: dict) -> Path:
@@ -131,7 +131,7 @@ def test_train_files_is_expanded_when_single_directory(
         {"jobs": [{"name": "j", "train": {"files": [str(data_dir)]}}]},
     )
 
-    import backend.src.pipeline.loader as loader_module
+    import backend.src.domain.pipeline.loader as loader_module
 
     monkeypatch.setattr(
         loader_module,

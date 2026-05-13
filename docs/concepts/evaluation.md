@@ -19,15 +19,13 @@ src.evaluation.runner.EvaluationRunner
     ├── synthcity metrics via _synthcity_metrics.py
     └── custom metrics via _custom_metrics.py
     ↓
-src.core.tracking.EvaluationTracker  # writes reports + logs to MLflow
+src.core.tracking.EvaluationTracker  # writes report CSV, per-metric JSON, and the eval card
 ```
 
 The system provides:
 - **Custom Metrics**: In-house high-level implementations for privacy, correlation, and statistical fidelity.
 - **SynthCity Metrics**: Integration with the `synthcity` external library.
 - **Bootstrap Statistics**: A flexible statistical base with 9 built-in statistics and support for custom extensions.
-- **MLflow Tracking**: Automatically logs metrics and evaluation artifacts into the parent simulation run when available.
-
 The evaluation system must run in a **separate virtual environment** to avoid dependency conflicts. This is especially important because `synthcity` has significant computational requirements and may conflict with other project dependencies.
 
 ---
@@ -37,9 +35,9 @@ The evaluation system must run in a **separate virtual environment** to avoid de
 ### Directory Structure
 
 ```text
-src/evaluation/
+src/domain/evaluation/
 ├── __init__.py                          # Public evaluation API
-├── __main__.py                          # CLI entry point (`python -m src.evaluation`)
+├── __main__.py                          # CLI entry point (`python -m backend.src.domain.evaluation`)
 ├── orchestrator.py                      # load data → preprocess → call runner → track
 ├── runner.py                            # actual metric execution caller
 ├── _synthcity_metrics.py                # synthcity adapter helpers
@@ -56,7 +54,7 @@ backend/
 │   └── ...
 └── src/config/
     ├── evaluation.py                    # YAML loader + env-driven resolvers
-    ├── general.py                       # Paths, MLflow/SageMaker wiring, logging
+    ├── general.py                       # Paths, SageMaker wiring, logging
     └── execution.py                     # ExecutionConfig dataclass + loader
 ```
 
@@ -73,7 +71,7 @@ backend/
 | **statistics.py** | Implements built-in statistics with bootstrap CI | `Statistic` (ABC), `create_statistic()`, `statistic_map` |
 | **backend/src/config/evaluation.py** | Loads `evaluation.yaml` and resolves env-driven settings | `EVAL_DEFAULT_METRICS`, `CONFIDENCE_INTERVAL_LEVEL`, `NUM_BOOTSTRAP_SAMPLES`, `EVAL_PYTHON_PATH` |
 | **backend/config/evaluation.yaml** | Metrics configuration + list of which statistics to calculate on which columns (committed template at `evaluation.example.yaml`) | `metrics.*`, `statistics:` |
-| **backend/src/config/general.py** | Global system parameters, output paths, and tracking namespaces | `PROJECT_ROOT`, `MODELS_DIR`, `MLFLOW_TRACKING_URI` |
+| **backend/src/config/general.py** | Global system parameters, output paths, and tracking namespaces | `PROJECT_ROOT`, `MODELS_DIR`, `EVALUATIONS_DIR` |
 
 ---
 
@@ -97,7 +95,7 @@ run_evaluation(real_data_files_path, synthetic_files_path, eval_dir, ...)
     d. Replace synthcity `k-anonymization` with project `k_anonymity`
     e. Run synthcity metrics via Metrics.evaluate()
     f. Append rows from project custom metrics
-6. EvaluationTracker saves CSV/JSON artifacts and logs metrics to MLflow
+6. EvaluationTracker saves the CSV report, per-metric JSON detail files, and updates the eval card
 ```
 
 ## Privacy Metrics

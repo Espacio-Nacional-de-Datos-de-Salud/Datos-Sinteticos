@@ -1,4 +1,4 @@
-[<-- Back to Setup](setup.md)
+[<-- Back to Installation](install.md)
 # Configuration
 All user-tunable values live in YAML under `backend/config/`. Committed
 **templates** end in `.example.yaml`, the application reads the **real**
@@ -87,4 +87,4 @@ Non-YAML evaluation knobs live in `backend/src/config/evaluation.py`:
   `.venv_eval/bin/python`.
 - `CUSTOM_STATISTICS_MODULE`: resolved from the env var of the same name.
 
-[<-- Back to Setup](setup.md)
+[<-- Back to Installation](install.md)

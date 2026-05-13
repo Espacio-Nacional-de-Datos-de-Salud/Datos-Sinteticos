@@ -1,17 +1,4 @@
-"""FastAPI application for the Synthetic Data Tool.
-
-Exposes the tool's capabilities as a REST API.
-Currently provides read-only catalog endpoints (models, simulations, inspections).
-Training and simulation trigger endpoints will be added in subsequent phases.
-
-Run with:
-    make api
-    # or directly:
-    uvicorn src.api.main:app --reload --port 8000
-
-Interactive docs available at:
-    http://localhost:8000/docs
-"""
+"""FastAPI application for the Synthetic Data Tool REST API."""
 
 import os
 from contextlib import asynccontextmanager
@@ -27,7 +14,7 @@ from backend.src.api.routers import (
     pipelines,
     simulations,
 )
-from backend.src.services.configs import bootstrap_configs, migrate_real_config_headers
+from backend.src.sessions.configs import bootstrap_configs, migrate_real_config_headers
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

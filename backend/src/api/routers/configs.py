@@ -16,7 +16,8 @@ from backend.src.api.schemas.configs import (
     ConfigScope,
     ConfigUpdate,
 )
-from backend.src.services.configs import (
+from backend.src.config.field_schemas import CONFIG_SCHEMAS, to_dict
+from backend.src.sessions.configs import (
     ConfigMissingError,
     ConfigNotFoundError,
     ConfigParseError,
@@ -35,6 +36,17 @@ from backend.src.services.configs import (
 from fastapi import APIRouter, HTTPException, Path, Query, Response
 
 router = APIRouter(prefix="/configs", tags=["Configs"])
+
+
+@router.get("/schemas", tags=["Configs"])
+def get_config_schemas() -> dict:
+    """Return all editable-config field schemas as JSON.
+
+    The frontend (and the CLI) both derive their form UI from this response
+    so field definitions live in exactly one place:
+    ``backend/src/config/field_schemas.py``.
+    """
+    return {k: to_dict(v) for k, v in CONFIG_SCHEMAS.items()}
 
 
 @router.post("/bootstrap", response_model=ConfigBulkResult)

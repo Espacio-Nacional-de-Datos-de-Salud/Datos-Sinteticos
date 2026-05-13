@@ -17,22 +17,23 @@ from backend.src.api.schemas.pipelines import (
     PipelineSummary,
 )
 from backend.src.config.general import CONFIG_DIR, PIPELINE_CARD_FILENAME, PIPELINES_DIR
-from backend.src.core.cancellation import register as register_cancel
-from backend.src.core.cancellation import request_cancel, update_card_status
-from backend.src.core.catalog.downloads import (
+from backend.src.infrastructure.cancellation import register as register_cancel
+from backend.src.infrastructure.cancellation import request_cancel
+from backend.src.runs.card_io import update_card_status
+from backend.src.runs.catalog.downloads import (
     build_full_pipeline_bundle,
     build_pipeline_with_jobs_bundle,
     build_zip_stream,
 )
-from backend.src.core.catalog.pipelines import (
+from backend.src.runs.catalog.pipelines import (
     delete_pipeline as delete_pipeline_catalog,
 )
-from backend.src.core.catalog.pipelines import (
+from backend.src.runs.catalog.pipelines import (
     list_available_pipelines,
 )
-from backend.src.core.errors import PipelineNotFoundError
-from backend.src.core.validation import PipelineId
-from backend.src.services.pipeline import initialize_pipeline_session, run_pipeline_from_config
+from backend.src.infrastructure.errors import PipelineNotFoundError
+from backend.src.domain.id_validation import PipelineId
+from backend.src.sessions.pipeline import initialize_pipeline_session, run_pipeline_from_config
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from fastapi.responses import StreamingResponse
 

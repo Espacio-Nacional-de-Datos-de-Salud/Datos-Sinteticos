@@ -2,7 +2,7 @@
 
 from backend.src.api.schemas.jobs import JobProgress
 from backend.src.config.general import SYNTHETIC_DATA_FILE_FORMATS
-from backend.src.core.validation import MODEL_ID_PATTERN
+from backend.src.domain.id_validation import MODEL_ID_PATTERN
 from pydantic import BaseModel, Field
 
 

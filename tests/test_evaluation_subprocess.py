@@ -18,8 +18,8 @@ from pathlib import Path
 import pytest
 
 from backend.src.config.general import EVAL_CARD_FILENAME
-from backend.src.core.card_io import write_json
-from backend.src.services import evaluation as evaluation_service
+from backend.src.runs.card_io import write_json
+from backend.src.sessions import evaluation as evaluation_service
 
 
 class FakePopen:
@@ -102,7 +102,7 @@ def test_run_subprocess_streams_stdout_to_log_file(
             captured_records.append(record)
 
     handler = _ListHandler(level=logging.INFO)
-    service_logger = logging.getLogger("backend.src.services.evaluation")
+    service_logger = logging.getLogger("backend.src.sessions.evaluation")
     service_logger.addHandler(handler)
     try:
         succeeded = _invoke(monkeypatch, eval_dir, ["hello", "world"], returncode=0)
@@ -147,7 +147,7 @@ def test_run_subprocess_builds_expected_command(
     cmd = _invoke.captured["cmd"]  # type: ignore[attr-defined]
 
     assert cmd[0] == "/fake/python"
-    assert cmd[1:4] == ["-m", "backend.src.evaluation", "--real-data"]
+    assert cmd[1:4] == ["-m", "backend.src.domain.evaluation", "--real-data"]
     assert "/data/real.csv" in cmd
     assert "/data/synth.csv" in cmd
     assert "--simulation-id" in cmd and "sim_1" in cmd

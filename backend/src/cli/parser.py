@@ -8,17 +8,17 @@ import argparse
 def build_parser() -> argparse.ArgumentParser:
     """Build the parser for non-interactive CLI execution."""
     parser = argparse.ArgumentParser(
-        description="ENDS Synthetic Data Tool - Core CLI",
+        description="Herramienta de Datos Sinteticos ENDS - CLI principal",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Inspect raw data
+Ejemplos:
+  # Inspeccionar datos de entrada
   python -m backend.src.cli --mode i --files data/table1.csv data/table2.csv
 
-  # Train from an existing inspection
+  # Entrenar desde una inspeccion existente
   python -m backend.src.cli --mode t --inspection-id inspection_20240501_120000
 
-  # Generate synthetic data from a trained model
+  # Generar datos sinteticos desde un modelo entrenado
   python -m backend.src.cli --mode s --model-id model_20240501_130000 --sample-size 5000
         """,
     )
@@ -26,27 +26,27 @@ Examples:
         "-m",
         "--mode",
         choices=["i", "t", "s"],
-        help="Execution mode: 'i' (inspect), 't' (train), 's' (simulate).",
+        help="Modo de ejecucion: 'i' (inspeccionar), 't' (entrenar), 's' (simular).",
     )
     parser.add_argument(
         "-f",
         "--files",
         nargs="+",
-        help="Paths to CSV/Parquet/Excel files (for 'i' or 't' modes).",
+        help="Rutas a archivos CSV/Parquet/Excel (para modos 'i' o 't').",
     )
     parser.add_argument(
         "-n",
         "--sample-size",
         type=int,
-        help="Number of records to generate (for 's' or 't' followed by 's').",
+        help="Numero de registros a generar (para 's' o 't' seguido de 's').",
     )
     parser.add_argument(
         "--model-id",
-        help="Model ID for simulation mode.",
+        help="ID del modelo para modo simulacion.",
     )
     parser.add_argument(
         "--inspection-id",
-        help="Inspection ID to resume training from.",
+        help="ID de inspeccion desde la que entrenar.",
     )
     return parser
 

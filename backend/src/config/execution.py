@@ -12,7 +12,7 @@ from backend.src.config.general import (
     _EXECUTION,
     DEFAULT_DATA_PATH,
 )
-from backend.src.services.files import get_files_from_directory
+from backend.src.sessions.files import get_files_from_directory
 
 
 @dataclass(frozen=True)

@@ -1,7 +1,7 @@
 """Pydantic schemas for model-related API responses."""
 
 from backend.src.api.schemas.jobs import JobProgress
-from backend.src.core.validation import INSPECTION_ID_PATTERN
+from backend.src.domain.id_validation import INSPECTION_ID_PATTERN
 from pydantic import BaseModel, Field
 
 

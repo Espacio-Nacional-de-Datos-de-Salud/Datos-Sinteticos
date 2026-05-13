@@ -14,33 +14,34 @@ from backend.src.api.schemas.evaluations import (
     RenameRequest,
 )
 from backend.src.config.general import EVAL_CARD_FILENAME, EVALUATIONS_DIR
-from backend.src.core.cancellation import register as register_cancel
-from backend.src.core.cancellation import request_cancel, update_card_status
-from backend.src.core.catalog.downloads import build_evaluation_bundle, build_zip_stream
-from backend.src.core.catalog.evaluations import (
+from backend.src.infrastructure.cancellation import register as register_cancel
+from backend.src.infrastructure.cancellation import request_cancel
+from backend.src.runs.card_io import update_card_status
+from backend.src.runs.catalog.downloads import build_evaluation_bundle, build_zip_stream
+from backend.src.runs.catalog.evaluations import (
     cleanup_evaluations as cleanup_evaluations_catalog,
 )
-from backend.src.core.catalog.evaluations import (
+from backend.src.runs.catalog.evaluations import (
     delete_evaluation as delete_evaluation_catalog,
 )
-from backend.src.core.catalog.evaluations import (
+from backend.src.runs.catalog.evaluations import (
     list_available_evaluations,
 )
-from backend.src.core.catalog.evaluations import (
+from backend.src.runs.catalog.evaluations import (
     purge_all_evaluations as purge_all_evaluations_catalog,
 )
-from backend.src.core.catalog.evaluations import (
+from backend.src.runs.catalog.evaluations import (
     rename_evaluation as rename_evaluation_catalog,
 )
-from backend.src.core.catalog.simulations import resolve_simulation_inputs
-from backend.src.core.errors import EvaluationNotFoundError
-from backend.src.core.validation import EvaluationId
-from backend.src.services.evaluation import (
+from backend.src.runs.catalog.simulations import resolve_simulation_inputs
+from backend.src.infrastructure.errors import EvaluationNotFoundError
+from backend.src.domain.id_validation import EvaluationId
+from backend.src.sessions.evaluation import (
     initialize_evaluation_session,
     run_evaluation_flow_from_simulation,
 )
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
@@ -189,3 +190,34 @@ def download_evaluation_folder(evaluation_id: EvaluationId) -> StreamingResponse
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{bundle.archive_name}"'},
     )
+
+
+@router.get(
+    "/{evaluation_id}/report",
+    response_class=HTMLResponse,
+    responses={200: {"content": {"text/html": {}}}},
+)
+def get_evaluation_report(evaluation_id: EvaluationId) -> HTMLResponse:
+    """Returns the HTML evaluation report for inline display."""
+    report_path = os.path.join(EVALUATIONS_DIR, evaluation_id, "synthetic_eval_report.html")
+    if not os.path.exists(report_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"HTML report for evaluation '{evaluation_id}' not found.",
+        )
+    with open(report_path, encoding="utf-8") as fh:
+        content = fh.read()
+    return HTMLResponse(content=content)
+
+
+@router.get("/{evaluation_id}/report-data")
+def get_evaluation_report_data(evaluation_id: EvaluationId) -> dict:
+    """Returns the structured report data (scores, summary, metadata) as JSON."""
+    report_data_path = os.path.join(EVALUATIONS_DIR, evaluation_id, "report_data.json")
+    if not os.path.exists(report_data_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Report data for evaluation '{evaluation_id}' not found.",
+        )
+    with open(report_data_path, encoding="utf-8") as fh:
+        return json.load(fh)

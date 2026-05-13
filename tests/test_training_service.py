@@ -6,11 +6,11 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from backend.src.core.preprocessing.logical_rules_serialization import (
+from backend.src.domain.preprocessing.logical_rules_serialization import (
     reconstruct_logical_rule_manager_from_dict,
     serialize_logical_rule_manager_to_dict,
 )
-from backend.src.services import training as training_module
+from backend.src.sessions import training as training_module
 
 
 def test_run_training_flow_from_inspection_persists_relationships_without_rules(

@@ -67,26 +67,4 @@ Docker compose should now be installed. You may have to exit and re log in to th
 docker compose version
 ```
 
-### Downloading of MLflow image
-
-This step should be used if an external image cannot be downloaded due to the company firewall blocking it. We have encountered this issue with downloading the MLflow image.
-
-First, make sure you have access to a machine that can download the image. In my case, my work laptop allowed for the download, but it was blocked in EC2 instances. For others, the download was not allowed on their work machines. Therefore, you may need to use a personal computer.
-
-
-Download the image on the machine with access. References to MLflow can be replaced with another image if necessary.
-
-```bash
-docker save -o mlflowv3_10_1.tar ghcr.io/mlflow/mlflow:v3.10.1
-```
-
-
-Then move this tar file to the machine without access. This may be done with s3 as previously explained. Alternatively, the MLflow image is already uploaded to our s3 at `s3://ntt-ba-datalake/sp/health/FNMT-PT5/mlflowv3_10_1.tar`.
-
-Once you have the tar file on the target machine, simply load the file with
-```bash
-docker load -i mlflowv3_10_1.tar
-```
-Docker should now recognize that this image is already present, and should no longer attempt to download it from the internet.
-
 [<-- Back to Main Index](../../README.md)

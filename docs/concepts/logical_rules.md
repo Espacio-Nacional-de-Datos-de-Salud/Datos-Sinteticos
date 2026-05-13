@@ -179,6 +179,83 @@ It also automatically resolves rules that depend on another table:
 > This is important because the same column can be the **target of one rule** and the **origin of another**, and during PRE, targets are removed.
 > Applying POST in reverse order ensures that dependencies are reconstructed correctly.
 
+### 4.3 Rule Interaction Detection and Ordering
+
+Logical rules can be **isolated**, **overlapping**, or **concatenated**. The manager enforces
+valid ordering right before applying PRE rules so that no rule references a column that has already been removed. The ordering and validation are driven by column-level dependencies and a directed graph built with the library NetworkX.
+
+#### 4.3.1 `add_rule()`
+
+Registers a new rule in the manager after checking conflicts (with _detect_rule_interactions).
+
+- **Superimposition (overlap):** if another rule already targets the same table + column,
+  a `RuleSuperimpositionError` is raised.
+- **Concatenation:** if the rule depends on columns produced or removed by another rule,
+  both rules are tracked in `concat_rules` so they can be ordered later.
+
+#### 4.3.2 `_detect_rule_interactions()`
+
+Compares the new rule against all registered rules and classifies interactions.
+
+- **Inputs:** a `LogicalRule` to check.
+- **Outputs:** updates `concat_rules` when dependencies are found.
+- **Logic:**
+  - Computes each rule's **source columns** (what it needs), **produced columns** (what it
+    creates), and **removed columns** (what it deletes in PRE).
+  - If a rule needs a column that another rule produces or removes, they are concatenated.
+
+#### 4.3.3 `_sort_concat_rules()` (NetworkX-based)
+
+Called in apply_all_pre. Orders concatenated rules so every dependency is respected. Also logs a warning and skips for any rules
+that refer to inexistent columns. This is accomplished through first formatting all rules into a directed graph. The library NetworkX 
+is then used for cycle detection, ensuring that there are no incomputable cyclic relationships. Then, NetworkX is used to perform a 
+topological sort, ordering all rules into the appropriate positions. There are various tests for this ordering present in tests/test_logical_rules.py.
+
+**Steps:**
+
+1. **Collect columns** from the input tables to validate that all referenced origin/source
+   columns exist.
+2. **Build a dependency graph** (`nx.DiGraph`) where each node is a rule index.
+   - Edge `A -> B` means rule `B` depends on outputs or removals of rule `A`.
+   - Dependencies come from:
+     - **Produced columns** (`aux_col`)
+     - **Removed columns** (targets dropped during PRE)
+3. **Cycle detection**: `nx.find_cycle()` checks if the graph contains a cycle.
+   - If a cycle exists, the ordering is impossible and `RuleConcatenationError` is raised.
+4. **Topological sorting**: `nx.algorithms.dag.lexicographical_topological_sort()` returns a
+   stable, deterministic order for rules in a valid DAG (Directed Acyclic Graph).
+
+#### 4.3.4 `_qualify_col()`
+
+Utility to produce a consistent qualified column identifier.
+
+- **Input:** table name + column name
+- **Output:** `"table.column"` (or just `"column"` when the table is not provided)
+- **Purpose:** unify column keys across rules and tables without needing actual DataFrames.
+
+#### 4.3.5 `_get_rule_source_cols()`
+
+Returns the set of columns **required** by a rule.
+
+- Includes `origin_col` and `source_col` (if present).
+- Columns are returned in qualified form (e.g., `"patients.age"`).
+
+#### 4.3.6 `_get_rule_produced_cols()`
+
+Returns the set of columns **created** by a rule.
+
+- Some rules are inconsistent and create the target column. 
+- Includes `target_col` and `aux_col` (if present).
+- This is used to build dependency edges for concatenated rules.
+
+#### 4.3.7 `_get_rule_removed_cols()`
+
+Returns the set of columns **removed in PRE** by a rule.
+
+- Targets removed by rules that create an `aux_col` (e.g., inequality rules).
+- Targets removed by FK consistency rules (detected via `source_col` and no `origin_col`).
+- Used to ensure consumers of a column execute **before** the rule that removes it.
+
 ## 5. Currently Implemented Rules
 
 ### 5.1 Date Inequality — `DateInequalityRule`
@@ -258,7 +335,7 @@ rules:
 
 Derived columns are computed in PRE (so they are part of training metadata) and
 recomputed in POST to guarantee consistency. These rules do not remove source
-columns by default; they only add or overwrite the derived target column.
+columns by default; they only add or overwrite the derived aux column.
 
 Optional behavior:
 - `drop_origin: true` removes the source column after PRE. In this mode the
@@ -275,7 +352,7 @@ rules:
     table_origin: "patients"
     origin_col: "dob"
     table_target: "patients"
-    target_col: "age"
+    aux_col: "age"
     reference_date: "2026-04-24"
     drop_origin: true
 
@@ -283,7 +360,7 @@ rules:
     table_origin: "visits"
     origin_col: "dob"
     table_target: "visits"
-    target_col: "age_at_visit"
+    aux_col: "age_at_visit"
     reference_date_col: "visit_date"
 ```
 
@@ -296,7 +373,7 @@ rules:
     table_origin: "patients"
     origin_col: "age"
     table_target: "patients"
-    target_col: "is_adult"
+    aux_col: "is_adult"
     threshold: 18
     operator: ">="
 ```
@@ -310,7 +387,7 @@ rules:
     table_origin: "patients"
     origin_col: "age"
     table_target: "patients"
-    target_col: "age_group"
+    aux_col: "age_group"
     bins: [0, 18, 65, 120]
     labels: ["minor", "adult", "senior"]
 ```

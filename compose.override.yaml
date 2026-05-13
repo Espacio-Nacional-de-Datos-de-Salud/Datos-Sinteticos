@@ -1,0 +1,17 @@
+# Automatically merged by Docker Compose during local development.
+# Do NOT ship this file to production or include it in docker save exports.
+services:
+  backend:
+    volumes:
+      - ./backend/config:/app/backend/config
+      - ./backend/data:/app/backend/data
+
+  frontend:
+    build:
+      target: dev
+    environment:
+      - WATCHPACK_POLLING=true
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next

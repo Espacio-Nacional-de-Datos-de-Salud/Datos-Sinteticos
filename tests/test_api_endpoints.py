@@ -33,10 +33,11 @@ from backend.src.api.routers import (
     simulations as simulations_router,
 )
 from backend.src.config.general import METADATA_FILENAME, MODEL_CARD_FILENAME
-from backend.src.core.catalog import simulations as simulations_catalog
-from backend.src.core.catalog.models import DeleteModelOutcome
-from backend.src.core.catalog.simulations import DeleteSimulationOutcome
-from backend.src.core.errors import (
+from backend.src.runs.catalog import simulations as simulations_catalog
+from backend.src.runs.catalog.inspections import DeleteInspectionOutcome
+from backend.src.runs.catalog.models import DeleteModelOutcome
+from backend.src.runs.catalog.simulations import DeleteSimulationOutcome
+from backend.src.infrastructure.errors import (
     GeneratorEssentialsIncompleteError,
     InspectionNotFoundError,
     InspectionProfilingNotFoundError,
@@ -45,8 +46,8 @@ from backend.src.core.errors import (
     SimulationNotFoundError,
     SyntheticDataNotFoundError,
 )
-from backend.src.services import configs as configs_service
-from backend.src.services import files as files_service
+from backend.src.sessions import configs as configs_service
+from backend.src.sessions import files as files_service
 
 
 @pytest.fixture
@@ -364,7 +365,7 @@ def test_cleanup_inspections_returns_deleted_ids(
     monkeypatch.setattr(
         inspections_router,
         "cleanup_inspections_catalog",
-        lambda mode, stale_hours: (["empty_1"], ["orphan_1"], []),
+        lambda mode, stale_hours: (["empty_1"], ["orphan_1"], [], []),
     )
 
     response = client.delete("/inspections/cleanup?mode=both&stale_hours=48")
@@ -451,7 +452,9 @@ def test_delete_inspection_returns_deleted_id(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        inspections_router, "delete_inspection_catalog", lambda inspection_id: True
+        inspections_router,
+        "delete_inspection_catalog",
+        lambda inspection_id: DeleteInspectionOutcome(status="deleted"),
     )
 
     response = client.delete("/inspections/inspection_20260101_120000")

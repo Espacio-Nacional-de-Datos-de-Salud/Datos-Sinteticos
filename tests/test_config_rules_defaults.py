@@ -1,4 +1,4 @@
-"""Tests for `backend.src.services.configs` rules configuration defaults.
+"""Tests for `backend.src.sessions.configs` rules configuration defaults.
 
 Verifies that `rules.yaml` is initialized empty (rule definitions are only
 loaded from `rules.example.yaml`) during bootstrap and reset operations.
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.src.services import configs as configs_service
+from backend.src.sessions import configs as configs_service
 
 
 @pytest.fixture

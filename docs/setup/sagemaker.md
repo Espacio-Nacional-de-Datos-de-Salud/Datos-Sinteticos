@@ -35,14 +35,14 @@ Within SageMaker AI, navigate to: **Environment configurations (left menu) -> Do
 | `User` | Your NTT short user |
 
 **Recommended settings:**
-- Enable **MLflow** and **Docker**.
+- Enable **Docker**.
 - Set **Idle time** as low as possible. This helps auto-stop instances when forgotten.
 
 After creating the profile, it appears in the User Profiles list. Open it using **Open Studio** (Actions column).
 
 ## 3. Code Editor: Create Your Workspace
 
-Inside Studio you can access **MLflow, RStudio, Jupyter, and Code Editor**.
+Inside Studio you can access **RStudio, Jupyter, and Code Editor**.
 
 1. Open **Code Editor** and click *Create new Code Editor space* (top-right).
 2. Set name and configuration (see instance/storage guidance below).

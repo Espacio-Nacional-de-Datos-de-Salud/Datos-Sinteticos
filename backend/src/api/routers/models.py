@@ -14,37 +14,38 @@ from backend.src.api.schemas.models import (
     TrainingJob,
 )
 from backend.src.config.general import MODEL_CARD_FILENAME, MODELS_DIR
-from backend.src.core.cancellation import register as register_cancel
-from backend.src.core.cancellation import request_cancel, update_card_status
-from backend.src.core.catalog.downloads import (
+from backend.src.infrastructure.cancellation import register as register_cancel
+from backend.src.infrastructure.cancellation import request_cancel
+from backend.src.runs.card_io import update_card_status
+from backend.src.runs.catalog.downloads import (
     build_full_model_bundle,
     build_generator_essentials_bundle,
     build_zip_stream,
 )
-from backend.src.core.catalog.models import (
+from backend.src.runs.catalog.models import (
     cleanup_models as cleanup_models_catalog,
 )
-from backend.src.core.catalog.models import (
+from backend.src.runs.catalog.models import (
     delete_model as delete_model_catalog,
 )
-from backend.src.core.catalog.models import (
+from backend.src.runs.catalog.models import (
     list_available_models,
     list_model_column_values,
     list_model_columns,
 )
-from backend.src.core.catalog.models import (
+from backend.src.runs.catalog.models import (
     purge_all_models as purge_all_models_catalog,
 )
-from backend.src.core.catalog.models import (
+from backend.src.runs.catalog.models import (
     rename_model as rename_model_catalog,
 )
-from backend.src.core.errors import (
+from backend.src.infrastructure.errors import (
     GeneratorEssentialsIncompleteError,
     ModelNotFoundError,
 )
-from backend.src.core.validation import ModelId
-from backend.src.services.configs import resolve_config_path
-from backend.src.services.training import (
+from backend.src.domain.id_validation import ModelId
+from backend.src.sessions.configs import resolve_config_path
+from backend.src.sessions.training import (
     initialize_training_session,
     run_training_flow,
     run_training_flow_from_inspection,

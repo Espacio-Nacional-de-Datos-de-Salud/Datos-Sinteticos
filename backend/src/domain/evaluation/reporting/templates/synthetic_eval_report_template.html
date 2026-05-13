@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reporte de Evaluacion de Datos Sinteticos</title>
+  <style>
+    :root {
+      --bg: #f3f6f9;
+      --bg-accent: radial-gradient(circle at top right, #d7efe0 0%, #f3f6f9 40%, #f9efe3 100%);
+      --surface: #ffffff;
+      --surface-alt: #f8fafc;
+      --text: #122231;
+      --muted: #5f7284;
+      --border: #d6e0e8;
+      --good: #1f8f5f;
+      --mid: #d39c19;
+      --bad: #bf3f3f;
+      --info: #2f6cb3;
+      --shadow: 0 10px 30px rgba(17, 34, 51, 0.08);
+      --radius-lg: 16px;
+      --radius-md: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Manrope", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg-accent);
+      min-height: 100vh;
+    }
+
+    .container {
+      width: min(1280px, 94vw);
+      margin: 24px auto 42px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(120deg, #ffffff 20%, #f5f9fd 100%);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 1.02rem;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: #1e4d7f;
+    }
+
+    .panel-content {
+      padding: 16px 20px 20px;
+    }
+
+    .header-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+    }
+
+    .field-label {
+      font-size: 0.78rem;
+      letter-spacing: 0.02em;
+      color: var(--muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+
+    .field-value {
+      font-weight: 700;
+      font-size: 0.95rem;
+      overflow-wrap: anywhere;
+    }
+
+    .status-badge {
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      border: 1px solid transparent;
+      display: inline-block;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .score-card {
+      border: 1px solid var(--border);
+      border-left: 7px solid;
+      border-radius: var(--radius-md);
+      background: linear-gradient(150deg, #ffffff 0%, #f8fbfd 100%);
+      padding: 14px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .score-title {
+      font-size: 0.82rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .score-value {
+      font-size: 1.55rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .score-scale {
+      height: 8px;
+      border-radius: 999px;
+      background: #e7edf2;
+      overflow: hidden;
+      margin-top: 3px;
+    }
+
+    .score-scale-bar {
+      height: 100%;
+      border-radius: inherit;
+      width: 0;
+      transition: width 500ms ease;
+    }
+
+    .chart-wrap {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      height: 320px;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .metric-pill {
+      padding: 10px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      display: grid;
+      gap: 2px;
+    }
+
+    .metric-name {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .metric-value {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    details.section {
+      border-top: 1px solid var(--border);
+    }
+
+    details.section:first-of-type {
+      border-top: none;
+    }
+
+    details.section > summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      font-weight: 700;
+      background: #fcfeff;
+      user-select: none;
+    }
+
+    details.section > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .summary-right {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      margin-bottom: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 620px;
+      background: #fff;
+    }
+
+    th, td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #e7edf2;
+      text-align: left;
+      font-size: 0.88rem;
+      white-space: nowrap;
+    }
+
+    th {
+      background: #f4f8fb;
+      color: #204d74;
+      cursor: pointer;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      font-weight: 700;
+    }
+
+    th.sortable::after {
+      content: "  <>";
+      color: #89a0b2;
+      font-size: 0.74rem;
+    }
+
+    tr:hover td {
+      background: #fbfdff;
+    }
+
+    .tag-date {
+      background: #e5f1ff;
+      color: #2a67aa;
+      border: 1px solid #bdd6f0;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .explain {
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 8px 0 12px;
+      font-size: 0.92rem;
+    }
+
+    .tooltip {
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      border: 1px solid #97afc2;
+      color: #4c6f8e;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: help;
+      position: relative;
+    }
+
+    .tooltip:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 8px);
+      transform: translateX(-50%);
+      min-width: 210px;
+      max-width: 280px;
+      background: #1d2b38;
+      color: #fff;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 0.76rem;
+      line-height: 1.35;
+      z-index: 5;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+      white-space: normal;
+    }
+
+    .code-block {
+      margin: 0;
+      max-height: 320px;
+      overflow: auto;
+      background: #11202d;
+      color: #dce8f2;
+      border-radius: var(--radius-md);
+      border: 1px solid #1d384d;
+      padding: 12px;
+      font: 13px/1.35 "IBM Plex Mono", Consolas, monospace;
+      white-space: pre;
+    }
+
+    .legend {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .legend-item {
+      font-size: 0.78rem;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      color: #3e5971;
+    }
+
+    @media (max-width: 800px) {
+      .container {
+        width: min(1280px, 96vw);
+        margin-top: 12px;
+      }
+
+      .panel-header,
+      .panel-content,
+      details.section > summary {
+        padding-inline: 12px;
+      }
+
+      .chart-wrap {
+        height: 270px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="panel">
+      <header class="panel-header">
+        <h1 class="panel-title">Synthetic Dataset Evaluation Report</h1>
+        <span id="headerStatus" class="status-badge">-</span>
+      </header>
+      <div class="panel-content header-grid" id="metadataGrid"></div>
+    </section>
+
+    <section class="panel">
+      <header class="panel-header">
+        <h2 class="panel-title">Resumen Global</h2>
+      </header>
+      <div class="panel-content">
+        <div id="scoreCards" class="cards"></div>
+        <div class="chart-wrap">
+          <canvas id="scoresChart" aria-label="Resumen de los tres ejes de evaluacion"></canvas>
+        </div>
+        <div class="legend">
+          <span class="legend-item">Verde: bueno (>= 0.75)</span>
+          <span class="legend-item">Amarillo: medio (>= 0.5 y < 0.75)</span>
+          <span class="legend-item">Rojo: bajo (< 0.5)</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="sectionsRoot">
+      <details class="section" open>
+        <summary>
+          <span>Fidelidad</span>
+          <span class="summary-right" id="fidelitySummaryRight">-</span>
+        </summary>
+        <div class="panel-content">
+          <div id="fidelityAggregated" class="metrics-grid"></div>
+
+          <h3>TVD por columna</h3>
+          <div class="table-wrap">
+            <table id="tvdTable"></table>
+          </div>
+
+          <h3>CIO por estadistico</h3>
+          <div class="table-wrap">
+            <table id="cioTable"></table>
+          </div>
+
+          <h3>CMD</h3>
+          <div class="table-wrap">
+            <table id="cmdTable"></table>
+          </div>
+        </div>
+      </details>
+
+      <details class="section" open>
+        <summary>
+          <span>Privacidad</span>
+          <span class="summary-right" id="privacySummaryRight">-</span>
+        </summary>
+        <div class="panel-content">
+          <div id="privacyAggregated" class="metrics-grid"></div>
+
+          <h3>k-Anonymity por subset</h3>
+          <div class="table-wrap">
+            <table id="kanonSubsetTable"></table>
+          </div>
+
+          <h3>k-Anonymity por columna</h3>
+          <div class="table-wrap">
+            <table id="kanonColumnTable"></table>
+          </div>
+        </div>
+      </details>
+
+      <details class="section" open>
+        <summary>
+          <span>Utilidad</span>
+          <span class="summary-right" id="utilitySummaryRight">-</span>
+        </summary>
+        <div class="panel-content">
+          <div id="utilityAggregated" class="metrics-grid"></div>
+
+          <p class="explain">
+            <strong>Interpretacion TSTR:</strong> GT es rendimiento entrenando y evaluando con datos reales.
+            SYN_ID entrena con sinteticos y evalua en test in-distribution.
+            SYN_OOD entrena con sinteticos y evalua en escenario out-of-distribution.
+            Cuanto mas cercanos a GT esten SYN_ID y SYN_OOD, mejor utilidad.
+          </p>
+
+          <div class="table-wrap">
+            <table id="utilityTable"></table>
+          </div>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>
+          <span>Seccion Tecnica</span>
+          <span class="summary-right">Logs y tiempos</span>
+        </summary>
+        <div class="panel-content">
+          <pre id="timeReport" class="code-block"></pre>
+        </div>
+      </details>
+    </section>
+  </main>
+
+<script id="embeddedReportData" type="application/json">
+
+__REPORT_DATA_JSON__
+</script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    function scoreToColor(score) {
+      if (score >= 0.75) {
+        return getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+      }
+      if (score >= 0.5) {
+        return getComputedStyle(document.documentElement).getPropertyValue("--mid").trim();
+      }
+      return getComputedStyle(document.documentElement).getPropertyValue("--bad").trim();
+    }
+
+    function scoreToLabel(score) {
+      if (score >= 0.75) return "Bueno";
+      if (score >= 0.5) return "Medio";
+      return "Bajo";
+    }
+
+    function formatScore(value, digits = 4) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "-";
+      return value.toFixed(digits);
+    }
+
+    function formatDate(raw) {
+      if (!raw) return "-";
+      const normalized = String(raw).replace(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/, "$1-$2-$3T$4:$5:$6Z");
+      const d = new Date(normalized);
+      if (Number.isNaN(d.getTime())) return String(raw);
+      return d.toLocaleString("es-ES", { hour12: false });
+    }
+
+    function parseMaybeNumber(value) {
+      if (value === null || value === undefined) return value;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : value;
+    }
+
+    function createField(label, value) {
+      const wrapper = document.createElement("article");
+      wrapper.className = "field";
+      wrapper.innerHTML = '<div class="field-label"></div><div class="field-value"></div>';
+      wrapper.querySelector(".field-label").textContent = label;
+      wrapper.querySelector(".field-value").textContent = value;
+      return wrapper;
+    }
+
+    function createMetricPill(name, value, tooltipText) {
+      const color = scoreToColor(typeof value === "number" ? value : 0);
+      const valueText = typeof value === "number" ? formatScore(value, 4) : String(value);
+      const el = document.createElement("article");
+      el.className = "metric-pill";
+      el.innerHTML = '<div class="metric-name"></div><div class="metric-value"></div>';
+
+      const metricName = el.querySelector(".metric-name");
+      const metricValue = el.querySelector(".metric-value");
+
+      metricName.textContent = name;
+      metricValue.textContent = valueText;
+      metricValue.style.color = color;
+
+      if (tooltipText) {
+        const tip = document.createElement("span");
+        tip.className = "tooltip";
+        tip.dataset.tip = tooltipText;
+        tip.textContent = "i";
+        metricName.appendChild(document.createTextNode(" "));
+        metricName.appendChild(tip);
+      }
+      return el;
+    }
+
+    function createScoreCard(name, score, tooltipText) {
+      const color = scoreToColor(score);
+      const card = document.createElement("article");
+      card.className = "score-card";
+      card.style.borderLeftColor = color;
+      card.innerHTML = [
+        '<div class="score-title"></div>',
+        '<div class="score-value"></div>',
+        '<div class="score-scale"><div class="score-scale-bar"></div></div>'
+      ].join("");
+
+      const title = card.querySelector(".score-title");
+      const value = card.querySelector(".score-value");
+      const bar = card.querySelector(".score-scale-bar");
+
+      title.textContent = name;
+      if (tooltipText) {
+        const tip = document.createElement("span");
+        tip.className = "tooltip";
+        tip.dataset.tip = tooltipText;
+        tip.textContent = "i";
+        title.appendChild(tip);
+      }
+
+      value.textContent = formatScore(score, 3);
+      value.style.color = color;
+      bar.style.background = color;
+      bar.style.width = Math.max(0, Math.min(100, score * 100)) + "%";
+
+      return card;
+    }
+
+    function decorateStatus(status) {
+      const val = String(status || "unknown").toLowerCase();
+      const color = val.includes("complete") ? "var(--good)" : val.includes("running") ? "var(--mid)" : "var(--bad)";
+      const bg = val.includes("complete") ? "#e6f4ec" : val.includes("running") ? "#fff6df" : "#fde9e9";
+      return { color, bg, label: val };
+    }
+
+    function renderSimpleTable(tableId, rows, columns, options = {}) {
+      const table = document.getElementById(tableId);
+      if (!table) return;
+
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      columns.forEach((col) => {
+        const th = document.createElement("th");
+        th.textContent = col.label;
+        th.classList.add("sortable");
+        th.dataset.key = col.key;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+
+      const tbody = document.createElement("tbody");
+      rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        columns.forEach((col) => {
+          const td = document.createElement("td");
+          let value = row[col.key];
+          if (options.formatters && typeof options.formatters[col.key] === "function") {
+            value = options.formatters[col.key](value, row);
+          }
+          if (value instanceof Node) {
+            td.appendChild(value);
+          } else {
+            td.textContent = value === undefined || value === null ? "-" : String(value);
+          }
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      table.replaceChildren(thead, tbody);
+      enableTableSorting(table, rows, columns, options);
+    }
+
+    function enableTableSorting(table, originalRows, columns, options = {}) {
+      const headers = Array.from(table.querySelectorAll("th.sortable"));
+      let direction = 1;
+      let activeKey = null;
+
+      headers.forEach((th) => {
+        th.addEventListener("click", () => {
+          const key = th.dataset.key;
+          direction = activeKey === key ? direction * -1 : 1;
+          activeKey = key;
+          const sorted = [...originalRows].sort((a, b) => {
+            const av = parseMaybeNumber(a[key]);
+            const bv = parseMaybeNumber(b[key]);
+            if (typeof av === "number" && typeof bv === "number") {
+              return direction * (av - bv);
+            }
+            return direction * String(av).localeCompare(String(bv));
+          });
+          renderSimpleTable(table.id, sorted, columns, options);
+        });
+      });
+    }
+
+    function renderHeader(metadata) {
+      const grid = document.getElementById("metadataGrid");
+      const statusBadge = document.getElementById("headerStatus");
+      const statusView = decorateStatus(metadata.status);
+
+      statusBadge.textContent = statusView.label;
+      statusBadge.style.color = statusView.color;
+      statusBadge.style.background = statusView.bg;
+      statusBadge.style.borderColor = statusView.color;
+
+      const fields = [
+        ["Evaluation ID", metadata.evaluation_id || "-"],
+        ["Model ID", metadata.model_id || "-"],
+        ["Simulation ID", metadata.simulation_id || "-"],
+        ["Timestamp", formatDate(metadata.timestamp || metadata.evaluation_id)],
+        ["Status", metadata.status || "-"]
+      ];
+
+      grid.replaceChildren(...fields.map((x) => createField(x[0], x[1])));
+    }
+
+    function renderScores(scores) {
+      const root = document.getElementById("scoreCards");
+      const cardItems = [
+        ["Fidelity", scores.fidelity_score, "Calidad estadistica del sintetico respecto al real."],
+        ["Privacy", scores.privacy_score, "Resistencia a re-identificacion y fuga de registros."],
+        ["Utility", scores.utility_score, "Capacidad de entrenar modelos utiles con datos sinteticos."],
+        ["Global", scores.global_score, "Combinacion agregada de Fidelity, Privacy y Utility."]
+      ];
+
+      const axisItems = cardItems.slice(0, 3);
+
+      root.replaceChildren(...cardItems.map((x) => createScoreCard(x[0], x[1], x[2])));
+
+      if (window.Chart) {
+        const ctx = document.getElementById("scoresChart");
+        new Chart(ctx, {
+          type: "radar",
+          data: {
+            labels: axisItems.map((x) => x[0]),
+            datasets: [{
+              label: "Scores por eje",
+              data: axisItems.map((x) => x[1]),
+              backgroundColor: "rgba(34, 115, 176, 0.15)",
+              borderColor: "rgba(34, 115, 176, 0.9)",
+              borderWidth: 2,
+              pointBackgroundColor: axisItems.map((x) => scoreToColor(x[1])),
+              pointRadius: 4
+            }]
+          },
+          options: {
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (context) => {
+                    const value = context.raw;
+                    return context.label + ": " + formatScore(value, 4) + " (" + scoreToLabel(value) + ")";
+                  }
+                }
+              }
+            },
+            scales: {
+              r: {
+                beginAtZero: true,
+                min: 0,
+                max: 1,
+                ticks: { stepSize: 0.2 },
+                pointLabels: { font: { size: 12 } }
+              }
+            }
+          }
+        });
+      }
+    }
+
+    function renderFidelity(summary, details) {
+      const aggRoot = document.getElementById("fidelityAggregated");
+      const mapTips = {
+        jsd: "Jensen-Shannon divergence invertida/normalizada.",
+        inv_kl: "KL invertida: mejor cuando distribuciones son cercanas.",
+        inv_tvd: "1 - TVD promedio. Alto es mejor.",
+        cmd: "Correlacion multivariada; alto indica estructura similar.",
+        cio: "Confidence Interval Overlap promedio."
+      };
+
+      aggRoot.replaceChildren(
+        ...Object.entries(summary || {}).map(([k, v]) => createMetricPill(k, v, mapTips[k]))
+      );
+
+      document.getElementById("fidelitySummaryRight").textContent =
+        "Score " + formatScore((window.__reportData.scores || {}).fidelity_score, 3);
+
+      renderSimpleTable(
+        "tvdTable",
+        (details.tvd_by_column || []).map((r) => ({
+          column: r.column,
+          complementary_tvd: formatScore(r.complementary_tvd, 6)
+        })),
+        [
+          { key: "column", label: "Columna" },
+          { key: "complementary_tvd", label: "Complementary TVD" }
+        ]
+      );
+
+      renderSimpleTable(
+        "cioTable",
+        (details.cio_by_statistic || []).map((r) => ({
+          key: r.key,
+          column: r.column,
+          stat: r.stat,
+          overlap: r.overlap,
+          real_value: r.real_value,
+          synthetic_value: r.synthetic_value,
+          abs_diff: r.abs_diff
+        })),
+        [
+          { key: "key", label: "Key" },
+          { key: "column", label: "Columna" },
+          { key: "stat", label: "Estadistico" },
+          { key: "overlap", label: "Overlap" },
+          { key: "real_value", label: "Real" },
+          { key: "synthetic_value", label: "Synthetic" },
+          { key: "abs_diff", label: "Abs Diff" }
+        ],
+        {
+          formatters: {
+            overlap: (v) => formatScore(v, 4),
+            real_value: (v) => formatScore(v, 6),
+            synthetic_value: (v) => formatScore(v, 6),
+            abs_diff: (v) => formatScore(v, 6)
+          }
+        }
+      );
+
+      renderSimpleTable(
+        "cmdTable",
+        details.cmd || [],
+        [
+          { key: "metric", label: "Metrica" },
+          { key: "value", label: "Valor" }
+        ],
+        {
+          formatters: {
+            value: (v) => formatScore(v, 6)
+          }
+        }
+      );
+    }
+
+    function hasDateToken(text) {
+      const raw = String(text || "").toLowerCase();
+      return raw.includes("dob") || raw.includes("admittime") || raw.includes("dischtime");
+    }
+
+    function renderPrivacy(summary, details) {
+      const aggRoot = document.getElementById("privacyAggregated");
+      const mapTips = {
+        dcr: "Distance to Closest Record; mayor suele indicar menor riesgo de copia.",
+        nndr: "Nearest Neighbor Distance Ratio.",
+        k_anonymity: "Normalizado: mayor es mejor nivel de anonimato.",
+        emr: "Exact Match Rate; menor suele implicar menos memorization.",
+        detection_mlp: "Capacidad de un clasificador de distinguir real vs sintetico."
+      };
+
+      aggRoot.replaceChildren(
+        ...Object.entries(summary || {}).map(([k, v]) => createMetricPill(k, v, mapTips[k]))
+      );
+
+      document.getElementById("privacySummaryRight").textContent =
+        "Score " + formatScore((window.__reportData.scores || {}).privacy_score, 3);
+
+      const subsetRows = (details.k_anonymity_subsets || []).map((r) => ({
+        subset: r.subset,
+        columns: r.columns,
+        has_date_column: r.has_date_column ? "si" : "no",
+        real_k: r.real_k,
+        syn_k: r.syn_k,
+        real_n_eq_classes: r.real_n_eq_classes,
+        syn_n_eq_classes: r.syn_n_eq_classes,
+        real_size_median: r.real_size_median,
+        syn_size_median: r.syn_size_median
+      }));
+
+      renderSimpleTable(
+        "kanonSubsetTable",
+        subsetRows,
+        [
+          { key: "subset", label: "Subset" },
+          { key: "columns", label: "Columnas" },
+          { key: "has_date_column", label: "Tiene fecha" },
+          { key: "real_k", label: "Real k" },
+          { key: "syn_k", label: "Synthetic k" },
+          { key: "real_n_eq_classes", label: "Real n classes" },
+          { key: "syn_n_eq_classes", label: "Synthetic n classes" },
+          { key: "real_size_median", label: "Real size median" },
+          { key: "syn_size_median", label: "Synthetic size median" }
+        ],
+        {
+          formatters: {
+            columns: (value, row) => {
+              if (!(row.has_date_column === "si" || hasDateToken(value))) return value;
+              const span = document.createElement("span");
+              span.textContent = value + " ";
+              const tag = document.createElement("span");
+              tag.className = "tag-date";
+              tag.textContent = "fecha";
+              span.appendChild(tag);
+              return span;
+            }
+          }
+        }
+      );
+
+      renderSimpleTable(
+        "kanonColumnTable",
+        details.k_anonymity_column_granularity || [],
+        [
+          { key: "column", label: "Columna" },
+          { key: "real_k", label: "Real k" },
+          { key: "syn_k", label: "Synthetic k" },
+          { key: "real_n_unique", label: "Real n unique" },
+          { key: "syn_n_unique", label: "Synthetic n unique" },
+          { key: "is_date_column", label: "Fecha" }
+        ],
+        {
+          formatters: {
+            is_date_column: (v) => (v ? "si" : "no")
+          }
+        }
+      );
+    }
+
+    function renderUtility(summary, details) {
+      const aggRoot = document.getElementById("utilityAggregated");
+      const mapTips = {
+        linear_gt: "Modelo lineal entrenado y evaluado en real.",
+        linear_syn_id: "Modelo lineal entrenado en sintetico, evaluado in-distribution.",
+        linear_syn_ood: "Modelo lineal entrenado en sintetico, evaluado out-of-distribution.",
+        mlp_gt: "MLP entrenado y evaluado en real.",
+        mlp_syn_id: "MLP entrenado en sintetico, evaluado in-distribution.",
+        mlp_syn_ood: "MLP entrenado en sintetico, evaluado out-of-distribution."
+      };
+
+      aggRoot.replaceChildren(
+        ...Object.entries(summary || {}).map(([k, v]) => createMetricPill(k, v, mapTips[k]))
+      );
+
+      document.getElementById("utilitySummaryRight").textContent =
+        "Score " + formatScore((window.__reportData.scores || {}).utility_score, 3);
+
+      const utilityRows = Object.entries((details && details.metrics) || {}).map(([metric, value]) => ({
+        metric,
+        value,
+        quality: scoreToLabel(Number(value))
+      }));
+
+      renderSimpleTable(
+        "utilityTable",
+        utilityRows,
+        [
+          { key: "metric", label: "Metrica" },
+          { key: "value", label: "Valor" },
+          { key: "quality", label: "Nivel" }
+        ],
+        {
+          formatters: {
+            value: (v) => formatScore(v, 6),
+            quality: (v, row) => {
+              const span = document.createElement("span");
+              span.textContent = v;
+              span.style.color = scoreToColor(Number(row.value));
+              span.style.fontWeight = "700";
+              return span;
+            }
+          }
+        }
+      );
+    }
+
+    function renderTechnical(details) {
+      const logs = (details.logs || {}).time_report || "Sin time_report disponible.";
+      document.getElementById("timeReport").textContent = logs;
+    }
+
+    async function loadData() {
+      const embedded = document.getElementById("embeddedReportData");
+      const embeddedText = embedded ? embedded.textContent.trim() : "";
+
+      if (!embeddedText) {
+        throw new Error("No hay datos embebidos en el reporte.");
+      }
+
+      return JSON.parse(embeddedText);
+    }
+
+    function renderReport(data) {
+      window.__reportData = data;
+      renderHeader(data.metadata || {});
+      renderScores(data.scores || {});
+      renderFidelity((data.summary || {}).fidelity || {}, ((data.details || {}).fidelity || {}));
+      renderPrivacy((data.summary || {}).privacy || {}, ((data.details || {}).privacy || {}));
+      renderUtility((data.summary || {}).utility || {}, ((data.details || {}).utility || {}));
+      renderTechnical((data.details || {}));
+    }
+
+    loadData()
+      .then(renderReport)
+      .catch((error) => {
+        console.error(error);
+        const root = document.querySelector(".container");
+        root.innerHTML = [
+          '<section class="panel"><div class="panel-content">',
+          '<h2>Error cargando el reporte</h2>',
+          '<p class="explain">No se pudo cargar <strong>report_data.json</strong>. ',
+          'Asegurate de abrir el HTML desde la carpeta donde esta el JSON, ',
+          'o pega el JSON dentro del script <strong>#embeddedReportData</strong>.</p>',
+          '<pre class="code-block"></pre>',
+          '</div></section>'
+        ].join("");
+        const pre = document.querySelector(".code-block");
+        pre.textContent = String(error);
+      });
+  </script>
+</body>
+</html>

@@ -7,8 +7,6 @@
 # For local development use requirements_evaluation.txt instead.
 
 # Base (same as requirements_evaluation.txt minus synthcity)
-mlflow
-sagemaker-mlflow
 numpy==1.26.4
 opacus==1.4.1
 torch==2.2.2

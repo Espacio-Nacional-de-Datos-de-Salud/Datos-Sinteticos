@@ -82,7 +82,7 @@ make api
 in a different terminal and open the UI:
 - http://localhost:3000
 
-For more execution details check out [Execution](../setup/execution.md).
+For more execution details check out [Use the CLI](../setup/use_cli.md).
 
 For the frontend to know where the backend is, we need to have a .env.local file with:
 
@@ -90,6 +90,6 @@ For the frontend to know where the backend is, we need to have a .env.local file
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-This is automatically done by the _backend.src.services.configs bootstrap_ script executed at the end of make setup, you can change the path here if the backend url changes.
+This is automatically done by the _backend.src.sessions.configs bootstrap_ script executed at the end of make setup, you can change the path here if the backend url changes.
 
 [<-- Back to Main Index](../../README.md)

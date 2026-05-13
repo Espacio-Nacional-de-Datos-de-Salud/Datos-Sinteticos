@@ -119,7 +119,7 @@ def test_main_simulation_mode_loads_artifacts_then_simulates(
 
 
 def test_main_simulation_mode_requires_model_id(stub_resolve: None) -> None:
-    with pytest.raises(ValueError, match="model_id is required"):
+    with pytest.raises(ValueError, match="model_id es obligatorio"):
         commands_module.run_workflow(mode="s", file_paths=None, sample_size=50)
 
 

@@ -4,45 +4,25 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: synthetic-data-backend
-    command: sh -c "python -m backend.src.services.configs bootstrap && uvicorn backend.src.api.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "python -m backend.src.sessions.configs bootstrap && uvicorn backend.src.api.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
     volumes:
       - outputs:/app/backend/outputs
-      - ./backend/data:/app/backend/data
-      - ./backend/config:/app/backend/config
-      - ./backend/mlruns:/app/backend/mlruns
-      - ./backend/mlflow.db:/app/backend/mlflow.db
-    depends_on:
-      - mlflow
-
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:v3.10.1
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./backend/mlflow.db:/mlflow/mlflow.db
-      - ./backend/mlruns:/mlflow/mlruns
-    command: >
-      mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts "*"
+      - ${DATA_PATH:-./backend/data}:/app/backend/data
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: prod
     container_name: synthetic-data-frontend
     ports:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - WATCHPACK_POLLING=true
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     depends_on:
       - backend
 

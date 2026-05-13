@@ -7,7 +7,7 @@ translates query params and delegates.
 """
 
 from backend.src.api.schemas.files import DataFile, FilePreview, FilePreviewRequest
-from backend.src.services.files import (
+from backend.src.sessions.files import (
     ALLOWED_EXTENSIONS,
     FilePreviewError,
     UploadConflictError,
@@ -100,7 +100,14 @@ def preview_files(req: FilePreviewRequest) -> list[FilePreview]:
     out: list[FilePreview] = []
     for path in req.paths:
         try:
-            out.append(preview_file(path, sample_rows=req.sample_rows))
+            out.append(
+                preview_file(
+                    path,
+                    sample_rows=req.sample_rows,
+                    offset=req.offset,
+                    include_total=req.include_total,
+                )
+            )
         except FilePreviewError:
             continue
     return out

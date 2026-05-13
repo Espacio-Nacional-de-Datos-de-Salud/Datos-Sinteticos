@@ -1,13 +1,19 @@
 [<-- Back to Main Index](../../README.md)
 
-# Onboarding Guide
+# Developer Onboarding
 
-Welcome. This document is the **mental model** for the repository: what lives where, which entry point to use when, and which config file controls which behavior. For coding standards, commit style, and docstring format see [Repository Guidelines](repository_guidelines.md).
+For someone who will **maintain and extend** the tool, not just run
+it. By the end of this doc you'll have the environment installed, the
+tool running through all three entry points, a working mental model
+of how a request travels through the codebase, and one tiny change
+shipped.
 
-For step-by-step setup, see [Setup & Execution](setup.md).
+The narrative is ordered. Hit each checkpoint before moving on. Where
+a step has a standalone reference doc, the body stays short and links
+out — you read the long version only when you need it.
 
 
-## 1. What This Tool Does
+## 0 — What this tool does
 
 Generates synthetic tabular health data for the ENDS (Espacio Nacional
 de Datos de Salud). The core workflow is:
@@ -19,68 +25,87 @@ raw tables ──► inspect ──► train ──► simulate ──► evalua
 
 The generator is the [Mostly AI SDK](../concepts/mostly_ai.md); logical
 constraints on the output are enforced through
-[Logical Rules](../concepts/logical_rules.md); experiment lineage is
-written to [MLflow](../concepts/tracking_and_mlflow.md).
+[Logical Rules](../concepts/logical_rules.md); every run writes a card
+under `backend/outputs/<step>/` recording its lineage, status, and
+artifacts.
 
-## 2. Repository Map
+
+### Repo structure
+
+Use this when something exists outside `backend/src/` and you want to
+know what it is. For the inside of `backend/src/`, go to
+[Backend Layout](../concepts/backend_layout.md).
 
 | Path | What you'll find | When you edit it |
 | :--- | :--- | :--- |
 | `docs/` | Documentation (Markdown) | When behavior changes |
 | `scripts/` | Windows PowerShell helpers (`setup.ps1`, `run.ps1`), data converters | Rarely |
 | `notebooks/` | Exploratory analyses | Not required for execution |
-| `backend/config/` | All configuration (see section 4) | Whenever you change defaults or add a rule |
+| `frontend/` | Next.js app | When changing the UI |
+| `backend/config/` | All user-editable YAML configuration | Whenever you change defaults or add a rule |
 | `backend/data/` | Input datasets (usually a symlink) | git-ignored |
-| `backend/outputs/` | Artifacts: `models/`, `simulations/`, `evaluations/`, `inspections/`, `pipelines/` | Generated, not edited (only `autodetect.json`) |
-| `backend/src/` | Backend source code | - |
-| `backend/src/cli/` | Entry point for single-run inspect/train/simulate, including the interactive CLI | Rarely — usually use `make cli` or the Make targets |
-| `backend/src/pipeline/` | The core execution engine for multi-step YAML-driven runs | When modifying how pipelines parse YAMLs or orchestrate jobs |
-| `backend/src/services/` | Facade/Integration layer for external interfaces (like APIs) | When adding logic to expose functionality externally with session state |
-| `backend/src/evaluation/__main__.py` | Entry point for standalone evaluation (`python -m src.evaluation`) | Rarely |
-| `backend/src/core/` | Business logic: preprocessing, synthesis, tracking, rules, sanity checks | Where most day-to-day work happens |
-| `backend/src/evaluation/` | Evaluation orchestration, metric runners, statistics, and synthcity-facing helpers (isolated — runs in `.venv_eval`) | When adding/fixing metrics |
-| `backend/src/api/`, `src/cli/` | Reserved for future REST API / CLI front-ends | Not yet implemented  |
+| `backend/outputs/` | Run artifacts: `inspections/`, `models/`, `simulations/`, `evaluations/`, `pipelines/` | Generated, not edited |
+| `backend/src/` | Backend source code — see [Backend Layout](../concepts/backend_layout.md) | Everywhere |
+| `tests/` | Pytest suite. `tests/eval/` runs under `.venv_eval` | When you add behaviour |
+| `Makefile` | Every entry point a dev uses | When you add a new `make` target |
+| `compose.yaml` / `compose.override.yaml` | Docker compose for backend + frontend | When changing how the tool is containerised |
 
+---
 
-## 3. Three Entry Points — Which One Do I Use?
+## 1 — Install the environment
 
-This is the single biggest source of confusion. Use this matrix:
+Follow [Installation](install.md). When you come back, both venvs and
+real `backend/config/*.yaml` files should exist.
 
-| Scenario | Command | Underlying script | Venv |
-| :--- | :--- | :--- | :--- |
-| I want to inspect/train/simulate **one** dataset, one-off | `make inspect` / `make train` / `make simulate` | `src/main.py` | `.venv_core` |
-| I only want to **evaluate** an existing simulation (ad hoc) | `make eval` | `python -m src.evaluation` | `.venv_eval` |
-| I want to run **many combinations** (sweeps, experiments, reruns) | `make pipeline CONFIG=...` | `src/pipeline/` (`-m src.pipeline`) | `.venv_core` (+ `.venv_eval` for eval step) environment sorted automatically by the pipeline |
+**Checkpoint.** `ls .venv_core/bin/python .venv_eval/bin/python` both
+exist; `ls backend/config/*.yaml` shows real (not `.example`) files.
 
-Tips:
-- Prefer `pipeline` for anything repeatable. It logs a combined session,
-  writes a `pipeline_card.json`, and ties every child run to a
-  single `pipeline_id` in MLflow.
-- Use `make inspect` → edit `autodetect.json` → `make train` when you
-  need to fix autodetected PKs/FKs or encoding types. See
-  [Setup & Execution Section 4](setup.md).
-- Use `python -m src.evaluation` for a quick standalone evaluation outside
-  any pipeline. The pipeline's `evaluate:` step calls the same
-  `run_evaluation(...)` orchestration internally.
+---
 
+## 2 — Run the tool through every entry point
 
-## 4. Configuration
+The tool ships three drivers — frontend / interactive CLI / `make`
+one-shots — and they all reach the same `src/sessions/` wrappers and
+`src/domain/` engines. Going through each at least once is the
+fastest way to understand why they're interchangeable.
 
-Full reference: [Setup & Execution Section 2](setup.md).
-Quick map:
-
-| File | Controls | Typical newcomer edit |
+| Driver | Run it now | Full guide |
 | :--- | :--- | :--- |
-| `backend/src/config/general.py` | Paths, MLflow URIs, non-tunable system defaults | Set `DEFAULT_DATA_PATH` |
-| `backend/config/general.yaml` | Runtime settings + per-run execution params (mode, file paths, IDs) | Run `make config` to create it, then edit `execution.*` before `make <mode>` |
-| `backend/config/mostly_ai.yaml` | Mostly AI hyperparameters (epochs, batch, DP) | Tweak for memory / speed / privacy |
-| `backend/config/rules.yaml` | Global logical rules | Add per-dataset constraints |
-| `backend/config/pipelines/*.yaml` | Pipeline job definitions | See `example_pipeline.yaml` |
-| `backend/config/pipelines/rules/*.yaml` | Per-job rules referenced from a pipeline's `rules_config` override | Create one per experiment with custom constraints |
-| `backend/src/config/evaluation.py` | Env-driven evaluation resolvers (interpreter path, custom stats module) | Rarely touched |
-| `backend/config/evaluation.yaml` | Metrics, bootstrap size, CI level, statistics list | Disable heavy metrics (`DomiasMIA_BNAF`) while iterating; add per-column stats |
+| Frontend | `make local`, then open `http://localhost:3000`. Inspect → train → simulate → evaluate `data/uploads/dataset_prueba_tecnica_v2.csv` via the UI. | [Use the UI](use_ui.md) |
+| Interactive CLI | `make cli`, walk through the wizard for the same dataset. | [Use the CLI § 1](use_cli.md#1-interactive-wizard) |
+| `make` one-shots | `make inspect` → `make train` → `make simulate` → `make eval`, editing IDs in `general.yaml` between steps. | [Use the CLI § 3](use_cli.md#3-the-recommended-workflow-inspect--review--train--simulate--evaluate) |
+| End-to-end pipeline | `make pipeline CONFIG=backend/config/pipelines/example_pipeline.yaml` | [Use the CLI § 4](use_cli.md#4-running-an-end-to-end-pipeline) |
 
-### Config cascade in a pipeline
+While you run them, in another terminal:
+
+```bash
+ls backend/outputs/inspections/ backend/outputs/models/ \
+   backend/outputs/simulations/ backend/outputs/evaluations/ \
+   backend/outputs/pipelines/
+```
+
+Watch the timestamped folders appear and the `*_card.json` files
+transition from `in_progress` → `success`.
+
+**Checkpoint.** You can open any `*_card.json` and recognise the
+fields. You can answer: "if I drive this from the UI vs. `make cli`
+vs. `make pipeline`, what's the same and what's different?" (Answer:
+the resulting run folder and card are identical; only the driver
+differs.)
+
+> For sweeps / many config combinations, always prefer
+> `make pipeline CONFIG=...` over chaining single-mode targets — one
+> session log, one `pipeline_card.json`, and every child run is tagged
+> with the same `pipeline_id`.
+
+---
+
+## 3 — The configuration model
+
+The user-editable YAML config surface is documented in
+[Configuration](configuration.md). The one structural thing you
+should internalise before reading the per-file reference is the
+**cascade inside a pipeline**:
 
 ```
 global defaults  (general.yaml, mostly_ai.yaml, rules.yaml)
@@ -92,55 +117,97 @@ per-job config:  (rules_config / mostly_ai / general in the YAML)
 step inputs      (train.files, simulate.sample_size, evaluate.real_data)
 ```
 
-Overrides apply **only to the job that defines them**. See
-`config/pipelines/example_pipeline.yaml` for annotated cases.
+Overrides apply **only to the job that defines them**. The annotated
+reference is `backend/config/pipelines/example_pipeline.example.yaml`
+— read its comments line-by-line; most of the pipeline mental model
+is in that file. Conceptual overview: [Pipelines](../concepts/pipelines.md).
 
+---
 
-## 5. The Two Virtual Environments
+## 4 — Read the code, top to bottom of one slice
 
-Evaluation depends on `synthcity`, `torch`, and related packages that conflict directly with the training dependencies, so the repo ships **two** isolated venvs:
+Read [Backend Layout](../concepts/backend_layout.md) § 1–2 first — the
+five layers (`api/`, `sessions/`, `domain/`, `runs/`,
+`infrastructure/`) and the one-direction import rule. Skim § 3 (folder
+details) and come back to it when you need a specific subpath.
 
-| Venv | Contents | Used by |
+Then pick **simulation** and trace it end-to-end:
+
+| Layer | File | Read for… |
 | :--- | :--- | :--- |
-| `.venv_core` | Mostly AI SDK, pandas, MLflow, ruff, pytest (`requirements_core.txt`) | `make inspect` / `train` / `simulate` / `pipeline`, all lint/format, tests |
-| `.venv_eval` | synthcity, torch, opacus, evaluation utilities (`requirements_evaluation.txt`) | `make eval`, pipeline's `evaluate:` step when `EVAL_PYTHON_PATH` is set |
+| API | `backend/src/api/routers/simulations.py` | The `POST /simulations` endpoint the frontend calls. |
+| Schema | `backend/src/api/schemas/simulations.py` | The Pydantic request/response contracts. |
+| Sessions | `backend/src/sessions/simulation.py` | Session creation, background thread, card lifecycle. |
+| Engine | `backend/src/domain/synthesis.py` | The actual call into the Mostly AI SDK that samples rows. |
+| Run on disk | `backend/src/runs/tracking/` + `backend/src/runs/catalog/simulations.py` | How the card is written and later listed. |
 
-**How the pipeline bridges them:** when `EVAL_PYTHON_PATH` is exported,
-the pipeline engine launches `python -m src.evaluation` as a
-**subprocess** using that interpreter. stdout/stderr are forwarded to
-the pipeline log, so from the user's side it looks like a single run.
+**Checkpoint.** You can answer: "when the frontend POSTs to
+`/simulations`, what is the call chain until rows are written to
+disk?" You can also explain why `sessions/` is *not* the same kind of
+orchestration as `domain/pipeline/` ([Backend Layout § 5](../concepts/backend_layout.md#5-logical-direction-of-imports)).
 
-> If you are writing code that imports `synthcity`, `torch`, or anything
-> from `requirements_evaluation.txt`, it lives in `src/evaluation/` and
-> must be runnable under `.venv_eval`. The rest of the repo must stay
-> clean of those imports.
+---
 
-`make setup` builds both venvs automatically.
+## 5 — Make one tiny change
 
+Walk through [Adding a Feature](../concepts/adding_a_feature.md) and
+do it. It takes one realistic change ("add a `notes` field that the
+frontend can attach to a simulation") and shows exactly which files
+in which layer to touch.
 
-## 6. Output Structure
+**Checkpoint.** You've opened a branch, made the change, and run
+`make format && make lint && make ty && make test` green.
 
-Every run writes under `outputs/`:
+---
 
-```
-outputs/
-├── inspections/inspection_<ts>/      # schema + cached parquet, pre-training
-├── models/model_<ts>/                # generator.zip + model_card.json
-├── simulations/simulation_<ts>/      # synthetic CSVs + sim_card.json
-├── evaluations/evaluation_<ts>/      # metric reports + eval_card.json
-├── pipelines/pipeline_<ts>/          # session.log + pipeline_card.json
-└── mostlyai/                         # Mostly AI local server scratch space
-```
+## 6 — Standards, tests, daily commands
 
-`outputs/mostlyai/` is created automatically by the library, its not a directory we are working with. Ignore it.
+Bookmark these — you'll come back to them constantly:
 
-All IDs are `<prefix>_YYYYMMDD_HHMMSS`. Discover them with:
+- [Repository Guidelines](repository_guidelines.md) — commit style,
+  branch naming, docstring format. Read once, refer to often.
+- [Testing](testing.md) — `make test` (core venv) vs `make test-eval`
+  (eval venv); when to write each kind.
+- `make help` — every Makefile target with one-line descriptions.
 
-```bash
-make inspections
-make models
-make simulations
-```
+For week-2 reading (pull in only when relevant):
+[Mostly AI](../concepts/mostly_ai.md),
+[OMOP](../concepts/omop.md),
+[Logical Rules](../concepts/logical_rules.md),
+[Evaluation Metrics](../concepts/evaluation.md),
+[Pipelines deep dive](../concepts/pipelines.md),
+[Batch Size Errors](../concepts/batch_size_errors.md).
 
+---
+
+## Appendix — 90-minute pair-programming agenda
+
+For whoever is onboarding the new dev. Don't lecture; have them drive
+their keyboard while you sit next to them.
+
+1. **(10 min) Whiteboard the five layers** (`api` → `sessions` →
+   `domain`, with `runs/` and `infrastructure/` to the side). Draw the
+   one arrow direction. Make them re-draw it for you.
+2. **(20 min) Walk the simulation slice** from § 4 together. Open each
+   file, follow the call. Stop at every `from backend.src.<x> import
+   …` and ask "which layer?".
+3. **(20 min) Live-add the `notes` field** from
+   [Adding a Feature](../concepts/adding_a_feature.md). They type, you
+   coach.
+4. **(15 min) Run the tests with them.** Show how `make test` skips
+   `tests/eval/`, why `.venv_eval` exists, what coverage looks like.
+5. **(15 min) Pipeline YAML tour.** Open
+   `backend/config/pipelines/example_pipeline.example.yaml` and read
+   the comments line by line — most of the pipeline mental model is in
+   that file.
+6. **(10 min) Leave them with a starter task.** Examples that exercise
+   real layers:
+    - Add a new field to `simulation_card.json` (touches
+      `sessions/simulation.py` + `runs/tracking/` + the frontend detail
+      page).
+    - Add a new `make` target listing pipelines older than N days
+      (touches `Makefile` + `runs/catalog/pipelines.py`).
+    - Add a sanity check to `domain/general_sanity_checks.py` and
+      write a test.
 
 [<-- Back to Main Index](../../README.md)

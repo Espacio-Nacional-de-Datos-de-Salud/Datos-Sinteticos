@@ -2,11 +2,11 @@
 
 Exercises the real I/O path of the inspection service in an isolated
 ``outputs/inspections/`` directory. The heavy collaborators
-(``FileDataLoader``, ``DataPreprocessor``, ``extract_rules_from_config``,
-``setup_run_logger``) are stubbed so the test stays in ``.venv_core`` and
-runs in a few hundred milliseconds, but every other line — directory
-creation, card writes, parquet caching, metadata snapshotting, profiling
-gating, name resolution — runs for real against tmp_path.
+(``FileDataLoader``, ``DataPreprocessor``, ``extract_rules_from_config``)
+are stubbed so the test stays in ``.venv_core`` and runs in a few hundred
+milliseconds, but every other line — directory creation, card writes,
+parquet caching, metadata snapshotting, profiling gating, name
+resolution — runs for real against tmp_path.
 """
 
 from __future__ import annotations
@@ -26,16 +26,20 @@ from backend.src.config.general import (
     PROCESSED_DATA_DIRNAME,
     TIME_PROFILING_REPORT_FILENAME,
 )
-from backend.src.core.rules_config import RejectionSamplingConfig
-from backend.src.services import inspection as inspection_service
+from backend.src.domain.rules_config import RejectionSamplingConfig
+from backend.src.runs.tracking import inspection_tracker as inspection_tracker_module
+from backend.src.sessions import inspection as inspection_service
 
 
 @pytest.fixture
 def isolated_inspections_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     inspections_dir = tmp_path / "inspections"
     inspections_dir.mkdir()
+    # ``INSPECTIONS_DIR`` is imported into both the service (used by lookup
+    # helpers) and the tracker (used to materialize new session folders);
+    # patch both to redirect all I/O into the temporary directory.
     monkeypatch.setattr(inspection_service, "INSPECTIONS_DIR", str(inspections_dir))
-    monkeypatch.setattr(inspection_service, "setup_run_logger", lambda *_a, **_kw: None)
+    monkeypatch.setattr(inspection_tracker_module, "INSPECTIONS_DIR", str(inspections_dir))
     monkeypatch.setattr(
         inspection_service,
         "extract_rules_and_rejection_config",
@@ -135,7 +139,7 @@ def test_run_inspection_flow_writes_full_session_layout(
 def test_run_inspection_flow_marks_card_failed_on_loader_error(
     isolated_inspections_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from backend.src.core.errors import DataLoadError
+    from backend.src.infrastructure.errors import DataLoadError
 
     fake_loader_class = MagicMock()
     fake_loader_class.return_value.load = MagicMock(

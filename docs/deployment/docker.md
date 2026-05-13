@@ -2,7 +2,7 @@
 
 # Docker
 
-Docker is a containerization tool that lets you package the application with all its dependencies, ensuring it runs the same way regardless of what machine you're using. Docker Compose orchestrates multiple containers (in our case: backend, mlflow, and frontend) to work together.
+Docker is a containerization tool that lets you package the application with all its dependencies, ensuring it runs the same way regardless of what machine you're using. Docker Compose orchestrates multiple containers (in our case: backend and frontend) to work together.
 
 ## 0. Quickstart
 
@@ -130,16 +130,49 @@ Since the tabular data we will work with is quite large, it should not be copied
 
 
 ## 2. Docker Compose
-The preferred method for deployment is Docker Compose. This facilitates the connection between the user interface (UI), the backend, and mlflow for testing, which all run in separate containers. Additionally, manual build and run processes can be be omitted with a single command, ensuring a consistent start. Currently, Docker Compose is **not** working within Sagemaker. We have found success with within an independent EC2 instance, as well as on our local machines. Installation instructions for Docker Compose within a Linux EC2 instance, which should also apply to Linux/WSL local machines, can be found in **[EC2](ec2.md)**. 
+The preferred method for deployment is Docker Compose. This facilitates the connection between the user interface (UI) and the backend, which run in separate containers. Additionally, manual build and run processes can be be omitted with a single command, ensuring a consistent start. Currently, Docker Compose is **not** working within Sagemaker. We have found success with within an independent EC2 instance, as well as on our local machines. Installation instructions for Docker Compose within a Linux EC2 instance, which should also apply to Linux/WSL local machines, can be found in **[EC2](ec2.md)**.
 
 ### compose.yaml
-The docker compose configuration file. Currently defines 2 services: `backend` and `mlflow`. Additionally, `outputs` is created/reused as a named volume, existing at `/app/backend/outputs` within the backend service. 
+The docker compose configuration file. Defines two services: `backend` and `frontend`, and declares one named volume: `outputs`.
+
+You will notice the keyword `volumes` appears three times in the file. This is because it means different things depending on where it sits in the YAML hierarchy:
+
+- `services.backend.volumes` — declares what is mounted *into* the backend container.
+- `services.frontend.volumes` — declares what is mounted *into* the frontend container.
+- Top-level `volumes` — a registry that tells Docker Compose to create and manage a named volume. Any named volume referenced inside a service must be declared here, or the file will fail to validate. Bind mounts (paths starting with `./`) do **not** need a top-level entry.
+
+There are three types of mounts used across the two services:
+
+| Type | Example | Owned by | Survives `down`? | Survives `down --volumes`? |
+|---|---|---|---|---|
+| Named volume | `outputs:/app/backend/outputs` | Docker | Yes | No |
+| Bind mount | `./backend/data:/app/backend/data` | Your local disk | Yes | Yes |
+| Anonymous volume | `/app/node_modules` | Docker | Yes | No |
+
+A **bind mount** is simply your local folder mirrored into the container in real time. Docker does not store anything — it reads and writes your actual files directly. Because the data lives on your disk, it is untouched by any `docker compose down` variant.
+
+A **named volume** is storage created and managed internally by Docker (typically under `/var/lib/docker/volumes/`). It is not visible as a folder in your project. It survives a plain `docker compose down`, but is deleted by `docker compose down --volumes`.
+
+An **anonymous volume** is the same as a named volume but without an explicit name, so Docker generates one. It is used as a scoping mechanism (explained below).
 
 #### Backend Service
-Tells docker to use the Dockerfile within `backend` for building. Runs the api using `uvicorn`, forwarding port 8000 outside the container to allow other services on the host, or users on the same network, to connect. Sets environment variables, including the MLflow tracking URI to use. As previously mentioned, outputs is a named volume. However, all other folders used by the program are currently [bind mounts](https://docs.docker.com/engine/storage/bind-mounts/). This means that the Docker container has access to these directories on the host filesystem, and therefore any changes you make will be reflected in the container without rebuilding. The directories mounted as bind mounts includes backend/ data, config, mlruns, and mlflow.db. In the future, these bind mounts should be removed.
+Tells Docker to use the Dockerfile within `backend` for building. Runs the API using `uvicorn`, forwarding port 8000 outside the container to allow other services on the host, or users on the same network, to connect.
 
-#### MLFlow
-Downloads the MLflow docker image from the internet if it does not exist on the machine. If you encounter issues with the firewall blocking the download of this image, follow the instructions in **[EC2: Downloading of MLflow image](ec2.md#downloading-of-mlflow-image)**. Port 5000 is forwarded for access to the MLflow server. Currently, we are using the SQLite backend, which is saved on the host machine, along with mlruns, and used as bind mounts. As previously mentioned, this should be changed, although MLflow is not intended to be included in production.
+The `outputs` named volume is mounted at `/app/backend/outputs`. Because it is Docker-managed, generated output files (pipeline results, inspection outputs, etc.) persist across container restarts without being tied to any folder on your machine. However, they are cleared if you run `docker compose down --volumes` or `docker compose down -v`.
+
+The remaining mounts — `backend/data` and `backend/config` — are bind mounts, meaning changes you make to those folders on your machine are reflected inside the container immediately without a rebuild. In the future, these bind mounts should be removed.
+
+#### Frontend Service
+Tells Docker to use the Dockerfile within `frontend` for building. Runs Next.js, forwarding port 3000.
+
+The entire `./frontend` folder is bind-mounted into `/app`, which enables live code reloading. However, this creates a conflict: the bind mount would overwrite `/app/node_modules` with whatever is in your local `./frontend` folder — which may be empty or outdated. To prevent this, two anonymous volumes are declared:
+
+```yaml
+- /app/node_modules
+- /app/.next
+```
+
+These tell Docker to keep the container's own copy of those two directories and not let the bind mount touch them. The `node_modules` inside the container are populated during the image build step (`RUN npm install` in the Dockerfile), so they are always correct and fully installed regardless of what is on your local disk.
 
 ### Running Docker Compose
 Run `make compose` (or `docker compose up --build`) within the root of the project for the simplest usage. This should automatically rebuild the image if any changes have been made to the source code, otherwise it will just start it. 
@@ -150,14 +183,14 @@ However, there are several options that you may want to use. Running with `--bui
 
 If you prefer to work with the terminal rather than the frontend, or if you want to run only specific services to save memory, you can use the interactive CLI Wizard directly from Docker.
 
-### Running only Backend and MLflow
-To run only the backend and its dependency (MLflow) without starting the Next.js frontend, use the `-d` (detached) flag specifying the backend service:
+### Running only the Backend
+To run only the backend without starting the Next.js frontend, use the `-d` (detached) flag specifying the backend service:
 
 ```bash
 docker-compose up -d backend
 ```
 
-This launches the backend and MLflow (because its listed as a dependency in the `backend` service in `compose.yaml`) as "detached" (background) containers. MLflow will be accessible at [http://localhost:5000](http://localhost:5000).
+This launches the backend as a "detached" (background) container.
 
 ### Running the Interactive CLI
 Once the backend container is running, you can execute the interactive CLI wizard inside it:
@@ -166,7 +199,7 @@ Once the backend container is running, you can execute the interactive CLI wizar
 docker-compose exec backend python -m backend.src.cli
 ```
 
-You can now run the interactive CLI wizard as many times as needed. While at the same time access MLflow at [http://localhost:5000](http://localhost:5000) to monitor the evaluation. 
+You can now run the interactive CLI wizard as many times as needed.
 
 Since the services were started in detached mode, they will continue running in the background even after you exit the CLI. To shut everything down when you are finished, run:
 

@@ -25,7 +25,7 @@ EVAL_PYTHON_PATH: str | None = _resolve_eval_python_path()
 
 # CUSTOM STATISTICS module (env-driven; not yaml)
 CUSTOM_STATISTICS_MODULE: str | None = os.environ.get(
-    "CUSTOM_STATISTICS_MODULE", "backend.src.evaluation.custom_metrics.custom_statistics"
+    "CUSTOM_STATISTICS_MODULE", "backend.src.domain.evaluation.custom_metrics.custom_statistics"
 )
 
 try:

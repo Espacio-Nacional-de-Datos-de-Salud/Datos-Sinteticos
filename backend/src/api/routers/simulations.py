@@ -14,36 +14,37 @@ from backend.src.api.schemas.simulations import (
     SimulationSummary,
 )
 from backend.src.config.general import SIM_CARD_FILENAME, SIMULATIONS_DIR
-from backend.src.core.cancellation import register as register_cancel
-from backend.src.core.cancellation import request_cancel, update_card_status
-from backend.src.core.catalog.downloads import (
+from backend.src.infrastructure.cancellation import register as register_cancel
+from backend.src.infrastructure.cancellation import request_cancel
+from backend.src.runs.card_io import update_card_status
+from backend.src.runs.catalog.downloads import (
     build_full_simulation_bundle,
     build_synthetic_data_bundle,
     build_zip_stream,
 )
-from backend.src.core.catalog.simulations import (
+from backend.src.runs.catalog.simulations import (
     cleanup_simulations as cleanup_simulations_catalog,
 )
-from backend.src.core.catalog.simulations import (
+from backend.src.runs.catalog.simulations import (
     delete_simulation as delete_simulation_catalog,
 )
-from backend.src.core.catalog.simulations import (
+from backend.src.runs.catalog.simulations import (
     list_available_simulations,
     list_simulation_columns,
 )
-from backend.src.core.catalog.simulations import (
+from backend.src.runs.catalog.simulations import (
     purge_all_simulations as purge_all_simulations_catalog,
 )
-from backend.src.core.catalog.simulations import (
+from backend.src.runs.catalog.simulations import (
     rename_simulation as rename_simulation_catalog,
 )
-from backend.src.core.errors import (
+from backend.src.infrastructure.errors import (
     SimulationNotFoundError,
     SyntheticDataNotFoundError,
 )
-from backend.src.core.validation import SimulationId
-from backend.src.services.configs import resolve_config_path
-from backend.src.services.simulation import (
+from backend.src.domain.id_validation import SimulationId
+from backend.src.sessions.configs import resolve_config_path
+from backend.src.sessions.simulation import (
     initialize_simulation_session,
     run_simulation_flow_from_model,
 )

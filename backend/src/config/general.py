@@ -4,8 +4,8 @@ Tunable values live in ``backend/config/<name>.yaml`` (gitignored). Committed
 templates live alongside as ``backend/config/<name>.example.yaml`` — users
 bootstrap their real files by running ``make config``, which copies every
 ``*.example.yaml`` to ``*.yaml``. Constants that are not user-tunable (paths,
-filenames, MLflow/SageMaker wiring, logging format) are defined directly in
-this module.
+filenames, SageMaker wiring, logging format) are defined directly in this
+module.
 """
 
 import contextvars
@@ -96,7 +96,7 @@ SESSION_LOG_FILENAME = "session.log"
 SIM_CONFIG_FILENAME = "sim_config.json"
 
 # ============================================================================
-# SAGEMAKER / MLFLOW
+# SAGEMAKER
 # ============================================================================
 _SAGEMAKER_METADATA_PATH = "/opt/ml/metadata/resource-metadata.json"
 IS_SAGEMAKER = "SAGEMAKER_INTERNAL_IMAGE_URI" in os.environ
@@ -106,16 +106,8 @@ if IS_SAGEMAKER:
         _sm_metadata = json.load(_f)
 
     USERPROFILENAME: str = _sm_metadata.get("UserProfileName", "")
-    MLFLOW_TRACKING_URI = "arn:aws:sagemaker:eu-west-1:651068895157:mlflow-app/app-WOVA56CVVLL2"
 else:
     USERPROFILENAME = "local"
-    MLFLOW_TRACKING_URI = os.environ.get(
-        "MLFLOW_TRACKING_URI", f"sqlite:///{PROJECT_ROOT}/mlflow.db"
-    )
-
-MLFLOW_EXPERIMENT_TRAINING = "SyntheticData-Training"
-MLFLOW_EXPERIMENT_SIMULATION = "SyntheticData-Simulation"
-MLFLOW_EXPERIMENT_EVALUATION = "SyntheticData-Evaluation"
 
 
 _RUN_TIMESTAMP: contextvars.ContextVar[str] = contextvars.ContextVar(

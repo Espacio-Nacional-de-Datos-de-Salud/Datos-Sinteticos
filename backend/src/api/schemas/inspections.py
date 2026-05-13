@@ -44,6 +44,15 @@ class InspectionCreateRequest(BaseModel):
         description="Whether to run data profiling during preprocessing.",
     )
     csv_delimiter: str = Field(default=",", description="Delimiter used when parsing CSV files.")
+    excluded_columns: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Optional per-table column exclusion list (table name → list of column names). "
+            "Listed columns are stripped from the autodetect metadata and the cached "
+            "preprocessed data after the inspection run, so they are invisible to "
+            "training and all downstream pipeline steps."
+        ),
+    )
 
 
 class InspectionJob(BaseModel):
@@ -121,3 +130,4 @@ class CleanupResult(BaseModel):
     empty: list[str]
     orphans: list[str]
     duplicates: list[str] = []
+    skipped_ids: list[str] = []

@@ -19,7 +19,7 @@ Verify core business logic in isolation:
 - **Config Defaults**: Ensure configuration initializes properly without leaking example files.
 
 ### 4. Pipeline Unit Tests (`test_pipeline_executor.py`, `test_pipeline_loader.py`, `test_pipeline_main.py`)
-Verify the pipeline orchestration layer:
+Verify the pipeline sessions layer:
 - **Executor**: Job configuration resolution, step dispatch, artifact threading, and error propagation.
 - **Loader**: YAML parsing, field defaults, and directory expansion.
 

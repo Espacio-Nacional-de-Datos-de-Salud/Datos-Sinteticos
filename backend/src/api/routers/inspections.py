@@ -25,38 +25,43 @@ from backend.src.config.general import (
     PROFILING_REPORT_PATTERN,
     PROFILING_REPORTS_DIRNAME,
 )
-from backend.src.core.cancellation import register as register_cancel
-from backend.src.core.cancellation import request_cancel, update_card_status
-from backend.src.core.catalog.downloads import (
+from backend.src.infrastructure.cancellation import register as register_cancel
+from backend.src.infrastructure.cancellation import request_cancel
+from backend.src.runs.card_io import update_card_status
+from backend.src.runs.catalog.downloads import (
     build_full_inspection_bundle,
     build_inspection_profiling_bundle,
     build_zip_stream,
 )
-from backend.src.core.catalog.inspections import (
+from backend.src.runs.catalog.inspections import (
     cleanup_inspections as cleanup_inspections_catalog,
 )
-from backend.src.core.catalog.inspections import (
+from backend.src.runs.catalog.inspections import (
     delete_inspection as delete_inspection_catalog,
 )
-from backend.src.core.catalog.inspections import (
+from backend.src.runs.catalog.inspections import (
     list_available_inspections,
 )
-from backend.src.core.catalog.inspections import (
+from backend.src.runs.catalog.inspections import (
     purge_all_inspections as purge_all_inspections_catalog,
 )
-from backend.src.core.catalog.inspections import (
+from backend.src.runs.catalog.inspections import (
     rename_inspection as rename_inspection_catalog,
 )
-from backend.src.core.errors import InspectionNotFoundError, InspectionProfilingNotFoundError
-from backend.src.core.validation import InspectionId
-from backend.src.services.configs import resolve_config_path
-from backend.src.services.inspection import (
+from backend.src.infrastructure.errors import (
+    InspectionNotFoundError,
+    InspectionProfilingNotFoundError,
+)
+from backend.src.domain.id_validation import InspectionId
+from backend.src.sessions.configs import resolve_config_path
+from backend.src.sessions.inspection import (
     RULES_SNAPSHOT_FILENAME,
     initialize_inspection_session,
     run_inspection_flow,
 )
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from pydantic import BaseModel
 
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
@@ -95,6 +100,7 @@ def create_inspection(
         rules_config_path=request.rules_config_path or str(resolve_config_path("rules")),
         enable_data_profiling=request.enable_data_profiling,
         csv_delimiter=request.csv_delimiter,
+        excluded_columns=request.excluded_columns,
         session=session,
         cancel_event=cancel_event,
     )
@@ -149,8 +155,13 @@ def cleanup_inspections(
         ),
     ),
 ) -> CleanupResult:
-    """Bulk-deletes inspection folders that are empty, dead (orphaned), or exact duplicates."""
-    deleted_empty, deleted_orphans, deleted_duplicates = cleanup_inspections_catalog(
+    """Bulk-deletes inspection folders that are empty, dead (orphaned), or exact duplicates.
+
+    Inspections with linked trained models are skipped and reported in
+    ``skipped_ids``. Use ``DELETE /inspections/{inspection_id}`` to handle them
+    individually after the linked models are deleted.
+    """
+    deleted_empty, deleted_orphans, deleted_duplicates, skipped = cleanup_inspections_catalog(
         mode=mode, stale_hours=stale_hours
     )
 
@@ -160,6 +171,7 @@ def cleanup_inspections(
         empty=deleted_empty,
         orphans=deleted_orphans,
         duplicates=deleted_duplicates,
+        skipped_ids=skipped,
     )
 
 
@@ -167,7 +179,7 @@ def cleanup_inspections(
 def purge_inspections() -> CleanupResult:
     """Delete every inspection folder regardless of status (destructive)."""
     deleted = purge_all_inspections_catalog()
-    return CleanupResult(deleted_ids=deleted, empty=[], orphans=[], duplicates=[])
+    return CleanupResult(deleted_ids=deleted, empty=[], orphans=[], duplicates=[], skipped_ids=[])
 
 
 @router.get("/{inspection_id}", response_model=InspectionSummary)
@@ -344,6 +356,86 @@ def put_inspection_autodetect_encoding_types(
     return current
 
 
+class ExcludeColumnsRequest(BaseModel):
+    """Body of ``PUT /{id}/autodetect/excluded-columns``: columns to remove per table."""
+
+    excluded_columns: dict[str, list[str]]
+
+
+@router.put("/{inspection_id}/autodetect/excluded-columns", response_model=Autodetect)
+def put_inspection_excluded_columns(
+    inspection_id: InspectionId, body: ExcludeColumnsRequest
+) -> Autodetect:
+    """Remove specific columns from an inspection's metadata **and** from the cached
+    processed parquet files in a single atomic operation.
+
+    Use this endpoint (instead of the generic ``PUT /autodetect/encoding-types``) when
+    the user explicitly excludes columns post-inspection, so that the cached data and
+    the schema stay in sync. Excluded columns are:
+
+    * Removed from ``encoding_types`` in ``inspection_metadata.json``.
+    * Removed from any FK/PK relationships that reference them.
+    * Physically dropped from the matching ``processed_data/<table>.parquet`` files.
+
+    The changes are irreversible on disk; use "Restaurar autodetectado" only for the
+    schema — the parquet files are not restored by that action.
+    """
+    import pandas as pd
+    from backend.src.config.general import PROCESSED_DATA_DIRNAME
+
+    folder = Path(INSPECTIONS_DIR) / inspection_id
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
+
+    path, current = _load_inspection_metadata(inspection_id)
+
+    excluded = {t: set(cols) for t, cols in body.excluded_columns.items() if cols}
+    if not excluded:
+        return current
+
+    # ---- Update encoding_types ----
+    for tbl, drop_cols in excluded.items():
+        if tbl not in current.encoding_types:
+            continue
+        for col in drop_cols:
+            current.encoding_types[tbl].pop(col, None)
+
+    # ---- Update relationships ----
+    current.relationships.fks = [
+        fk
+        for fk in current.relationships.fks
+        if not (
+            (fk.child in excluded and fk.fk_column in excluded[fk.child])
+            or (fk.parent in excluded and fk.pk_column in excluded[fk.parent])
+        )
+    ]
+    for tbl, drop_cols in excluded.items():
+        if current.relationships.pks.get(tbl) in drop_cols:
+            del current.relationships.pks[tbl]
+
+    _write_inspection_metadata(path, current)
+
+    # ---- Drop columns from cached parquet files ----
+    processed_dir = folder / PROCESSED_DATA_DIRNAME
+    for tbl, drop_cols in excluded.items():
+        parquet_path = processed_dir / f"{tbl}.parquet"
+        if not parquet_path.exists():
+            continue
+        try:
+            df = pd.read_parquet(parquet_path)
+            cols_to_drop = [c for c in drop_cols if c in df.columns]
+            if cols_to_drop:
+                df = df.drop(columns=cols_to_drop)
+                df.to_parquet(parquet_path)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to update parquet for table '{tbl}': {exc}",
+            ) from exc
+
+    return current
+
+
 @router.patch("/{inspection_id}/name", response_model=InspectionSummary)
 def rename_inspection(inspection_id: InspectionId, body: RenameRequest) -> dict:
     """Updates the human-readable name stored in the inspection card."""
@@ -357,9 +449,25 @@ def rename_inspection(inspection_id: InspectionId, body: RenameRequest) -> dict:
 
 @router.delete("/{inspection_id}", response_model=DeletedInspection)
 def delete_inspection(inspection_id: InspectionId) -> DeletedInspection:
-    """Deletes an inspection session and all its stored artifacts."""
-    if not delete_inspection_catalog(inspection_id):
+    """Deletes an inspection session and all its stored artifacts.
+
+    Returns 409 if the inspection has linked trained models — delete those first.
+    """
+    outcome = delete_inspection_catalog(inspection_id)
+    if outcome.status == "not_found":
         raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
+    if outcome.status == "has_linked_models":
+        linked_count = len(outcome.linked_model_ids)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    f"Inspection '{inspection_id}' has {linked_count} linked model(s). "
+                    "Delete them first."
+                ),
+                "linked_model_ids": outcome.linked_model_ids,
+            },
+        )
     return DeletedInspection(deleted_id=inspection_id)
 
 

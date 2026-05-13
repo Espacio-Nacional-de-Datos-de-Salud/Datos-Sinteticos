@@ -32,7 +32,7 @@ The CIO metric is divided into two layers:
 ```text
 ┌─────────────────────────────────────────────────┐
 │      METRIC: ConfidenceIntervalOverlap         │
-│ (src/evaluation/custom_metrics/confidence_interval_overlap.py) │
+│ (src/domain/evaluation/custom_metrics/confidence_interval_overlap.py) │
 │                                                 │
 │  Responsibilities:                             │
 │  • Load statistics configuration                │
@@ -44,7 +44,7 @@ The CIO metric is divided into two layers:
                       ↓
 ┌─────────────────────────────────────────────────┐
 │   STATISTICS: Statistic & subclasses           │
-│   (src/evaluation/statistics.py)                │
+│   (src/domain/evaluation/statistics.py)                │
 │                                                 │
 │  Responsibilities:                             │
 │  • Validate data and columns                    │
@@ -69,7 +69,7 @@ graph TD
     G --> H["value + ci"]
     H --> I["ConfidenceIntervalOverlap"]
     I --> J["Measure overlap<br/>real vs synthetic"]
-    J --> K["Final result<br/>+ MLflow details"]
+    J --> K["Final result<br/>+ per-statistic detail"]
 ```
 
 ---
@@ -285,7 +285,7 @@ class MyCustomStatistic(Statistic):
 
 ### 5.3 Location and Registration
 
-**File**: `src/evaluation/custom_metrics/custom_statistics.py`
+**File**: `src/domain/evaluation/custom_metrics/custom_statistics.py`
 
 ```python
 # Export in the CUSTOM_STATISTIC_MAP dictionary
@@ -324,7 +324,7 @@ export CUSTOM_STATISTICS_MODULE="src.evaluation.custom_metrics.custom_statistics
 
 ---
 
-## 6. Return Values and MLflow
+## 6. Return Values
 
 ### 6.1 Return structure per statistic
 

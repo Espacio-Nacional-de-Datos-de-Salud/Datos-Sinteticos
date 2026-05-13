@@ -1,7 +1,7 @@
 """pytest configuration and initialization.
 
 Adds the project root directory to sys.path so that test imports resolve
-relative to the project root (e.g., `from backend.src.core import ...`).
+relative to the project root (e.g., `from backend.src.domain import ...`).
 """
 
 from __future__ import annotations

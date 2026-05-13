@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
-from backend.src.services import simulation as simulation_service
+from backend.src.sessions import simulation as simulation_service
 
 
 @pytest.fixture
@@ -197,7 +197,7 @@ def test_run_simulation_flow_from_model_loads_artifacts_then_simulates(
         simulation_service, "run_general_sanity_checks", lambda **_kw: pd.DataFrame()
     )
 
-    import backend.src.services.artifacts as artifacts_mod
+    import backend.src.sessions.artifacts as artifacts_mod
 
     loader = MagicMock(
         return_value=(object(), {"tables": [{"name": "patients"}]}, fake_rule_manager)
@@ -216,7 +216,7 @@ def test_run_simulation_flow_from_model_loads_artifacts_then_simulates(
 def test_run_simulation_flow_from_model_returns_none_when_loader_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import backend.src.services.artifacts as artifacts_mod
+    import backend.src.sessions.artifacts as artifacts_mod
 
     monkeypatch.setattr(
         artifacts_mod,

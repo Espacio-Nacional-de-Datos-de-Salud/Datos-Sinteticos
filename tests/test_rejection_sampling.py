@@ -1,12 +1,12 @@
 import pandas as pd
 
-from backend.src.core.preprocessing.logical_rules import (
+from backend.src.domain.preprocessing.logical_rules import (
     DateToAgeRule,
     LogicalRuleManager,
     NumericThresholdRule,
 )
-from backend.src.core.rules_config import extract_rules_and_rejection_config
-from backend.src.services.simulation import _cascade_delete_tables
+from backend.src.domain.rules_config import extract_rules_and_rejection_config
+from backend.src.sessions.simulation import _cascade_delete_tables
 
 
 def test_extract_rules_and_rejection_config(tmp_path) -> None:
