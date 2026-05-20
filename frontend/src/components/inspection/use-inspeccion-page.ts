@@ -25,6 +25,7 @@ const STORAGE_KEY = STORAGE_KEYS.inspection;
 export type StartInspectionPayload = {
   filePaths: string[];
   enableProfiling: boolean;
+  csvDelimiter: string;
   excludedColumns: Record<string, string[]>;
 };
 
@@ -343,7 +344,7 @@ export function useInspeccionPage() {
     mutationFn: async (payload: StartInspectionPayload) => {
       const { data } = await api.post<InspectionJob>("/inspections/", {
         file_paths: payload.filePaths,
-        csv_delimiter: ",",
+        csv_delimiter: payload.csvDelimiter,
         enable_data_profiling: payload.enableProfiling,
         excluded_columns: payload.excludedColumns,
       });

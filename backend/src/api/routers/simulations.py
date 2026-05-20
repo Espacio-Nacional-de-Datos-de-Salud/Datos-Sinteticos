@@ -91,6 +91,7 @@ def create_simulation(
         mostly_config_path=str(resolve_config_path("mostly_ai")),
         session=session,
         cancel_event=cancel_event,
+        table_sample_sizes=request.table_sample_sizes,
     )
     return SimulationJob(simulation_id=session.simulation_id, status="in_progress")
 

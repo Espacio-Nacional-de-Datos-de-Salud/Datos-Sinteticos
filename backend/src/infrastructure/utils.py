@@ -174,33 +174,64 @@ def delete_empty_folders(root_path: str) -> None:
                 os.rmdir(full_path)
 
 
-def create_simulation_config(metadata: dict, sample_size: int) -> dict:
+def _is_subject_table(table_meta: dict) -> bool:
+    """A subject table has no ``is_context`` foreign key.
+
+    Mostly AI's SDK only honors ``sample_size`` for subject tables; for context
+    children it forces ``sample_size`` to ``None`` and cascades counts from the
+    parent (see ``mostlyai.sdk.domain.SyntheticTableConfig._maybe_set_sample_size``).
+    """
+    return not any(fk.get("is_context") for fk in (table_meta.get("foreign_keys") or []))
+
+
+def create_simulation_config(
+    metadata: dict,
+    sample_size: int | None = None,
+    table_sample_sizes: dict[str, int] | None = None,
+) -> dict:
     """Generates simulation configuration for the Mostly AI engine.
 
-    Creates a configuration structure with simulation parameters for each table.
+    Only subject tables (no ``is_context`` FK) receive ``sample_size``. Mostly AI
+    silently drops it on context children and generates them cascading from their
+    parent (the SDK's ``_maybe_set_sample_size`` forces ``sample_size = None`` for
+    non-subjects). Per-table overrides targeting context children are accepted by
+    the API for forward-compatibility but ignored here, with a warning logged so
+    operators see they had no effect.
 
     Args:
-        metadata (dict): Dictionary with metadata that includes the table list.
-        sample_size (int): Number of synthetic records to generate per table.
+        metadata: Dictionary with metadata that includes the table list.
+        sample_size: Fallback row count applied to subject tables when no
+            per-table override is provided.
+        table_sample_sizes: Per-table overrides; only entries targeting subject
+            tables affect this config.
 
     Returns:
-        dict: Simulation configuration with structure
-            {tables: [{name, configuration}, ...]}.
-
-    Example:
-        >>> config = create_simulation_config(metadata, sample_size=1000)
-        >>> print(config['tables'][0])  # {'name': 'users', 'configuration': {...}}
+        dict: Simulation configuration ``{tables: [{name, configuration}, ...]}``.
     """
     simulation_tables = []
+    ignored_non_subject: list[str] = []
 
     for table_meta in metadata.get("tables", []):
         table_name = table_meta["name"]
+        table_configuration = {"enable_data_report": False}
 
-        table_configuration = {"sample_size": sample_size, "enable_data_report": False}
+        if _is_subject_table(table_meta):
+            t_size = sample_size
+            if table_sample_sizes and table_name in table_sample_sizes:
+                t_size = table_sample_sizes[table_name]
+            if t_size is not None:
+                table_configuration["sample_size"] = t_size
+        elif table_sample_sizes and table_name in table_sample_sizes:
+            ignored_non_subject.append(table_name)
 
-        table_entry = {"name": table_name, "configuration": table_configuration}
+        simulation_tables.append({"name": table_name, "configuration": table_configuration})
 
-        simulation_tables.append(table_entry)
+    if ignored_non_subject:
+        logger.warning(
+            "Ignoring per-table sample_size for context-child tables %s; Mostly AI "
+            "cascades their counts from the parent and cannot honor explicit sizes.",
+            ignored_non_subject,
+        )
 
     return {"tables": simulation_tables}
 

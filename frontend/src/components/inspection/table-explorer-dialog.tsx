@@ -26,23 +26,26 @@ export function TableExplorerDialog({
   path,
   table,
   totalRows,
+  csvDelimiter,
   onClose,
 }: {
   path: string;
   table: string;
   totalRows: number | null | undefined;
+  csvDelimiter: string;
   onClose: () => void;
 }) {
   const [page, setPage] = useState(0);
   const offset = page * EXPLORER_PAGE_SIZE;
 
   const pageQuery = useQuery({
-    queryKey: ["files", "preview", "page", path, offset, EXPLORER_PAGE_SIZE],
+    queryKey: ["files", "preview", "page", path, offset, EXPLORER_PAGE_SIZE, csvDelimiter],
     queryFn: async () => {
       const { data } = await api.post<FilePreview[]>("/files/preview", {
         paths: [path],
         sample_rows: EXPLORER_PAGE_SIZE,
         offset,
+        csv_delimiter: csvDelimiter,
       });
       return data[0] ?? null;
     },

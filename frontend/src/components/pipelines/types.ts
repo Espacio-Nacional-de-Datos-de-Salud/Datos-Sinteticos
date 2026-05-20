@@ -27,8 +27,11 @@ export type SimulateStep = {
   conditional: ConditionalConfig;
 };
 
+// `real_data` is intentionally absent: the backend auto-binds the evaluation
+// step to the model's preprocessed training data, so derived columns (e.g.
+// is_adult from a logical rule) and dropped columns stay consistent across
+// the synthetic and real sides.
 export type EvaluateStep = {
-  real_data: string[];
   simulation_id: string;
   model_id: string;
 };

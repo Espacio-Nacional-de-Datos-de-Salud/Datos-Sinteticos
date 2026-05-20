@@ -221,19 +221,20 @@ def _build_job_interactive(job_num: int) -> dict | None:
                 sim_id = _select_from_catalog("simulations", "Simulación a evaluar")
                 if sim_id:
                     ev["simulation_id"] = sim_id
-        # Reuse train files as real_data when available — skip the prompt.
-        train_files: list[str] = job.get("train", {}).get("files", [])
-        if train_files:
-            ev["real_data"] = train_files
-            print(
-                f"  Datos reales: usando los mismos archivos del train"
-                f" ({len(train_files)} archivo(s))."
-            )
-        else:
-            print("  Datos reales para comparar:")
+        # The eval flow auto-binds real_data to the model's preprocessed
+        # training data (see resolve_model_real_data_paths). Only prompt when
+        # this job has no model lineage and no train step.
+        has_lineage = bool(ev.get("simulation_id")) or bool(job.get("train"))
+        if not has_lineage:
+            print("  Datos reales para comparar (override opcional):")
             real_files = _select_files()
             if real_files:
                 ev["real_data"] = real_files
+        else:
+            print(
+                "  Datos reales: se usarán automáticamente los del modelo "
+                "entrenado (postprocesados con las reglas lógicas)."
+            )
         job["evaluate"] = ev
 
     # ── per-job config overrides ───────────────────────────────────────────────

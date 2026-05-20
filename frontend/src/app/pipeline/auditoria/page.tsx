@@ -41,6 +41,19 @@ import { STORAGE_KEYS } from "@/lib/storage-keys";
 
 type StartInput = { simulation_id: string };
 
+const AUDITORIA_OUTLINE = [
+  { id: "preparacion", label: "Preparación", level: 1 },
+  { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
+  { id: "nueva-evaluacion", label: "Nueva evaluación", level: 2 },
+  { id: "configuracion-avanzada", label: "Configuración avanzada", level: 2 },
+  { id: "resultados", label: "Resultados", level: 1 },
+  { id: "evaluacion-actual", label: "Evaluación actual", level: 2 },
+  { id: "reporte", label: "Reporte", level: 1 },
+  { id: "reporte-evaluacion", label: "Detalle del reporte", level: 2 },
+  { id: "historial", label: "Historial", level: 1 },
+  { id: "evaluaciones", label: "Evaluaciones", level: 2 },
+] as const;
+
 export default function AuditoriaPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmCleanup, setConfirmCleanup] = useState(false);
@@ -170,7 +183,7 @@ export default function AuditoriaPage() {
   ];
 
   return (
-    <WizardShell currentSlug="auditoria" canAdvance={false}>
+    <WizardShell currentSlug="auditoria" canAdvance={false} outline={AUDITORIA_OUTLINE}>
       <div className="mx-auto max-w-5xl space-y-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Auditoría</h1>
@@ -184,11 +197,14 @@ export default function AuditoriaPage() {
           </p>
         </div>
 
-        <WorkflowGroup label="Preparación">
-          <RulesBanner />
+        <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
+          <div id="reglas-preprocesamiento" className="scroll-mt-24">
+            <RulesBanner />
+          </div>
 
-          <Card>
-            <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-end">
+          <div id="nueva-evaluacion" className="scroll-mt-24">
+            <Card>
+              <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-end">
               <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
                 <ShieldCheck className="h-5 w-5" />
               </div>
@@ -233,13 +249,17 @@ export default function AuditoriaPage() {
                     : "Iniciar evaluación"}
               </Button>
             </CardContent>
-          </Card>
+            </Card>
+          </div>
 
-          <ConfigPanel configId="evaluation" contextId={selectedSimId} />
+          <div id="configuracion-avanzada" className="scroll-mt-24">
+              <ConfigPanel configId="evaluation" contextId={selectedSimId} />
+          </div>
         </WorkflowGroup>
 
-        <WorkflowGroup label="Resultados">
-          <ActiveJobCard
+        <WorkflowGroup id="resultados" label="Resultados" className="scroll-mt-24">
+          <div id="evaluacion-actual" className="scroll-mt-24">
+            <ActiveJobCard
             id={lc.activeId}
             title="Evaluación actual"
             description="Estado de la última evaluación iniciada."
@@ -306,17 +326,21 @@ export default function AuditoriaPage() {
                 )}
               </>
             }
-          />
+            />
+          </div>
         </WorkflowGroup>
 
         {lc.active?.status === "completed" && lc.activeId && (
-          <WorkflowGroup label="Reporte">
-            <EvaluationReportSection evaluationId={lc.activeId} />
+          <WorkflowGroup id="reporte" label="Reporte" className="scroll-mt-24">
+            <div id="reporte-evaluacion" className="scroll-mt-24">
+              <EvaluationReportSection evaluationId={lc.activeId} />
+            </div>
           </WorkflowGroup>
         )}
 
-        <WorkflowGroup label="Historial">
-          <HistoryCard
+        <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
+          <div id="evaluaciones" className="scroll-mt-24">
+            <HistoryCard
             title="Evaluaciones"
             description="Catálogo completo de evaluaciones en el servidor."
             items={lc.list}
@@ -354,7 +378,8 @@ export default function AuditoriaPage() {
                 </button>
               )
             }
-          />
+            />
+          </div>
         </WorkflowGroup>
       </div>
 

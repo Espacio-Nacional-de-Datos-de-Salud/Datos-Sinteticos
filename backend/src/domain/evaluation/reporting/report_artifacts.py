@@ -29,22 +29,82 @@ def detection_score(value: float | None) -> float | None:
     return max(0.0, 1 - abs(value - 0.5) / 0.5)
 
 
-def build_scores(summary: dict[str, Any]) -> dict[str, float | None]:
+def bounded_ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if (
+        numerator is None
+        or denominator is None
+        or pd.isna(numerator)
+        or pd.isna(denominator)
+        or denominator <= 0
+    ):
+        return None
+    return max(0.0, min(float(numerator) / float(denominator), 1.0))
+
+
+def privacy_penalty_score(k_anonymity: float | None) -> float:
+    if k_anonymity is None or pd.isna(k_anonymity):
+        return 0.0
+    normalized_k = max(0.0, min(float(k_anonymity) / 5.0, 1.0))
+    return (1.0 - normalized_k) * 0.2
+
+
+def privacy_penalty_from_subsets(rows: list[dict[str, Any]]) -> float:
+    if not rows:
+        return 0.0
+
+    problematic = [row for row in rows if (row.get("k_deficit") or 0) > 0]
+    if not problematic:
+        return 0.0
+
+    affected_share = len(problematic) / len(rows)
+    deficit_severity = safe_mean(
+        [
+            min((row.get("k_deficit") or 0) / max(float(row.get("real_k") or 1), 1.0), 1.0)
+            for row in problematic
+        ]
+    )
+    return min(0.2, 0.1 * affected_share + 0.1 * (deficit_severity or 0.0))
+
+
+def k_anonymity_risk(syn_k: float | None) -> str:
+    if syn_k is None or pd.isna(syn_k):
+        return "desconocido"
+    if syn_k <= 1:
+        return "alto"
+    if syn_k < 5:
+        return "medio"
+    return "bajo"
+
+
+def build_scores(
+    summary: dict[str, Any],
+    privacy_penalty: float | None = None,
+) -> dict[str, float | None]:
     fidelity = summary["fidelity"]
     privacy = summary["privacy"]
     utility = summary["utility"]
 
-    fidelity_score = safe_mean(
+    fidelity_distribution_score = safe_mean(
         [
             1 - min(fidelity["jsd"] / 0.2, 1) if fidelity["jsd"] is not None else None,
             fidelity["inv_kl"],
             fidelity["inv_tvd"],
-            1 - min(fidelity["cmd"] / 1.0, 1) if fidelity["cmd"] is not None else None,
             fidelity["cio"],
         ]
     )
+    fidelity_structure_score = safe_mean(
+        [
+            1 - min(fidelity["cmd"] / 1.0, 1) if fidelity["cmd"] is not None else None,
+        ]
+    )
+    fidelity_score = safe_mean(
+        [
+            fidelity_distribution_score,
+            fidelity_structure_score,
+        ]
+    )
 
-    privacy_score = safe_mean(
+    privacy_base_score = safe_mean(
         [
             min(privacy["dcr"] / 0.5, 1) if privacy["dcr"] is not None else None,
             privacy["nndr"],
@@ -52,26 +112,49 @@ def build_scores(summary: dict[str, Any]) -> dict[str, float | None]:
             detection_score(privacy["detection_mlp"]),
         ]
     )
+    if privacy_penalty is None:
+        privacy_penalty = privacy_penalty_score(privacy["k_anonymity"])
+    privacy_score = (
+        max(0.0, privacy_base_score - privacy_penalty)
+        if privacy_base_score is not None
+        else None
+    )
 
-    utility_score = safe_mean(
+    utility_real_score = safe_mean(
         [
-            utility["linear_syn_ood"],
-            utility["mlp_syn_ood"],
-            detection_score(privacy["detection_mlp"]),
+            utility["linear_gt"],
+            utility["mlp_gt"],
         ]
     )
+    utility_synthetic_score = safe_mean(
+        [
+            utility["linear_syn_id"],
+            utility["linear_syn_ood"],
+            utility["mlp_syn_id"],
+            utility["mlp_syn_ood"],
+        ]
+    )
+    utility_relative_score = bounded_ratio(utility_synthetic_score, utility_real_score)
+    utility_score = utility_relative_score
 
     global_score = safe_mean(
         [
             fidelity_score,
             privacy_score,
-            utility_score,
+            utility_relative_score,
         ]
     )
 
     return {
         "fidelity_score": fidelity_score,
+        "fidelity_distribution_score": fidelity_distribution_score,
+        "fidelity_structure_score": fidelity_structure_score,
+        "privacy_base_score": privacy_base_score,
+        "privacy_penalty": privacy_penalty,
         "privacy_score": privacy_score,
+        "utility_real_score": utility_real_score,
+        "utility_synthetic_score": utility_synthetic_score,
+        "utility_relative_score": utility_relative_score,
         "utility_score": utility_score,
         "global_score": global_score,
     }
@@ -186,6 +269,38 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
         ),
     )
 
+    k_anonymity_problem_subsets = []
+    for row in k_anonymity_subsets:
+        real_k = row["real_k"]
+        syn_k = row["syn_k"]
+        k_gap = (
+            syn_k - real_k
+            if real_k is not None
+            and syn_k is not None
+            and not pd.isna(real_k)
+            and not pd.isna(syn_k)
+            else None
+        )
+        k_deficit = max(0, -k_gap) if k_gap is not None else None
+        k_anonymity_problem_subsets.append(
+            {
+                **row,
+                "k_gap": k_gap,
+                "k_deficit": k_deficit,
+                "risk": k_anonymity_risk(syn_k),
+            }
+        )
+
+    privacy_penalty = privacy_penalty_from_subsets(k_anonymity_problem_subsets)
+    k_anonymity_problem_subsets = sorted(
+        k_anonymity_problem_subsets,
+        key=lambda row: (
+            row["syn_k"] if row["syn_k"] is not None else float("inf"),
+            -(row["k_deficit"] or 0),
+            not row["has_date_column"],
+        ),
+    )[:8]
+
     k_anonymity_column_granularity = []
     for column, value in k_detail.get("column_granularity", {}).items():
         k_anonymity_column_granularity.append(
@@ -212,7 +327,10 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
 
     report_data = {
         "metadata": metadata,
-        "scores": build_scores(summary),
+        "scores": build_scores(
+            summary,
+            privacy_penalty=privacy_penalty,
+        ),
         "summary": summary,
         "details": {
             "fidelity": {
@@ -221,6 +339,7 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
                 "cmd": cmd,
             },
             "privacy": {
+                "k_anonymity_problem_subsets": k_anonymity_problem_subsets,
                 "k_anonymity_subsets": k_anonymity_subsets,
                 "k_anonymity_column_granularity": k_anonymity_column_granularity,
             },

@@ -23,6 +23,7 @@ import {
   buildConditionalPayload,
   type ConditionalConfig,
 } from "@/components/generation/conditional-config";
+import { TableSampleSizesEditor } from "@/components/generation/table-sample-sizes-editor";
 import { EditableName } from "@/components/jobs/editable-name";
 import { ActiveJobCard } from "@/components/pipeline-step/active-job-card";
 import { HistoryCard, type HistoryColumn } from "@/components/pipeline-step/history-card";
@@ -50,13 +51,26 @@ import { STORAGE_KEYS } from "@/lib/storage-keys";
 type StartInput = {
   model_id: string;
   sampleSize: string;
+  tableSampleSizes: Record<string, number> | null;
   syntheticDataFileFormat: string;
   conditional: ConditionalConfig;
 };
 
+const GENERACION_OUTLINE = [
+  { id: "preparacion", label: "Preparación", level: 1 },
+  { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
+  { id: "nueva-generacion", label: "Nueva generación", level: 2 },
+  { id: "condiciones", label: "Configuración condicional", level: 2 },
+  { id: "resultados", label: "Resultados", level: 1 },
+  { id: "generacion-actual", label: "Generación actual", level: 2 },
+  { id: "historial", label: "Historial", level: 1 },
+  { id: "generaciones", label: "Generaciones", level: 2 },
+] as const;
+
 export default function GeneracionPage() {
   const [sampleSize, setSampleSize] = useState<string>("");
   const [syntheticDataFileFormat, setSyntheticDataFileFormat] = useState<string>("csv");
+  const [tableSampleSizes, setTableSampleSizes] = useState<Record<string, number> | null>(null);
   const [conditionalConfig, setConditionalConfig] = useState<ConditionalConfig>(
     EMPTY_CONDITIONAL_CONFIG,
   );
@@ -72,8 +86,12 @@ export default function GeneracionPage() {
     idField: "simulation_id",
     buildStartBody: (input) => {
       const body: Record<string, unknown> = { model_id: input.model_id };
-      const n = Number.parseInt(input.sampleSize, 10);
-      if (Number.isFinite(n) && n > 0) body.sample_size = n;
+      if (input.tableSampleSizes && Object.keys(input.tableSampleSizes).length > 0) {
+        body.table_sample_sizes = input.tableSampleSizes;
+      } else {
+        const n = Number.parseInt(input.sampleSize, 10);
+        if (Number.isFinite(n) && n > 0) body.sample_size = n;
+      }
       body.synthetic_data_file_format = input.syntheticDataFileFormat;
       const conditional = buildConditionalPayload(input.conditional);
       if (conditional) body.conditional = conditional;
@@ -105,6 +123,11 @@ export default function GeneracionPage() {
   );
   const { selectedId: selectedModelId, setSelectedId: setSelectedModelId } =
     useUpstreamSelection(completedModels, "model_id", STORAGE_KEYS.model);
+
+  const selectedModel = completedModels.find((m) => m.model_id === selectedModelId);
+  const originalSizes = selectedModel?.training_table_sizes || {};
+  const subjectTables = selectedModel?.subject_tables || [];
+
 
   // Outside the Entrenamiento page itself we always show the upstream model
   // by its functional name, never its id — same rule applies wherever a step
@@ -169,7 +192,7 @@ export default function GeneracionPage() {
   ];
 
   return (
-    <WizardShell currentSlug="generacion" canAdvance={lc.hasCompleted}>
+    <WizardShell currentSlug="generacion" canAdvance={lc.hasCompleted} outline={GENERACION_OUTLINE}>
       <div className="mx-auto max-w-5xl space-y-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Generación</h1>
@@ -178,11 +201,15 @@ export default function GeneracionPage() {
           </p>
         </div>
 
-        <WorkflowGroup label="Preparación">
-          <RulesBanner />
+        <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
+          <div id="reglas-preprocesamiento" className="scroll-mt-24">
+            <RulesBanner />
+          </div>
 
-          <Card>
-            <CardContent className="grid gap-3 p-4 md:grid-cols-[auto_1fr_180px_140px_auto] md:items-end">
+          <div id="nueva-generacion" className="scroll-mt-24">
+            <Card>
+              <CardContent className="flex flex-col gap-4 p-4">
+              <div className="grid gap-3 md:grid-cols-[auto_1fr_140px_auto] md:items-end">
               <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
                 <Wand2 className="h-5 w-5" />
               </div>
@@ -214,18 +241,6 @@ export default function GeneracionPage() {
                 )}
               </div>
               <div className="space-y-1">
-                <Label htmlFor="sample-size">Tamaño de muestra</Label>
-                <Input
-                  id="sample-size"
-                  type="number"
-                  min={1}
-                  inputMode="numeric"
-                  placeholder="Por defecto"
-                  value={sampleSize}
-                  onChange={(e) => setSampleSize(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
                 <Label htmlFor="synthetic-format">Formato</Label>
                 <select
                   id="synthetic-format"
@@ -244,6 +259,7 @@ export default function GeneracionPage() {
                   lc.start({
                     model_id: selectedModelId,
                     sampleSize,
+                    tableSampleSizes,
                     syntheticDataFileFormat,
                     conditional: conditionalConfig,
                   })
@@ -256,18 +272,32 @@ export default function GeneracionPage() {
                     ? "En curso…"
                     : "Iniciar generación"}
               </Button>
-            </CardContent>
-          </Card>
+              </div>
 
-          <ConditionalConfigPanel
+              {selectedModelId && Object.keys(originalSizes).length > 0 && (
+                <TableSampleSizesEditor
+                  originalSizes={originalSizes}
+                  subjectTables={subjectTables}
+                  value={tableSampleSizes}
+                  onChange={setTableSampleSizes}
+                />
+              )}
+            </CardContent>
+            </Card>
+          </div>
+
+          <div id="condiciones" className="scroll-mt-24">
+            <ConditionalConfigPanel
             modelId={selectedModelId}
             config={conditionalConfig}
             onChange={setConditionalConfig}
-          />
+            />
+          </div>
         </WorkflowGroup>
 
-        <WorkflowGroup label="Resultados">
-          <ActiveJobCard
+        <WorkflowGroup id="resultados" label="Resultados" className="scroll-mt-24">
+          <div id="generacion-actual" className="scroll-mt-24">
+            <ActiveJobCard
             id={lc.activeId}
             title="Generación actual"
             description="Estado de la última generación iniciada."
@@ -326,11 +356,13 @@ export default function GeneracionPage() {
                 )}
               </>
             }
-          />
+            />
+          </div>
         </WorkflowGroup>
 
-        <WorkflowGroup label="Historial">
-          <HistoryCard
+        <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
+          <div id="generaciones" className="scroll-mt-24">
+            <HistoryCard
             title="Generaciones"
             description="Catálogo completo de generaciones en el servidor."
             items={lc.list}
@@ -368,7 +400,8 @@ export default function GeneracionPage() {
                 </button>
               )
             }
-          />
+            />
+          </div>
         </WorkflowGroup>
       </div>
 

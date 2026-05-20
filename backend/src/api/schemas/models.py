@@ -15,6 +15,7 @@ class ModelSummary(BaseModel):
     tables: str = ""
     train_size: int | None = None
     training_table_sizes: dict[str, int] = {}
+    subject_tables: list[str] = []
     accuracy: float | None = None
     qa_report_filename: str | None = None
     progress: JobProgress | None = None

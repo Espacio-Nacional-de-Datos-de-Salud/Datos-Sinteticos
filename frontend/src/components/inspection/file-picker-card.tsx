@@ -38,6 +38,8 @@ export function FilePickerCard({
   allowServerFiles,
   isStartDisabled,
   isStarting,
+  csvDelimiter,
+  onCsvDelimiterChange,
   onStart,
 }: {
   selected: Set<string>;
@@ -48,6 +50,8 @@ export function FilePickerCard({
   allowServerFiles: boolean;
   isStartDisabled: boolean;
   isStarting: boolean;
+  csvDelimiter: string;
+  onCsvDelimiterChange: (v: string) => void;
   onStart: (enableProfiling: boolean) => void;
 }) {
   const queryClient = useQueryClient();
@@ -145,6 +149,9 @@ export function FilePickerCard({
   });
 
   const allFiles = filesQuery.data ?? [];
+  const hasCsvSelected = allFiles.some(
+    (f) => selected.has(f.path) && f.extension === "csv",
+  );
   const isUpload = (f: DataFile) => f.path.includes("/uploads/");
   // In production (ALLOW_SERVER_FILES=false) the server files tab is hidden
   // and only uploads are shown. In development the user can flip between
@@ -288,6 +295,22 @@ export function FilePickerCard({
               ))}
             </div>
 
+            {hasCsvSelected && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="shrink-0 text-muted-foreground">Separador CSV</span>
+                <select
+                  value={csvDelimiter}
+                  onChange={(e) => onCsvDelimiterChange(e.target.value)}
+                  className="rounded-full border border-muted bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value=",">Coma ( , )</option>
+                  <option value=";">Punto y coma ( ; )</option>
+                  <option value="\t">Tabulador (\t)</option>
+                  <option value="|">Barra vertical ( | )</option>
+                </select>
+              </div>
+            )}
+
             {/*
               Bulk select / clear: with the current ext + source filters
               applied, "Seleccionar todos" picks every visible file in
@@ -376,6 +399,8 @@ export function FilePickerCard({
               />
               <span>Generar informes de profiling (ydata-profiling)</span>
             </label>
+
+
 
             <Button
               type="button"

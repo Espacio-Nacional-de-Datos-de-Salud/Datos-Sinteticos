@@ -8,6 +8,7 @@ artifact, and offers sampling helpers used by the simulation flow.
 
 import logging
 import os
+import shutil
 import socket
 import threading
 
@@ -45,7 +46,9 @@ def _kill_mostlyai_processes(job_id: str):
     for proc in psutil.process_iter(["pid", "cmdline"]):
         try:
             cmdline = proc.info.get("cmdline") or []
-            if any("mostlyai" in str(cmd) for cmd in cmdline) and str(job_id) in cmdline:
+            if any("mostlyai" in str(cmd) for cmd in cmdline) and any(
+                str(job_id) in str(cmd) for cmd in cmdline
+            ):
                 logger.info("Killing stuck mostlyai process: PID %s", proc.info["pid"])
                 # Kill children first to prevent orphans
                 for child in proc.children(recursive=True):
@@ -56,6 +59,42 @@ def _kill_mostlyai_processes(job_id: str):
                 proc.kill()
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
+
+
+def _shutdown_local_server(mostly) -> None:
+    """Force the embedded MostlyAI uvicorn server to exit, off the hot path.
+
+    The SDK runs its local server as a uvicorn instance in a daemon thread
+    *inside this very process* (see ``mostlyai.sdk._local.server.LocalServer``).
+    It must therefore never be killed by port — that socket is owned by our own
+    PID. Worse, ``LocalServer.__del__`` calls ``stop()`` which does an unbounded
+    ``thread.join()``; when a polling ``wait()`` keeps the server busy, that join
+    blocks the FastAPI event loop indefinitely during garbage collection.
+
+    Setting ``force_exit`` makes uvicorn skip graceful shutdown and return
+    immediately, so: (1) the daemon ``wait`` thread's next poll fails fast and
+    the thread dies, and (2) ``_server.started`` flips to False, turning the
+    later ``__del__``/``stop()`` into a harmless no-op.
+    """
+    local_server = None
+    try:
+        for value in list(vars(mostly).values()):
+            if hasattr(value, "_server") and hasattr(value, "_thread") and hasattr(value, "stop"):
+                local_server = value
+                break
+    except TypeError:
+        local_server = None
+    if local_server is None:
+        logger.warning("Could not locate embedded MostlyAI local server to shut down.")
+        return
+    logger.info("Forcing embedded MostlyAI local server to exit.")
+    uvicorn_server = getattr(local_server, "_server", None)
+    if uvicorn_server is not None:
+        uvicorn_server.should_exit = True
+        uvicorn_server.force_exit = True
+    # LocalServer.stop() joins the uvicorn thread with no timeout; run it in a
+    # daemon so the caller (and the event loop) is never blocked by that join.
+    threading.Thread(target=local_server.stop, daemon=True).start()
 
 
 logger = get_logger(__name__)
@@ -94,6 +133,8 @@ class MostlyAIEngine:
         if not local_dir:
             local_dir = MOSTLYAI_DIR
         self.mostly = MostlyAI(local=local, local_port=port, local_dir=local_dir)
+        self._local_port = port
+        self.local_dir = local_dir
         with open(config_path) as f:
             self.config = yaml.safe_load(f)
         if config_overrides:
@@ -161,30 +202,13 @@ class MostlyAIEngine:
         if cancel_event is None:
             generator.training.wait()
         else:
-            stop_watcher = threading.Event()
-
-            def watcher_thread():
-                while not stop_watcher.wait(timeout=1.0):
-                    if cancel_event.is_set():
-                        logger.info("Cancelling generator %s...", generator.id)
-                        generator.training.cancel()
-                        _kill_mostlyai_processes(generator.id)
-                        break
-
-            t = threading.Thread(target=watcher_thread)
-            t.start()
-
-            try:
-                generator.training.wait()
-            except Exception as e:
-                if cancel_event.is_set():
-                    pass  # Will be handled below
-                else:
-                    raise e
-            finally:
-                stop_watcher.set()
-                t.join(timeout=2.0)
-
+            self._wait_with_cancellation(
+                wait_fn=generator.training.wait,
+                cancel_fn=generator.training.cancel,
+                job_id=generator.id,
+                label="training",
+                cancel_event=cancel_event,
+            )
             if cancel_event.is_set():
                 raise JobCancelled("Training cancelled by user")
 
@@ -221,27 +245,34 @@ class MostlyAIEngine:
         generator: object,
         simulation_configuration: dict,
         cancel_event: threading.Event | None = None,
-    ) -> dict[str, pd.DataFrame]:
+        progress_copy_dest: str | None = None,
+        progress_copy_interval: float = 120.0,
+    ) -> tuple[dict[str, pd.DataFrame], str]:
         """Generates synthetic data using a trained generator.
 
         Starts a generation job with the specified configuration and returns
-        synthetic data in dictionary-of-DataFrames format.
+        synthetic data in dictionary-of-DataFrames format along with the
+        MostlyAI synthetic dataset ID (needed to locate job_progress.json).
 
         Args:
             generator (object): Trained generator object (MostlyAI Generator).
             simulation_configuration (dict): Config with {tables: [{name, configuration}, ...]}.
             cancel_event (threading.Event | None): Optional cancellation signal.
+            progress_copy_dest (str | None): If set, copy job_progress.json from the MostlyAI
+                synthetic-dataset folder to this path every ``progress_copy_interval`` seconds
+                while generation is running, plus once more after it completes.
+            progress_copy_interval (float): Seconds between periodic progress copies (default 120).
 
         Returns:
-            dict[str, pd.DataFrame]: Generated synthetic data
-                {table_name: dataframe}.
+            tuple[dict[str, pd.DataFrame], str]: Generated synthetic data
+                {table_name: dataframe} and the MostlyAI synthetic_dataset ID.
 
         Raises:
             Exception: If generation fails or configuration is invalid.
 
         Example:
             >>> config = {"tables": [{"name": "users", "configuration": {...}}]}
-            >>> synthetic_data = engine.simulate(generator, config)
+            >>> synthetic_data, sd_id = engine.simulate(generator, config)
             >>> print(synthetic_data['users'].shape)
         """
         # self.mostly.generate is a blocking wrapper that creates, starts and waits.
@@ -250,40 +281,53 @@ class MostlyAIEngine:
         config.update(simulation_configuration)
 
         synthetic_dataset = self.mostly.synthetic_datasets.create(config=config)
+        synthetic_dataset_id = synthetic_dataset.id
+
+        src_job_progress = os.path.join(
+            self.local_dir, "synthetic-datasets", str(synthetic_dataset_id), "job_progress.json"
+        )
+
         synthetic_dataset.generation.start()
 
-        if cancel_event is None:
-            synthetic_dataset.generation.wait()
-        else:
-            stop_watcher = threading.Event()
+        # Background thread that copies job_progress.json periodically so callers can
+        # monitor generation progress without waiting for the job to finish.
+        stop_copier = threading.Event()
 
-            def watcher_thread():
-                while not stop_watcher.wait(timeout=1.0):
-                    if cancel_event.is_set():
-                        logger.info("Cancelling simulation %s...", synthetic_dataset.id)
-                        synthetic_dataset.generation.cancel()
-                        _kill_mostlyai_processes(synthetic_dataset.id)
-                        break
+        def _progress_copier():
+            while not stop_copier.wait(timeout=progress_copy_interval):
+                if os.path.exists(src_job_progress):
+                    shutil.copy2(src_job_progress, progress_copy_dest)
+                    logger.debug("Copied job_progress.json to '%s'.", progress_copy_dest)
 
-            t = threading.Thread(target=watcher_thread)
-            t.start()
+        copier_thread: threading.Thread | None = None
+        if progress_copy_dest:
+            copier_thread = threading.Thread(target=_progress_copier, daemon=True)
+            copier_thread.start()
 
-            try:
+        try:
+            if cancel_event is None:
                 synthetic_dataset.generation.wait()
-            except Exception as e:
+            else:
+                self._wait_with_cancellation(
+                    wait_fn=synthetic_dataset.generation.wait,
+                    cancel_fn=synthetic_dataset.generation.cancel,
+                    job_id=synthetic_dataset.id,
+                    label="simulation",
+                    cancel_event=cancel_event,
+                )
                 if cancel_event.is_set():
-                    pass
-                else:
-                    raise e
-            finally:
-                stop_watcher.set()
-                t.join(timeout=2.0)
-
-            if cancel_event.is_set():
-                raise JobCancelled("Simulation cancelled by user")
+                    raise JobCancelled("Simulation cancelled by user")
+        finally:
+            stop_copier.set()
+            if copier_thread is not None:
+                copier_thread.join(timeout=2.0)
+                # Final authoritative copy once generation has settled
+                if os.path.exists(src_job_progress):
+                    shutil.copy2(src_job_progress, progress_copy_dest)
+                    logger.info("Final job_progress.json copied to '%s'.", progress_copy_dest)
 
         # reload to get data
-        synthetic_dataset = self.mostly.synthetic_datasets.get(synthetic_dataset.id)
+        synthetic_dataset = self.mostly.synthetic_datasets.get(synthetic_dataset_id)
 
         synthetic_data_dict = synthetic_dataset.data()
         sd_config = synthetic_dataset.config()
@@ -291,7 +335,56 @@ class MostlyAIEngine:
         if isinstance(synthetic_data_dict, pd.DataFrame):
             synthetic_data_dict = {sd_config.tables[0].name: synthetic_data_dict}
 
-        return synthetic_data_dict
+        return synthetic_data_dict, synthetic_dataset_id
+
+    def _wait_with_cancellation(
+        self,
+        wait_fn,
+        cancel_fn,
+        job_id: str,
+        label: str,
+        cancel_event: threading.Event,
+    ) -> None:
+        """Wait for a MostlyAI job while remaining responsive to cancellation.
+
+        Runs ``wait_fn`` in a daemon thread so the main thread can check
+        ``cancel_event`` every two seconds instead of being blocked inside the
+        SDK.  When cancellation is requested: calls ``cancel_fn`` with a 10-second
+        grace period, force-kills the generation/training subprocess, then
+        force-exits the embedded local server so nothing blocks afterwards.
+        """
+        wait_done = threading.Event()
+        wait_exc: list[BaseException | None] = [None]
+
+        def _do_wait() -> None:
+            try:
+                wait_fn()
+            except Exception as exc:
+                wait_exc[0] = exc
+            finally:
+                wait_done.set()
+
+        wait_thread = threading.Thread(target=_do_wait, daemon=True)
+        wait_thread.start()
+
+        cancelled = False
+        while not wait_done.wait(timeout=2.0):
+            if cancel_event.is_set():
+                cancelled = True
+                logger.info("Cancelling %s %s...", label, job_id)
+                cancel_t = threading.Thread(target=cancel_fn, daemon=True)
+                cancel_t.start()
+                cancel_t.join(timeout=10.0)
+                if cancel_t.is_alive():
+                    logger.warning(
+                        "%s.cancel() timed out after 10 s; proceeding to force kill.", label
+                    )
+                _kill_mostlyai_processes(str(job_id))
+                _shutdown_local_server(self.mostly)
+                break
+
+        if not cancelled and wait_exc[0] is not None:
+            raise wait_exc[0]
 
     def setup_mostlyai_logging(self, run_directory: str) -> None:
         """Configure MostlyAI SDK logger to output to session.log.

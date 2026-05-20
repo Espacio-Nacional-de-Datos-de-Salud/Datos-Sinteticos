@@ -46,3 +46,5 @@ class FilePreviewRequest(BaseModel):
     offset: int = 0
     # When True, also return ``total_rows`` so the frontend can paginate.
     include_total: bool = False
+    # Delimiter used when parsing CSV files.
+    csv_delimiter: str = ","

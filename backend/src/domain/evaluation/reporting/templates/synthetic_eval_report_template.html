@@ -140,6 +140,13 @@
       line-height: 1;
     }
 
+    .score-subtitle {
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.35;
+      font-weight: 700;
+    }
+
     .score-scale {
       height: 8px;
       border-radius: 999px;
@@ -155,6 +162,24 @@
       transition: width 500ms ease;
     }
 
+    .insights-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+    }
+
+    .insight-card {
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--info);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 12px;
+      color: #25465f;
+      font-size: 0.9rem;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
     .chart-wrap {
       background: var(--surface-alt);
       border: 1px solid var(--border);
@@ -163,32 +188,258 @@
       height: 320px;
     }
 
+    .utility-chart-wrap {
+      height: 300px;
+      margin-bottom: 14px;
+    }
+
     .metrics-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
       gap: 10px;
       margin-bottom: 14px;
     }
 
     .metric-pill {
-      padding: 10px;
+      padding: 12px;
       border-radius: var(--radius-md);
       border: 1px solid var(--border);
-      background: var(--surface-alt);
+      border-left: 5px solid var(--info);
+      background: #fff;
       display: grid;
-      gap: 2px;
+      gap: 8px;
+      min-height: 118px;
     }
 
     .metric-name {
-      font-size: 0.75rem;
-      color: var(--muted);
+      font-size: 0.78rem;
+      color: #25465f;
       text-transform: uppercase;
       letter-spacing: 0.04em;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
     }
 
     .metric-value {
-      font-size: 1rem;
+      font-size: 1.35rem;
+      line-height: 1;
+      font-weight: 800;
+    }
+
+    .metric-topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .metric-quality {
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-size: 0.7rem;
+      line-height: 1.2;
+      font-weight: 800;
+      text-transform: uppercase;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .quality-good {
+      color: var(--good);
+      background: #e6f4ec;
+      border-color: #addbc3;
+    }
+
+    .quality-mid {
+      color: #9a6b09;
+      background: #fff6df;
+      border-color: #edcf83;
+    }
+
+    .quality-bad {
+      color: var(--bad);
+      background: #fde9e9;
+      border-color: #f0b7b7;
+    }
+
+    .quality-unknown {
+      color: var(--muted);
+      background: #edf2f6;
+      border-color: #c8d5df;
+    }
+
+    .metric-note {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.35;
+    }
+
+    .metric-bar {
+      height: 7px;
+      border-radius: 999px;
+      background: #e7edf2;
+      overflow: hidden;
+    }
+
+    .metric-bar-fill {
+      height: 100%;
+      border-radius: inherit;
+      width: 0;
+      transition: width 500ms ease;
+    }
+
+    .fidelity-bars {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 12px;
+      margin-bottom: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .visual-title {
+      margin: 0;
+      color: #204d74;
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .visual-caption {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+
+    .tvd-bars-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .tvd-bar-row {
+      display: grid;
+      grid-template-columns: minmax(130px, 220px) 72px 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .tvd-bar-name {
+      color: #25465f;
+      font-size: 0.82rem;
       font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .tvd-bar-value {
+      color: var(--text);
+      font-size: 0.82rem;
+      font-weight: 800;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tvd-bar-track {
+      height: 9px;
+      border-radius: 999px;
+      background: #e7edf2;
+      overflow: hidden;
+    }
+
+    .tvd-bar-fill {
+      height: 100%;
+      border-radius: inherit;
+      width: 0;
+      transition: width 500ms ease;
+    }
+
+    .axis-score-banner {
+      border: 1px solid var(--border);
+      border-left: 8px solid var(--info);
+      border-radius: var(--radius-md);
+      background: linear-gradient(120deg, #ffffff 0%, #f6fafd 100%);
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      display: grid;
+      grid-template-columns: minmax(140px, 220px) 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .axis-score-label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .axis-score-value {
+      font-size: 2.05rem;
+      line-height: 1;
+      font-weight: 850;
+    }
+
+    .axis-score-copy {
+      color: #314e65;
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .axis-score-bar {
+      height: 9px;
+      border-radius: 999px;
+      background: #e7edf2;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .axis-score-bar-fill {
+      height: 100%;
+      border-radius: inherit;
+      width: 0;
+    }
+
+    .score-breakdown {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .score-breakdown-card {
+      border: 1px solid var(--border);
+      border-top: 5px solid;
+      border-radius: var(--radius-md);
+      background: linear-gradient(150deg, #ffffff 0%, #f8fbfd 100%);
+      padding: 12px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .score-breakdown-label {
+      font-size: 0.76rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .score-breakdown-value {
+      font-size: 1.35rem;
+      line-height: 1;
+      font-weight: 800;
+    }
+
+    .score-breakdown-note {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.35;
     }
 
     details.section {
@@ -226,6 +477,53 @@
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       margin-bottom: 12px;
+    }
+
+    .table-wrap-highlight {
+      border-color: #efc16a;
+      box-shadow: 0 0 0 3px rgba(211, 156, 25, 0.12);
+    }
+
+    .detail-table {
+      margin: 10px 0 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .detail-table > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 10px 12px;
+      background: #f8fbfd;
+      color: #204d74;
+      font-weight: 800;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .detail-table > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .detail-table > summary::after {
+      content: "+";
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .detail-table[open] > summary::after {
+      content: "-";
+    }
+
+    .detail-table .table-wrap {
+      border: 0;
+      border-top: 1px solid var(--border);
+      border-radius: 0;
+      margin-bottom: 0;
     }
 
     table {
@@ -272,6 +570,86 @@
       font-size: 0.76rem;
       font-weight: 700;
       text-transform: uppercase;
+    }
+
+    .risk-tag {
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 0.76rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      border: 1px solid transparent;
+      display: inline-block;
+    }
+
+    .risk-alto {
+      background: #fde9e9;
+      border-color: #f0b7b7;
+      color: var(--bad);
+    }
+
+    .risk-medio {
+      background: #fff6df;
+      border-color: #edcf83;
+      color: #9a6b09;
+    }
+
+    .risk-bajo {
+      background: #e6f4ec;
+      border-color: #addbc3;
+      color: var(--good);
+    }
+
+    .risk-desconocido {
+      background: #edf2f6;
+      border-color: #c8d5df;
+      color: var(--muted);
+    }
+
+    .privacy-risk-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .privacy-risk-card {
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--info);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .privacy-risk-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .privacy-risk-title {
+      color: #25465f;
+      font-size: 0.86rem;
+      font-weight: 800;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .privacy-risk-values {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .privacy-risk-values strong {
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
     }
 
     .explain {
@@ -344,6 +722,51 @@
       color: #3e5971;
     }
 
+    .corr-heatmap {
+      overflow-x: auto;
+    }
+
+    .corr-heatmap-table {
+      border-collapse: separate;
+      border-spacing: 3px;
+      min-width: 0;
+      width: auto;
+      background: transparent;
+    }
+
+    .corr-heatmap-table th,
+    .corr-heatmap-table td {
+      border-bottom: 0;
+      padding: 5px 6px;
+      text-align: center;
+      white-space: nowrap;
+      font-size: 0.72rem;
+      min-width: 44px;
+    }
+
+    .corr-label {
+      background: #f4f8fb;
+      color: #204d74;
+      font-weight: 800;
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .corr-cell {
+      border-radius: 6px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: #122231;
+    }
+
+    .corr-empty {
+      color: var(--muted);
+      background: #edf2f6;
+      padding: 10px;
+      border-radius: var(--radius-md);
+    }
+
     @media (max-width: 800px) {
       .container {
         width: min(1280px, 96vw);
@@ -358,6 +781,18 @@
 
       .chart-wrap {
         height: 270px;
+      }
+
+      .axis-score-banner {
+        grid-template-columns: 1fr;
+      }
+
+      .tvd-bar-row {
+        grid-template-columns: minmax(100px, 1fr) 64px;
+      }
+
+      .tvd-bar-track {
+        grid-column: 1 / -1;
       }
     }
   </style>
@@ -389,6 +824,15 @@
       </div>
     </section>
 
+    <section class="panel">
+      <header class="panel-header">
+        <h2 class="panel-title">Insights clave</h2>
+      </header>
+      <div class="panel-content">
+        <div id="keyInsights" class="insights-grid"></div>
+      </div>
+    </section>
+
     <section class="panel" id="sectionsRoot">
       <details class="section" open>
         <summary>
@@ -396,22 +840,36 @@
           <span class="summary-right" id="fidelitySummaryRight">-</span>
         </summary>
         <div class="panel-content">
+          <p class="explain">
+            Esta seccion evalua si el dataset sintetico reproduce las distribuciones,
+            estadisticas y relaciones entre variables del dataset real. Valores altos
+            indican mayor fidelidad.
+          </p>
+          <div id="fidelityAxisScore" class="axis-score-banner"></div>
           <div id="fidelityAggregated" class="metrics-grid"></div>
+          <div id="fidelityTvdBars" class="fidelity-bars"></div>
+          <div id="correlationDiffHeatmap" class="fidelity-bars"></div>
 
-          <h3>TVD por columna</h3>
-          <div class="table-wrap">
-            <table id="tvdTable"></table>
-          </div>
+          <details class="detail-table">
+            <summary>TVD por columna</summary>
+            <div class="table-wrap">
+              <table id="tvdTable"></table>
+            </div>
+          </details>
 
-          <h3>CIO por estadistico</h3>
-          <div class="table-wrap">
-            <table id="cioTable"></table>
-          </div>
+          <details class="detail-table">
+            <summary>CIO por estadistico</summary>
+            <div class="table-wrap">
+              <table id="cioTable"></table>
+            </div>
+          </details>
 
-          <h3>CMD</h3>
-          <div class="table-wrap">
-            <table id="cmdTable"></table>
-          </div>
+          <details class="detail-table">
+            <summary>CMD</summary>
+            <div class="table-wrap">
+              <table id="cmdTable"></table>
+            </div>
+          </details>
         </div>
       </details>
 
@@ -421,17 +879,45 @@
           <span class="summary-right" id="privacySummaryRight">-</span>
         </summary>
         <div class="panel-content">
+          <p class="explain">
+            Esta seccion evalua el riesgo de que los datos sinteticos revelen informacion
+            de registros reales o permitan re-identificacion. Valores altos indican menor riesgo.
+          </p>
+          <div id="privacyAxisScore" class="axis-score-banner"></div>
+          <div id="privacyScoreBreakdown" class="score-breakdown"></div>
+          <p class="explain">
+            La penalizacion de privacidad se calcula a partir de los subsets donde el
+            k-anonymity sintetico empeora respecto al real. Penalizaciones altas indican
+            mas combinaciones potencialmente identificables.
+          </p>
           <div id="privacyAggregated" class="metrics-grid"></div>
 
-          <h3>k-Anonymity por subset</h3>
-          <div class="table-wrap">
-            <table id="kanonSubsetTable"></table>
-          </div>
+          <h3>Top riesgos de re-identificacion</h3>
+          <p class="explain">
+            k bajo implica mayor riesgo; si syn_k empeora respecto a real_k, se aplica penalizacion.
+          </p>
+          <div id="privacyRiskCards" class="privacy-risk-grid"></div>
 
-          <h3>k-Anonymity por columna</h3>
-          <div class="table-wrap">
-            <table id="kanonColumnTable"></table>
-          </div>
+          <details class="detail-table" open>
+            <summary>Pares/subsets de k-Anonymity mas problematicos</summary>
+            <div class="table-wrap table-wrap-highlight">
+              <table id="kanonProblemTable"></table>
+            </div>
+          </details>
+
+          <details class="detail-table">
+            <summary>k-Anonymity por subset</summary>
+            <div class="table-wrap">
+              <table id="kanonSubsetTable"></table>
+            </div>
+          </details>
+
+          <details class="detail-table">
+            <summary>k-Anonymity por columna</summary>
+            <div class="table-wrap">
+              <table id="kanonColumnTable"></table>
+            </div>
+          </details>
         </div>
       </details>
 
@@ -441,6 +927,12 @@
           <span class="summary-right" id="utilitySummaryRight">-</span>
         </summary>
         <div class="panel-content">
+          <p class="explain">
+            Esta seccion evalua si los datos sinteticos permiten entrenar modelos predictivos
+            utiles. La comparacion clave es entre el rendimiento usando datos reales y el
+            rendimiento usando datos sinteticos.
+          </p>
+          <div id="utilityAxisScore" class="axis-score-banner"></div>
           <div id="utilityAggregated" class="metrics-grid"></div>
 
           <p class="explain">
@@ -448,11 +940,19 @@
             SYN_ID entrena con sinteticos y evalua en test in-distribution.
             SYN_OOD entrena con sinteticos y evalua en escenario out-of-distribution.
             Cuanto mas cercanos a GT esten SYN_ID y SYN_OOD, mejor utilidad.
+            Utility relative score es el ratio entre utilidad sintetica y utilidad real.
           </p>
 
-          <div class="table-wrap">
-            <table id="utilityTable"></table>
+          <div class="chart-wrap utility-chart-wrap">
+            <canvas id="utilityComparisonChart" aria-label="Comparacion de utilidad predictiva por modelo"></canvas>
           </div>
+
+          <details class="detail-table">
+            <summary>Metricas de utilidad en tabla</summary>
+            <div class="table-wrap">
+              <table id="utilityTable"></table>
+            </div>
+          </details>
         </div>
       </details>
 
@@ -475,6 +975,9 @@ __REPORT_DATA_JSON__
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script>
     function scoreToColor(score) {
+      if (typeof score !== "number" || Number.isNaN(score)) {
+        return getComputedStyle(document.documentElement).getPropertyValue("--info").trim();
+      }
       if (score >= 0.75) {
         return getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
       }
@@ -485,6 +988,7 @@ __REPORT_DATA_JSON__
     }
 
     function scoreToLabel(score) {
+      if (typeof score !== "number" || Number.isNaN(score)) return "Sin dato";
       if (score >= 0.75) return "Bueno";
       if (score >= 0.5) return "Medio";
       return "Bajo";
@@ -493,6 +997,20 @@ __REPORT_DATA_JSON__
     function formatScore(value, digits = 4) {
       if (typeof value !== "number" || Number.isNaN(value)) return "-";
       return value.toFixed(digits);
+    }
+
+    function scorePercent(score) {
+      if (typeof score !== "number" || Number.isNaN(score)) return 0;
+      return Math.max(0, Math.min(100, score * 100));
+    }
+
+    function formatScorePart(label, value) {
+      return label + " " + formatScore(value, 3);
+    }
+
+    function lowerIsBetterScore(value, maxValue) {
+      if (typeof value !== "number" || Number.isNaN(value)) return null;
+      return 1 - Math.min(value / maxValue, 1);
     }
 
     function formatDate(raw) {
@@ -518,24 +1036,118 @@ __REPORT_DATA_JSON__
       return wrapper;
     }
 
-    function createMetricPill(name, value, tooltipText) {
-      const color = scoreToColor(typeof value === "number" ? value : 0);
-      const valueText = typeof value === "number" ? formatScore(value, 4) : String(value);
+    function clamp01(value) {
+      return Math.max(0, Math.min(1, value));
+    }
+
+    function metricConfig(name, config) {
+      if (typeof config === "string") {
+        return {
+          label: name,
+          tooltip: config,
+          ideal: "Mayor suele ser mejor",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5
+        };
+      }
+      return {
+        label: name,
+        tooltip: "",
+        ideal: "",
+        direction: "higher",
+        good: 0.75,
+        warning: 0.5,
+        ...(config || {})
+      };
+    }
+
+    function metricQuality(value, config) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "unknown";
+      if (config.direction === "none") return "unknown";
+      if (config.direction === "lower") {
+        if (value <= config.good) return "good";
+        if (value <= config.warning) return "mid";
+        return "bad";
+      }
+      if (config.direction === "target") {
+        const delta = Math.abs(value - config.target);
+        if (delta <= config.good) return "good";
+        if (delta <= config.warning) return "mid";
+        return "bad";
+      }
+      if (value >= config.good) return "good";
+      if (value >= config.warning) return "mid";
+      return "bad";
+    }
+
+    function metricQualityLabel(level) {
+      if (level === "good") return "Bueno";
+      if (level === "mid") return "Medio";
+      if (level === "bad") return "Bajo";
+      return "Info";
+    }
+
+    function metricProgress(value, config) {
+      if (typeof value !== "number" || Number.isNaN(value)) return 0;
+      if (config.direction === "lower") {
+        if (value <= config.good) return 1;
+        if (value >= config.warning) return 0;
+        return 1 - clamp01((value - config.good) / (config.warning - config.good));
+      }
+      if (config.direction === "target") {
+        return 1 - clamp01(Math.abs(value - config.target) / config.warning);
+      }
+      if (config.direction === "none") {
+        return clamp01(value);
+      }
+      return clamp01(value / config.good);
+    }
+
+    function qualityColor(level) {
+      if (level === "good") return getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+      if (level === "mid") return getComputedStyle(document.documentElement).getPropertyValue("--mid").trim();
+      if (level === "bad") return getComputedStyle(document.documentElement).getPropertyValue("--bad").trim();
+      return getComputedStyle(document.documentElement).getPropertyValue("--info").trim();
+    }
+
+    function createMetricPill(name, value, metricOptions) {
+      const config = metricConfig(name, metricOptions);
+      const level = metricQuality(value, config);
+      const color = qualityColor(level);
+      const valueText = formatScore(value, config.digits || 4);
       const el = document.createElement("article");
       el.className = "metric-pill";
-      el.innerHTML = '<div class="metric-name"></div><div class="metric-value"></div>';
+      el.style.borderLeftColor = color;
+      el.innerHTML = [
+        '<div class="metric-topline">',
+        '<div class="metric-name"></div>',
+        '<span class="metric-quality"></span>',
+        '</div>',
+        '<div class="metric-value"></div>',
+        '<div class="metric-note"></div>',
+        '<div class="metric-bar"><div class="metric-bar-fill"></div></div>'
+      ].join("");
 
       const metricName = el.querySelector(".metric-name");
       const metricValue = el.querySelector(".metric-value");
+      const metricQualityEl = el.querySelector(".metric-quality");
+      const metricNote = el.querySelector(".metric-note");
+      const metricBar = el.querySelector(".metric-bar-fill");
 
-      metricName.textContent = name;
+      metricName.textContent = config.label || name;
       metricValue.textContent = valueText;
       metricValue.style.color = color;
+      metricQualityEl.textContent = metricQualityLabel(level);
+      metricQualityEl.className = "metric-quality quality-" + level;
+      metricNote.textContent = config.ideal || "";
+      metricBar.style.width = Math.round(metricProgress(value, config) * 100) + "%";
+      metricBar.style.background = color;
 
-      if (tooltipText) {
+      if (config.tooltip) {
         const tip = document.createElement("span");
         tip.className = "tooltip";
-        tip.dataset.tip = tooltipText;
+        tip.dataset.tip = config.tooltip;
         tip.textContent = "i";
         metricName.appendChild(document.createTextNode(" "));
         metricName.appendChild(tip);
@@ -543,7 +1155,330 @@ __REPORT_DATA_JSON__
       return el;
     }
 
-    function createScoreCard(name, score, tooltipText) {
+    function renderAxisScore(rootId, label, score, copy) {
+      const root = document.getElementById(rootId);
+      if (!root) return;
+
+      const color = scoreToColor(score);
+      root.style.borderLeftColor = color;
+      root.innerHTML = [
+        '<div>',
+        '<div class="axis-score-label"></div>',
+        '<div class="axis-score-value"></div>',
+        '<div class="axis-score-bar"><div class="axis-score-bar-fill"></div></div>',
+        '</div>',
+        '<div class="axis-score-copy"></div>'
+      ].join("");
+
+      root.querySelector(".axis-score-label").textContent = label;
+      const value = root.querySelector(".axis-score-value");
+      const bar = root.querySelector(".axis-score-bar-fill");
+      const percent = typeof score === "number" && !Number.isNaN(score)
+        ? Math.max(0, Math.min(100, score * 100))
+        : 0;
+      value.textContent = formatScore(score, 3);
+      value.style.color = color;
+      bar.style.background = color;
+      bar.style.width = percent + "%";
+      root.querySelector(".axis-score-copy").textContent = copy;
+    }
+
+    function renderFidelityTvdBars(rows) {
+      const root = document.getElementById("fidelityTvdBars");
+      if (!root) return;
+
+      const prepared = (rows || [])
+        .map((row) => {
+          const rawValue = row.complementary_tvd;
+          const value = rawValue === null || rawValue === undefined || rawValue === ""
+            ? null
+            : Number(rawValue);
+          return {
+            column: row.column || "-",
+            complementary_tvd: Number.isFinite(value) ? value : null
+          };
+        })
+        .sort((a, b) => {
+          const av = a.complementary_tvd === null ? Number.POSITIVE_INFINITY : a.complementary_tvd;
+          const bv = b.complementary_tvd === null ? Number.POSITIVE_INFINITY : b.complementary_tvd;
+          return av - bv;
+        })
+        .slice(0, 15);
+
+      if (!prepared.length) {
+        root.style.display = "none";
+        root.replaceChildren();
+        return;
+      }
+
+      root.style.display = "";
+      const header = document.createElement("div");
+      header.innerHTML = [
+        '<h3 class="visual-title">Peores columnas por TVD complementaria</h3>',
+        '<p class="visual-caption">Se muestran las 15 columnas con menor complementary_tvd. Barras mas cortas indican peor reproduccion de la distribucion.</p>'
+      ].join("");
+
+      const list = document.createElement("div");
+      list.className = "tvd-bars-list";
+
+      prepared.forEach((row) => {
+        const value = row.complementary_tvd;
+        const item = document.createElement("div");
+        item.className = "tvd-bar-row";
+        item.innerHTML = [
+          '<div class="tvd-bar-name"></div>',
+          '<div class="tvd-bar-value"></div>',
+          '<div class="tvd-bar-track"><div class="tvd-bar-fill"></div></div>'
+        ].join("");
+
+        item.querySelector(".tvd-bar-name").textContent = row.column;
+        item.querySelector(".tvd-bar-value").textContent = formatScore(value, 4);
+        const fill = item.querySelector(".tvd-bar-fill");
+        fill.style.width = scorePercent(value) + "%";
+        fill.style.background = scoreToColor(value);
+        list.appendChild(item);
+      });
+
+      root.replaceChildren(header, list);
+    }
+
+    function renderCorrelationDiffHeatmap(matrix) {
+      const root = document.getElementById("correlationDiffHeatmap");
+      if (!root) return;
+
+      const header = document.createElement("div");
+      header.innerHTML = [
+        '<h3 class="visual-title">Diferencias de correlacion</h3>',
+        '<p class="visual-caption">Muestra diferencias entre la estructura de correlaciones real y sintetica. Valores altos indican relaciones entre variables peor preservadas.</p>'
+      ].join("");
+
+      if (!matrix || !Array.isArray(matrix.columns) || !Array.isArray(matrix.values)) {
+        const empty = document.createElement("p");
+        empty.className = "visual-caption corr-empty";
+        empty.textContent = "Matriz de diferencias de correlacion no disponible para esta evaluacion.";
+        root.replaceChildren(header, empty);
+        return;
+      }
+
+      const columns = matrix.columns.slice(0, 20);
+      const values = matrix.values.slice(0, 20).map((row) => row.slice(0, 20));
+
+      const wrap = document.createElement("div");
+      wrap.className = "corr-heatmap";
+
+      const table = document.createElement("table");
+      table.className = "corr-heatmap-table";
+
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      headerRow.appendChild(document.createElement("th"));
+
+      columns.forEach((col) => {
+        const th = document.createElement("th");
+        th.className = "corr-label";
+        th.textContent = col;
+        th.title = col;
+        headerRow.appendChild(th);
+      });
+
+      thead.appendChild(headerRow);
+
+      const tbody = document.createElement("tbody");
+
+      values.forEach((row, i) => {
+        const tr = document.createElement("tr");
+
+        const rowHeader = document.createElement("th");
+        rowHeader.className = "corr-label";
+        rowHeader.textContent = columns[i];
+        rowHeader.title = columns[i];
+        tr.appendChild(rowHeader);
+
+        columns.forEach((_, j) => {
+          const td = document.createElement("td");
+          const value = Number(row[j]);
+          td.className = "corr-cell";
+
+          if (!Number.isFinite(value)) {
+            td.textContent = "-";
+            td.style.background = "#edf2f6";
+          } else {
+            td.textContent = formatScore(value, 2);
+            td.style.background =
+              Math.abs(value) < 0.1 ? "#e6f4ec" :
+              Math.abs(value) < 0.25 ? "#fff6df" :
+              Math.abs(value) < 0.5 ? "#f7d9a8" :
+              "#f4b6b6";
+          }
+
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+
+      const children = [header, wrap];
+
+      if (matrix.columns.length > 20) {
+        const note = document.createElement("p");
+        note.className = "visual-caption";
+        note.textContent = "Mostrando las primeras 20 variables.";
+        children.push(note);
+      }
+
+      root.replaceChildren(...children);
+    }
+
+    function chartValue(value) {
+      return typeof value === "number" && Number.isFinite(value) ? value : null;
+    }
+
+    function renderUtilityComparisonChart(summary) {
+      if (!window.Chart) return;
+
+      const canvas = document.getElementById("utilityComparisonChart");
+      if (!canvas) return;
+
+      if (window.__utilityComparisonChart) {
+        window.__utilityComparisonChart.destroy();
+      }
+
+      const axisColor = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
+      const linearColor = getComputedStyle(document.documentElement).getPropertyValue("--info").trim();
+      const mlpColor = getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+
+      window.__utilityComparisonChart = new Chart(canvas, {
+        type: "bar",
+        data: {
+          labels: ["GT", "SYN_ID", "SYN_OOD"],
+          datasets: [
+            {
+              label: "Linear Model",
+              data: [
+                chartValue(summary.linear_gt),
+                chartValue(summary.linear_syn_id),
+                chartValue(summary.linear_syn_ood)
+              ],
+              backgroundColor: "rgba(47, 108, 179, 0.72)",
+              borderColor: linearColor,
+              borderWidth: 1
+            },
+            {
+              label: "MLP",
+              data: [
+                chartValue(summary.mlp_gt),
+                chartValue(summary.mlp_syn_id),
+                chartValue(summary.mlp_syn_ood)
+              ],
+              backgroundColor: "rgba(31, 143, 95, 0.72)",
+              borderColor: mlpColor,
+              borderWidth: 1
+            }
+          ]
+        },
+        options: {
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: {
+                color: axisColor,
+                boxWidth: 12,
+                boxHeight: 12
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const value = context.raw;
+                  return context.dataset.label + ": " + formatScore(value, 4);
+                },
+                afterTitle: (items) => {
+                  const label = items && items[0] ? items[0].label : "";
+                  if (label === "GT") return "Referencia real";
+                  if (label === "SYN_ID") return "Utilidad en distribucion";
+                  if (label === "SYN_OOD") return "Generalizacion";
+                  return "";
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: axisColor }
+            },
+            y: {
+              beginAtZero: true,
+              suggestedMax: 1,
+              ticks: {
+                color: axisColor,
+                callback: (value) => formatScore(Number(value), 2)
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function penaltyToColor(value) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "var(--muted)";
+      if (value <= 0.05) return getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+      if (value <= 0.12) return getComputedStyle(document.documentElement).getPropertyValue("--mid").trim();
+      return getComputedStyle(document.documentElement).getPropertyValue("--bad").trim();
+    }
+
+    function createScoreBreakdownCard(label, value, note, options = {}) {
+      const color = options.isPenalty
+        ? penaltyToColor(value)
+        : scoreToColor(typeof value === "number" ? value : 0);
+      const card = document.createElement("article");
+      card.className = "score-breakdown-card";
+      card.style.borderTopColor = color;
+      card.innerHTML = [
+        '<div class="score-breakdown-label"></div>',
+        '<div class="score-breakdown-value"></div>',
+        '<div class="score-breakdown-note"></div>'
+      ].join("");
+
+      card.querySelector(".score-breakdown-label").textContent = label;
+      const valueEl = card.querySelector(".score-breakdown-value");
+      valueEl.textContent = formatScore(value, 3);
+      valueEl.style.color = color;
+      card.querySelector(".score-breakdown-note").textContent = note;
+      return card;
+    }
+
+    function renderPrivacyScoreBreakdown(scores) {
+      const root = document.getElementById("privacyScoreBreakdown");
+      if (!root) return;
+
+      const finalScore = scores.privacy_score;
+      const baseScore = typeof scores.privacy_base_score === "number" ? scores.privacy_base_score : finalScore;
+      const penalty = typeof scores.privacy_penalty === "number"
+        ? scores.privacy_penalty
+        : (
+          typeof baseScore === "number" && typeof finalScore === "number"
+            ? Math.max(0, baseScore - finalScore)
+            : null
+        );
+
+      root.replaceChildren(
+        createScoreBreakdownCard("privacy_base_score", baseScore, "Media base de las metricas internas de privacidad."),
+        createScoreBreakdownCard(
+          "privacy_penalty",
+          penalty,
+          "Ajuste aplicado por k-anonymity bajo.",
+          { isPenalty: true }
+        ),
+        createScoreBreakdownCard("privacy_score", finalScore, "Score final usado en el resumen global.")
+      );
+    }
+
+    function createScoreCard(name, score, tooltipText, subtitleText) {
       const color = scoreToColor(score);
       const card = document.createElement("article");
       card.className = "score-card";
@@ -551,11 +1486,13 @@ __REPORT_DATA_JSON__
       card.innerHTML = [
         '<div class="score-title"></div>',
         '<div class="score-value"></div>',
+        '<div class="score-subtitle"></div>',
         '<div class="score-scale"><div class="score-scale-bar"></div></div>'
       ].join("");
 
       const title = card.querySelector(".score-title");
       const value = card.querySelector(".score-value");
+      const subtitle = card.querySelector(".score-subtitle");
       const bar = card.querySelector(".score-scale-bar");
 
       title.textContent = name;
@@ -569,8 +1506,9 @@ __REPORT_DATA_JSON__
 
       value.textContent = formatScore(score, 3);
       value.style.color = color;
+      subtitle.textContent = subtitleText || "";
       bar.style.background = color;
-      bar.style.width = Math.max(0, Math.min(100, score * 100)) + "%";
+      bar.style.width = scorePercent(score) + "%";
 
       return card;
     }
@@ -666,16 +1604,52 @@ __REPORT_DATA_JSON__
 
     function renderScores(scores) {
       const root = document.getElementById("scoreCards");
+      const utilityRelativeScore =
+        typeof scores.utility_relative_score === "number"
+          ? scores.utility_relative_score
+          : scores.utility_score;
+      const fidelitySubtitle = [
+        formatScorePart("Dist.", scores.fidelity_distribution_score),
+        formatScorePart("Estruct.", scores.fidelity_structure_score)
+      ].join(" | ");
+      const privacySubtitle = [
+        formatScorePart("Base", scores.privacy_base_score),
+        formatScorePart("Penal.", scores.privacy_penalty)
+      ].join(" | ");
+      const utilitySubtitle = [
+        formatScorePart("Real", scores.utility_real_score),
+        formatScorePart("Synth", scores.utility_synthetic_score)
+      ].join(" | ");
       const cardItems = [
-        ["Fidelity", scores.fidelity_score, "Calidad estadistica del sintetico respecto al real."],
-        ["Privacy", scores.privacy_score, "Resistencia a re-identificacion y fuga de registros."],
-        ["Utility", scores.utility_score, "Capacidad de entrenar modelos utiles con datos sinteticos."],
-        ["Global", scores.global_score, "Combinacion agregada de Fidelity, Privacy y Utility."]
+        [
+          "Fidelity",
+          scores.fidelity_score,
+          "Fidelity mide cuanto se parecen estadisticamente los datos sinteticos a los reales. Dist. resume similitud de distribuciones; Estruct. resume relaciones entre variables.",
+          fidelitySubtitle
+        ],
+        [
+          "Privacy",
+          scores.privacy_score,
+          "Privacy mide riesgo de re-identificacion o copia. Base resume metricas generales de privacidad; Penal. reduce la puntuacion si k-anonymity empeora respecto al real.",
+          privacySubtitle
+        ],
+        [
+          "Utility (rel.)",
+          utilityRelativeScore,
+          "Utility relativa compara el rendimiento predictivo del sintetico contra el rendimiento con datos reales. Cercano a 1 indica que el sintetico conserva casi toda la utilidad.",
+          utilitySubtitle
+        ],
+        [
+          "Global",
+          scores.global_score,
+          "Global combina Fidelity, Privacy y Utility para dar una vision agregada.",
+          ""
+        ]
       ];
 
       const axisItems = cardItems.slice(0, 3);
 
-      root.replaceChildren(...cardItems.map((x) => createScoreCard(x[0], x[1], x[2])));
+      root.replaceChildren(...cardItems.map((x) => createScoreCard(x[0], x[1], x[2], x[3])));
 
       if (window.Chart) {
         const ctx = document.getElementById("scoresChart");
@@ -685,7 +1659,7 @@ __REPORT_DATA_JSON__
             labels: axisItems.map((x) => x[0]),
             datasets: [{
               label: "Scores por eje",
-              data: axisItems.map((x) => x[1]),
+              data: axisItems.map((x) => typeof x[1] === "number" ? x[1] : null),
               backgroundColor: "rgba(34, 115, 176, 0.15)",
               borderColor: "rgba(34, 115, 176, 0.9)",
               borderWidth: 2,
@@ -720,22 +1694,160 @@ __REPORT_DATA_JSON__
       }
     }
 
+    function addInsight(insights, condition, text, level = "info") {
+      if (condition && insights.length < 6) {
+        insights.push({ text, level });
+      }
+    }
+
+    function insightColor(level) {
+      if (level === "good") return getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+      if (level === "warning") return getComputedStyle(document.documentElement).getPropertyValue("--mid").trim();
+      if (level === "bad") return getComputedStyle(document.documentElement).getPropertyValue("--bad").trim();
+      return getComputedStyle(document.documentElement).getPropertyValue("--info").trim();
+    }
+
+    function renderKeyInsights(scores) {
+      const root = document.getElementById("keyInsights");
+      if (!root) return;
+
+      const utilityRelativeScore =
+        typeof scores.utility_relative_score === "number"
+          ? scores.utility_relative_score
+          : scores.utility_score;
+      const insights = [];
+
+      addInsight(insights, scores.fidelity_score >= 0.75, "Buena fidelidad global.", "good");
+      addInsight(
+        insights,
+        scores.fidelity_structure_score < 0.5,
+        "Las relaciones entre variables parecen degradadas.",
+        "bad"
+      );
+      addInsight(
+        insights,
+        scores.privacy_penalty > 0.1,
+        "Hay penalizacion de privacidad por empeoramiento de k-anonymity.",
+        "warning"
+      );
+      addInsight(
+        insights,
+        scores.privacy_score >= 0.75,
+        "Riesgo de privacidad global bajo segun las metricas agregadas.",
+        "good"
+      );
+      addInsight(
+        insights,
+        utilityRelativeScore >= 0.9,
+        "La utilidad sintetica se mantiene cercana a la real.",
+        "good"
+      );
+      addInsight(
+        insights,
+        utilityRelativeScore < 0.75,
+        "La utilidad predictiva se degrada de forma relevante.",
+        "warning"
+      );
+
+      addInsight(
+        insights,
+        insights.length < 3 && scores.fidelity_score < 0.75,
+        "Fidelidad global moderada; conviene revisar las columnas peor reproducidas.",
+        "warning"
+      );
+      addInsight(
+        insights,
+        insights.length < 3 && scores.privacy_penalty <= 0.1,
+        "La penalizacion de privacidad es baja.",
+        "good"
+      );
+      addInsight(
+        insights,
+        insights.length < 3 && utilityRelativeScore >= 0.75 && utilityRelativeScore < 0.9,
+        "La utilidad relativa se mantiene en un rango aceptable.",
+        "info"
+      );
+
+      root.replaceChildren(
+        ...insights.slice(0, 6).map((insight) => {
+          const card = document.createElement("article");
+          card.className = "insight-card";
+          card.style.borderLeftColor = insightColor(insight.level);
+          card.textContent = insight.text;
+          return card;
+        })
+      );
+    }
+
     function renderFidelity(summary, details) {
       const aggRoot = document.getElementById("fidelityAggregated");
+      const scores = (window.__reportData && window.__reportData.scores) || {};
       const mapTips = {
-        jsd: "Jensen-Shannon divergence invertida/normalizada.",
-        inv_kl: "KL invertida: mejor cuando distribuciones son cercanas.",
-        inv_tvd: "1 - TVD promedio. Alto es mejor.",
-        cmd: "Correlacion multivariada; alto indica estructura similar.",
-        cio: "Confidence Interval Overlap promedio."
+        jsd: {
+          label: "JSD",
+          tooltip: "Compara la forma de las distribuciones reales y sinteticas. Alto indica distribuciones similares.",
+          ideal: "Compara la forma de las distribuciones reales y sinteticas. Alto indica distribuciones similares.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5
+        },
+        inv_kl: {
+          label: "KL inversa",
+          tooltip: "Mide similitud probabilistica penalizando diferencias fuertes. Alto es mejor.",
+          ideal: "Mide similitud probabilistica penalizando diferencias fuertes. Alto es mejor.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5
+        },
+        inv_tvd: {
+          label: "TVD complementaria",
+          tooltip: "Resume la distancia total entre distribuciones. Cercano a 1 indica alta similitud.",
+          ideal: "Resume la distancia total entre distribuciones. Cercano a 1 indica alta similitud.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5
+        },
+        cmd: {
+          label: "CMD",
+          tooltip: "Evalua si las correlaciones entre variables se conservan. Alto indica estructura similar.",
+          ideal: "Evalua si las correlaciones entre variables se conservan. Alto indica estructura similar.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5
+        },
+        cio: {
+          label: "CIO",
+          tooltip: "Compara el solapamiento de intervalos estadisticos. Alto indica estadisticas compatibles.",
+          ideal: "Compara el solapamiento de intervalos estadisticos. Alto indica estadisticas compatibles.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5
+        }
       };
+      const metricRows = [
+        ["jsd", lowerIsBetterScore(summary.jsd, 0.2)],
+        ["inv_kl", summary.inv_kl],
+        ["inv_tvd", summary.inv_tvd],
+        ["cmd", lowerIsBetterScore(summary.cmd, 1.0)],
+        ["cio", summary.cio]
+      ];
+
+      renderAxisScore(
+        "fidelityAxisScore",
+        "Score de Fidelidad",
+        scores.fidelity_score,
+        "Resume que tan bien el sintetico conserva distribuciones, correlaciones y estadisticos del dato real."
+      );
 
       aggRoot.replaceChildren(
-        ...Object.entries(summary || {}).map(([k, v]) => createMetricPill(k, v, mapTips[k]))
+        ...metricRows.map(([k, v]) => createMetricPill(k, v, mapTips[k]))
       );
 
       document.getElementById("fidelitySummaryRight").textContent =
-        "Score " + formatScore((window.__reportData.scores || {}).fidelity_score, 3);
+        "Score " + formatScore(scores.fidelity_score, 3);
+
+      renderFidelityTvdBars(details.tvd_by_column || []);
+      renderCorrelationDiffHeatmap(details.correlation_difference_matrix);
 
       renderSimpleTable(
         "tvdTable",
@@ -799,22 +1911,182 @@ __REPORT_DATA_JSON__
       return raw.includes("dob") || raw.includes("admittime") || raw.includes("dischtime");
     }
 
+    function riskFromK(synK) {
+      const value = Number(synK);
+      if (!Number.isFinite(value)) return "desconocido";
+      if (value <= 2) return "alto";
+      if (value < 5) return "medio";
+      return "bajo";
+    }
+
+    function createRiskTag(value) {
+      const level = String(value || "desconocido").toLowerCase();
+      const span = document.createElement("span");
+      span.className = "risk-tag risk-" + level;
+      span.textContent = level;
+      return span;
+    }
+
+    function signedNumber(value) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "-";
+      return (value > 0 ? "+" : "") + formatScore(value, 0);
+    }
+
+    function privacyColumnsLabel(row) {
+      if (row.columns) {
+        return Array.isArray(row.columns) ? row.columns.join(", ") : String(row.columns);
+      }
+      if (row.pair) {
+        return Array.isArray(row.pair) ? row.pair.join(", ") : String(row.pair);
+      }
+      return row.subset || row.name || "-";
+    }
+
+    function normalizePrivacyRiskRow(row) {
+      const realK = Number(row.real_k);
+      const synK = Number(row.syn_k);
+      const rawGap = row.gap ?? row.k_gap;
+      const parsedGap = Number(rawGap);
+      const gap = Number.isFinite(parsedGap)
+        ? parsedGap
+        : (Number.isFinite(realK) && Number.isFinite(synK) ? synK - realK : null);
+
+      return {
+        label: privacyColumnsLabel(row),
+        subset: row.subset || row.name || "-",
+        real_k: Number.isFinite(realK) ? realK : null,
+        syn_k: Number.isFinite(synK) ? synK : null,
+        gap,
+        risk: row.risk || riskFromK(row.syn_k)
+      };
+    }
+
+    function renderPrivacyRiskCards(details) {
+      const root = document.getElementById("privacyRiskCards");
+      if (!root) return;
+
+      const source = details.worst_k_anonymity_pairs || details.k_anonymity_subsets || [];
+      const sourceRows = Array.isArray(source) ? source : Object.values(source);
+      const rows = sourceRows
+        .map(normalizePrivacyRiskRow)
+        .sort((a, b) => {
+          const av = a.syn_k === null ? Number.POSITIVE_INFINITY : a.syn_k;
+          const bv = b.syn_k === null ? Number.POSITIVE_INFINITY : b.syn_k;
+          return av - bv;
+        })
+        .slice(0, 10);
+
+      if (!rows.length) {
+        root.replaceChildren();
+        root.style.display = "none";
+        return;
+      }
+
+      root.style.display = "";
+      const cards = rows.map((row) => {
+        const card = document.createElement("article");
+        const risk = String(row.risk || "desconocido").toLowerCase();
+        const color = risk === "alto"
+          ? "var(--bad)"
+          : risk === "medio"
+            ? "var(--mid)"
+            : risk === "bajo"
+              ? "var(--good)"
+              : "var(--info)";
+        card.className = "privacy-risk-card";
+        card.style.borderLeftColor = color;
+        card.innerHTML = [
+          '<div class="privacy-risk-head">',
+          '<div class="privacy-risk-title"></div>',
+          '<span class="risk-tag"></span>',
+          '</div>',
+          '<div class="privacy-risk-values">',
+          '<span>real_k <strong></strong></span>',
+          '<span>syn_k <strong></strong></span>',
+          '<span class="risk-gap">gap <strong></strong></span>',
+          '</div>'
+        ].join("");
+
+        card.querySelector(".privacy-risk-title").textContent = row.label;
+        const tag = card.querySelector(".risk-tag");
+        tag.className = "risk-tag risk-" + risk;
+        tag.textContent = risk;
+        const values = card.querySelectorAll(".privacy-risk-values strong");
+        values[0].textContent = formatScore(row.real_k, 0);
+        values[1].textContent = formatScore(row.syn_k, 0);
+        values[2].textContent = row.gap === null ? "-" : signedNumber(row.gap);
+        return card;
+      });
+
+      root.replaceChildren(...cards);
+    }
+
     function renderPrivacy(summary, details) {
       const aggRoot = document.getElementById("privacyAggregated");
+      const scores = (window.__reportData && window.__reportData.scores) || {};
       const mapTips = {
-        dcr: "Distance to Closest Record; mayor suele indicar menor riesgo de copia.",
-        nndr: "Nearest Neighbor Distance Ratio.",
-        k_anonymity: "Normalizado: mayor es mejor nivel de anonimato.",
-        emr: "Exact Match Rate; menor suele implicar menos memorization.",
-        detection_mlp: "Capacidad de un clasificador de distinguir real vs sintetico."
+        dcr: {
+          label: "DCR",
+          tooltip: "Distancia al registro real mas cercano. Mayor distancia suele implicar menor riesgo de copia.",
+          ideal: "Distancia al registro real mas cercano. Mayor distancia suele implicar menor riesgo de copia.",
+          direction: "higher",
+          good: 0.5,
+          warning: 0.25
+        },
+        nndr: {
+          label: "NNDR",
+          tooltip: "Compara la cercania del vecino mas proximo frente al segundo. Valores bajos pueden indicar riesgo de re-identificacion.",
+          ideal: "Compara la cercania del vecino mas proximo frente al segundo. Valores bajos pueden indicar riesgo de re-identificacion.",
+          direction: "higher",
+          good: 0.8,
+          warning: 0.5
+        },
+        k_anonymity: {
+          label: "k-Anonymity",
+          tooltip: "Indica cuantos registros son indistinguibles para una combinacion de variables. k bajo implica mas riesgo.",
+          ideal: "Indica cuantos registros son indistinguibles para una combinacion de variables. k bajo implica mas riesgo.",
+          direction: "higher",
+          good: 5,
+          warning: 2,
+          digits: 2
+        },
+        emr: {
+          label: "EMR",
+          tooltip: "Proporcion de filas sinteticas identicas a filas reales. Lo ideal es cercano a 0.",
+          ideal: "Proporcion de filas sinteticas identicas a filas reales. Lo ideal es cercano a 0.",
+          direction: "lower",
+          good: 0,
+          warning: 0.01
+        },
+        detection_mlp: {
+          label: "Detection MLP",
+          tooltip: "Mide si un clasificador distingue real vs sintetico. Cercano a 0.5 es ideal.",
+          ideal: "Mide si un clasificador distingue real vs sintetico. Cercano a 0.5 es ideal.",
+          direction: "target",
+          target: 0.5,
+          good: 0.05,
+          warning: 0.15
+        }
       };
 
+      renderAxisScore(
+        "privacyAxisScore",
+        "Score de Privacidad",
+        scores.privacy_score,
+        "Resume el riesgo de cercania a registros reales, memorization, indistinguibilidad y k-anonymity."
+      );
+      renderPrivacyScoreBreakdown(scores);
+
       aggRoot.replaceChildren(
-        ...Object.entries(summary || {}).map(([k, v]) => createMetricPill(k, v, mapTips[k]))
+        ...Object.entries(summary || {})
+          .filter(([k]) => k !== "detection_mlp")
+          .map(([k, v]) => createMetricPill(k, v, mapTips[k]))
       );
 
       document.getElementById("privacySummaryRight").textContent =
-        "Score " + formatScore((window.__reportData.scores || {}).privacy_score, 3);
+        "Score " + formatScore(scores.privacy_score, 3);
+
+      renderPrivacyRiskCards(details || {});
 
       const subsetRows = (details.k_anonymity_subsets || []).map((r) => ({
         subset: r.subset,
@@ -827,6 +2099,57 @@ __REPORT_DATA_JSON__
         real_size_median: r.real_size_median,
         syn_size_median: r.syn_size_median
       }));
+
+      const problemRows = (details.k_anonymity_problem_subsets || details.k_anonymity_subsets || []).map((r) => {
+        const realK = Number(r.real_k);
+        const synK = Number(r.syn_k);
+        const kGap = typeof r.k_gap === "number"
+          ? r.k_gap
+          : (Number.isFinite(realK) && Number.isFinite(synK) ? synK - realK : null);
+
+        return {
+          risk: r.risk || riskFromK(r.syn_k),
+          subset: r.subset,
+          columns: r.columns,
+          has_date_column: r.has_date_column ? "si" : "no",
+          real_k: r.real_k,
+          syn_k: r.syn_k,
+          k_gap: kGap,
+          syn_n_eq_classes: r.syn_n_eq_classes,
+          syn_size_median: r.syn_size_median
+        };
+      }).slice(0, 8);
+
+      renderSimpleTable(
+        "kanonProblemTable",
+        problemRows,
+        [
+          { key: "risk", label: "Riesgo" },
+          { key: "subset", label: "Subset" },
+          { key: "columns", label: "Columnas" },
+          { key: "real_k", label: "Real k" },
+          { key: "syn_k", label: "Synthetic k" },
+          { key: "k_gap", label: "Delta k" },
+          { key: "syn_n_eq_classes", label: "Synthetic n classes" },
+          { key: "syn_size_median", label: "Synthetic size median" }
+        ],
+        {
+          formatters: {
+            risk: (value) => createRiskTag(value),
+            columns: (value, row) => {
+              if (!(row.has_date_column === "si" || hasDateToken(value))) return value;
+              const span = document.createElement("span");
+              span.textContent = value + " ";
+              const tag = document.createElement("span");
+              tag.className = "tag-date";
+              tag.textContent = "fecha";
+              span.appendChild(tag);
+              return span;
+            },
+            k_gap: (value) => signedNumber(value)
+          }
+        }
+      );
 
       renderSimpleTable(
         "kanonSubsetTable",
@@ -879,21 +2202,85 @@ __REPORT_DATA_JSON__
 
     function renderUtility(summary, details) {
       const aggRoot = document.getElementById("utilityAggregated");
+      const scores = (window.__reportData && window.__reportData.scores) || {};
+      const utilityRelativeScore =
+        typeof scores.utility_relative_score === "number"
+          ? scores.utility_relative_score
+          : scores.utility_score;
       const mapTips = {
-        linear_gt: "Modelo lineal entrenado y evaluado en real.",
-        linear_syn_id: "Modelo lineal entrenado en sintetico, evaluado in-distribution.",
-        linear_syn_ood: "Modelo lineal entrenado en sintetico, evaluado out-of-distribution.",
-        mlp_gt: "MLP entrenado y evaluado en real.",
-        mlp_syn_id: "MLP entrenado en sintetico, evaluado in-distribution.",
-        mlp_syn_ood: "MLP entrenado en sintetico, evaluado out-of-distribution."
+        utility_relative_score: {
+          label: "Utility relative score",
+          tooltip: "Ratio entre utilidad sintetica y utilidad real. Cercano a 1 indica poca perdida de utilidad.",
+          ideal: "Ratio entre utilidad sintetica y utilidad real. Cercano a 1 indica poca perdida de utilidad.",
+          direction: "higher",
+          good: 0.85,
+          warning: 0.6
+        },
+        linear_gt: {
+          label: "Linear GT",
+          tooltip: "Modelo entrenado y evaluado con datos reales. Es la referencia o techo esperado.",
+          ideal: "Modelo entrenado y evaluado con datos reales. Es la referencia o techo esperado.",
+          direction: "none"
+        },
+        linear_syn_id: {
+          label: "Linear SYN ID",
+          tooltip: "Modelo entrenado con sinteticos y evaluado en un test similar. Mide utilidad en distribucion.",
+          ideal: "Modelo entrenado con sinteticos y evaluado en un test similar. Mide utilidad en distribucion.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5
+        },
+        linear_syn_ood: {
+          label: "Linear SYN OOD",
+          tooltip: "Modelo entrenado con sinteticos y evaluado fuera de distribucion. Mide robustez y generalizacion.",
+          ideal: "Modelo entrenado con sinteticos y evaluado fuera de distribucion. Mide robustez y generalizacion.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5
+        },
+        mlp_gt: {
+          label: "MLP GT",
+          tooltip: "Modelo entrenado y evaluado con datos reales. Es la referencia o techo esperado.",
+          ideal: "Modelo entrenado y evaluado con datos reales. Es la referencia o techo esperado.",
+          direction: "none"
+        },
+        mlp_syn_id: {
+          label: "MLP SYN ID",
+          tooltip: "Modelo entrenado con sinteticos y evaluado en un test similar. Mide utilidad en distribucion.",
+          ideal: "Modelo entrenado con sinteticos y evaluado en un test similar. Mide utilidad en distribucion.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5
+        },
+        mlp_syn_ood: {
+          label: "MLP SYN OOD",
+          tooltip: "Modelo entrenado con sinteticos y evaluado fuera de distribucion. Mide robustez y generalizacion.",
+          ideal: "Modelo entrenado con sinteticos y evaluado fuera de distribucion. Mide robustez y generalizacion.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5
+        }
       };
+      const metricRows = [
+        ["utility_relative_score", utilityRelativeScore],
+        ...Object.entries(summary || {})
+      ];
+
+      renderAxisScore(
+        "utilityAxisScore",
+        "Score de Utilidad",
+        utilityRelativeScore,
+        "Resume cuanto rendimiento predictivo se conserva cuando se entrena con sinteticos y se evalua contra reales."
+      );
 
       aggRoot.replaceChildren(
-        ...Object.entries(summary || {}).map(([k, v]) => createMetricPill(k, v, mapTips[k]))
+        ...metricRows.map(([k, v]) => createMetricPill(k, v, mapTips[k]))
       );
 
       document.getElementById("utilitySummaryRight").textContent =
-        "Score " + formatScore((window.__reportData.scores || {}).utility_score, 3);
+        "Score " + formatScore(utilityRelativeScore, 3);
+
+      renderUtilityComparisonChart(summary || {});
 
       const utilityRows = Object.entries((details && details.metrics) || {}).map(([metric, value]) => ({
         metric,
@@ -944,6 +2331,7 @@ __REPORT_DATA_JSON__
       window.__reportData = data;
       renderHeader(data.metadata || {});
       renderScores(data.scores || {});
+      renderKeyInsights(data.scores || {});
       renderFidelity((data.summary || {}).fidelity || {}, ((data.details || {}).fidelity || {}));
       renderPrivacy((data.summary || {}).privacy || {}, ((data.details || {}).privacy || {}));
       renderUtility((data.summary || {}).utility || {}, ((data.details || {}).utility || {}));

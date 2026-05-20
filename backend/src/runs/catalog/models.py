@@ -20,6 +20,8 @@ from backend.src.config.general import (
     MODEL_RUN_FOLDER_PREFIX,
     MODELS_DIR,
 )
+from backend.src.infrastructure.errors import ModelNotFoundError
+from backend.src.infrastructure.logging_config import get_logger
 from backend.src.runs.card_io import read_json, write_json
 from backend.src.runs.catalog._base import (
     find_run_cleanup_candidates,
@@ -29,11 +31,10 @@ from backend.src.runs.catalog.simulations import (
     _columns_from_files,
     _columns_from_inspection_metadata,
     _columns_from_model_metadata,
+    _resolve_real_data_paths_from_card,
     _table_name_from_file,
     list_available_simulations,
 )
-from backend.src.infrastructure.errors import ModelNotFoundError
-from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -83,6 +84,7 @@ def list_available_models() -> list[dict]:
             "tables": "",
             "train_size": None,
             "training_table_sizes": {},
+            "subject_tables": [],
             "accuracy": None,
             "qa_report_filename": None,
             "data_sources": [],
@@ -121,6 +123,15 @@ def list_available_models() -> list[dict]:
                 with open(metadata_path, encoding="utf-8") as f:
                     meta = json.load(f)
                 model_info["tables"] = ", ".join(t["name"] for t in meta.get("tables", []))
+                # A table is a "subject" (root) when no foreign key marks it as a
+                # context child. Mostly AI only honors per-table sample_size on
+                # subjects; context children always cascade from their parent.
+                # The UI uses this list to grey out non-subject inputs.
+                model_info["subject_tables"] = [
+                    t["name"]
+                    for t in meta.get("tables", [])
+                    if not any(fk.get("is_context") for fk in (t.get("foreign_keys") or []))
+                ]
             except Exception as exc:
                 logger.warning("Error reading metadata from %s: %s", folder, exc)
 
@@ -351,6 +362,17 @@ def _model_data_source_paths(model_card: dict) -> list[str]:
     return paths
 
 
+def resolve_model_real_data_paths(model_id: str) -> list[str]:
+    """Return the paths that materialise the data the model trained on.
+
+    Thin wrapper around :func:`_resolve_real_data_paths_from_card` so callers
+    that only have a ``model_id`` don't need to read the card themselves.
+    See that function's docstring for the resolution order.
+    """
+    card = _read_model_card(model_id)
+    return _resolve_real_data_paths_from_card(model_id, card)
+
+
 def list_model_columns(model_id: str) -> dict[str, list[str]]:
     """Return ``{table: [columns]}`` for a trained model.
 
@@ -388,32 +410,41 @@ def list_model_column_values(
 ) -> list[str]:
     """Return up to ``limit`` distinct values for ``column`` in ``table``.
 
-    Reads from the original training data file. Values are sorted by
-    descending frequency and stringified so the API can serialize them.
+    Reads from the preprocessed dataset the model actually trained on (via
+    :func:`resolve_model_real_data_paths`) so values for derived columns —
+    e.g. ``is_adult`` materialised by a logical rule from ``date_of_birth``
+    — resolve correctly, and columns dropped by rules don't leak. Values are
+    sorted by descending frequency and stringified for JSON serialisation.
     Used by the conditional-generation UI to populate value dropdowns.
     """
     import pandas as pd
 
-    card = _read_model_card(model_id)
-    real_files = _model_data_source_paths(card)
+    real_files = resolve_model_real_data_paths(model_id)
     path = next(
         (p for p in real_files if _table_name_from_file(p) == table),
         None,
     )
     if path is None:
         raise ModelNotFoundError(
-            f"Table '{table}' not found among data sources for model '{model_id}'."
+            f"Table '{table}' not found among training data for model '{model_id}'."
         )
 
     extension = os.path.splitext(path)[1].lstrip(".").lower()
-    if extension == "csv":
-        series = pd.read_csv(path, usecols=[column])[column]
-    elif extension == "parquet":
-        series = pd.read_parquet(path, columns=[column])[column]
-    elif extension == "json":
-        series = pd.read_json(path)[column]
-    else:
-        raise ModelNotFoundError(f"Unsupported extension for values: {extension!r}")
+    try:
+        if extension == "csv":
+            series = pd.read_csv(path, usecols=[column])[column]
+        elif extension == "parquet":
+            series = pd.read_parquet(path, columns=[column])[column]
+        elif extension == "json":
+            series = pd.read_json(path)[column]
+        else:
+            raise ModelNotFoundError(f"Unsupported extension for values: {extension!r}")
+    except (ValueError, KeyError) as exc:
+        # Column genuinely absent from the training data — surface a clear
+        # 404 instead of pandas' less specific 'Usecols do not match'.
+        raise ModelNotFoundError(
+            f"Column '{column}' not found in table '{table}' for model '{model_id}'."
+        ) from exc
 
     counts = series.dropna().astype(str).value_counts()
     return [str(value) for value in counts.head(limit).index.tolist()]

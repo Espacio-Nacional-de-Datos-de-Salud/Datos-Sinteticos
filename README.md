@@ -7,14 +7,8 @@
 
 This tool generates synthetic tabular health data for the National Health Data Space (ENDS) in Spain.
 
----
 
 ## 0. Pick your path
-
-Each path is a **single ordered doc**. Start with the one that
-matches what you'll do — the deep-reference docs (Configuration,
-API, Backend Layout, etc.) are linked from inside each path, not read
-front-to-back.
 
 | If you want to… | Read |
 | :--- | :--- |
@@ -23,9 +17,8 @@ front-to-back.
 | 🛠 **Maintain or extend the codebase** | **[Developer Onboarding](docs/setup/onboarding.md)** |
 | ☁️ **Run on AWS SageMaker** | **[SageMaker Setup](docs/setup/sagemaker.md)** (in addition to one of the above) |
 
----
 
-## 1. Reference docs (linked from the paths above)
+## 1. Reference docs
 
 - **[Installation](docs/setup/install.md)** — `make setup`, venvs, config bootstrap. The single source of install steps.
 - **[Configuration](docs/setup/configuration.md)** — every YAML knob under `backend/config/`.
@@ -33,11 +26,8 @@ front-to-back.
 - **[Testing](docs/setup/testing.md)** — `make test` (core venv) and `make test-eval` (eval venv).
 - **[WSL Quick Setup](docs/setup/wsl_setup.md)** · **[GitLab Access](docs/setup/gitlab.md)**.
 
----
 
-## 2. Architecture & concepts (week-2 reading)
-
-Read these when you need them — not before.
+## 2. Architecture & concepts
 
 ### Codebase architecture
 - **[Backend Layout](docs/concepts/backend_layout.md)** — tour of `backend/src/`: the five layers and the one-direction import rule.
@@ -57,7 +47,6 @@ Read these when you need them — not before.
 - **[Docker](docs/deployment/docker.md)** — compose files, image structure, volume model.
 - **[EC2](docs/deployment/ec2.md)** — running on a bare EC2 box.
 
----
 
 ## 3. Troubleshooting
 

@@ -109,6 +109,7 @@ class ProfilerPhase(StrEnum):
 # variable bit.
 PROFILER_JOB_PREFIX = "Trabajo"  # e.g. "Trabajo[name]: entrenar"
 PROFILER_CUSTOM_METRIC_PREFIX = "Métrica personalizada"
+PROFILER_SYNTHCITY_METRIC_PREFIX = "Métrica synthcity"
 
 
 def job_phase_label(job_name: str, action: str) -> str:
@@ -119,6 +120,14 @@ def job_phase_label(job_name: str, action: str) -> str:
 def custom_metric_phase_label(metric_name: str) -> str:
     """Render the per-metric profiler label."""
     return f"{PROFILER_CUSTOM_METRIC_PREFIX}: {metric_name}"
+
+
+def synthcity_metric_phase_label(group: str, metric_name: str) -> str:
+    """Render the per-synthcity-metric profiler label.
+
+    Example: ``"Métrica synthcity: stats/jensenshannon_dist"``.
+    """
+    return f"{PROFILER_SYNTHCITY_METRIC_PREFIX}: {group}/{metric_name}"
 
 
 INSPECTION_PHASES: list[str] = list(InspectionPhase)

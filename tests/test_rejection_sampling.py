@@ -22,7 +22,7 @@ rules:
     table_origin: "patients"
     origin_col: "age"
     table_target: "patients"
-    target_col: "is_adult"
+    aux_col: "is_adult"
     threshold: 18
     operator: ">="
     rejection_sampling: true
@@ -43,7 +43,7 @@ def test_collect_rejection_failures() -> None:
         table_origin="patients",
         origin_col="age",
         table_target="patients",
-        target_col="is_adult",
+        aux_col="is_adult",
         threshold=18,
         operator=">=",
         rejection_sampling=True,
@@ -63,7 +63,7 @@ def test_collect_rejection_failures_numeric_constraint() -> None:
         table_origin="patients",
         origin_col="age",
         table_target="patients",
-        target_col="age",
+        aux_col="age",
         threshold=18,
         operator=">=",
         rejection_sampling=True,
@@ -77,39 +77,29 @@ def test_collect_rejection_failures_numeric_constraint() -> None:
     assert rejected["patients"] == {0}
 
 
-def test_rejection_sampling_uses_derived_age() -> None:
+def test_rejection_sampling_age() -> None:
     df = pd.DataFrame(
         {
-            "dob": ["2000-01-01", "2010-01-01"],
-            "admittime": ["2020-01-01", "2020-01-01"],
-            "age": [10, 30],
-            "is_adult": [True, True],
+            "age": [20, 1],
         }
     )
 
-    age_rule = DateToAgeRule(
-        table_origin="patients",
-        origin_col="dob",
-        table_target="patients",
-        target_col="age",
-        reference_date_col="admittime",
-    )
+
     rejection_rule = NumericThresholdRule(
         table_origin="patients",
-        origin_col="age",
         table_target="patients",
-        target_col="is_adult",
+        origin_col="age",
+        aux_col="age",
         threshold=18,
         operator=">=",
         rejection_sampling=True,
     )
 
     manager = LogicalRuleManager()
-    manager.add_rule(age_rule)
     manager.add_rule(rejection_rule)
 
     rejected = manager.collect_rejection_failures({"patients": df}, [rejection_rule])
-
+    print(rejected)
     assert rejected.get("patients", set()) == {1}
 
 

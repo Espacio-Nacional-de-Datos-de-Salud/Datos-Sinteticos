@@ -74,7 +74,10 @@ export type RuleType =
   | "numeric_inequality"
   | "semantic_ranking_consistency"
   | "semantic_proportional_consistency"
-  | "foreign_keys_consistency_rule";
+  | "foreign_keys_consistency_rule"
+  | "date_to_age"
+  | "numeric_threshold"
+  | "numeric_bucket";
 
 type Rule = {
   type: RuleType;
@@ -87,6 +90,22 @@ type Rule = {
   referenced_table?: string;
   constraint?: string | number | null;
   constraint_operator?: ">=" | "<=";
+  // Derived-column rule fields (shared)
+  drop_origin?: boolean;
+  reconstruct_origin?: boolean;
+  // date_to_age
+  reference_date?: string;
+  reference_date_col?: string;
+  // numeric_threshold
+  threshold?: number | null;
+  operator?: ">=" | ">" | "<=" | "<";
+  true_value?: string | number | boolean | null;
+  false_value?: string | number | boolean | null;
+  // numeric_bucket
+  bins?: number[];
+  labels?: string[];
+  include_lowest?: boolean;
+  right?: boolean;
 };
 
 type RulesFile = { rules: Rule[] };
@@ -97,6 +116,9 @@ const RULE_TYPE_LABELS: Record<RuleType, string> = {
   semantic_ranking_consistency: "Consistencia semántica (ranking)",
   semantic_proportional_consistency: "Consistencia semántica (proporcional)",
   foreign_keys_consistency_rule: "Consistencia de claves foráneas",
+  date_to_age: "Columna derivada: edad a partir de fecha",
+  numeric_threshold: "Columna derivada: umbral numérico",
+  numeric_bucket: "Columna estratificada: buckets numéricos",
 };
 
 const RULE_TYPE_HELP: Record<RuleType, string> = {
@@ -110,6 +132,96 @@ const RULE_TYPE_HELP: Record<RuleType, string> = {
     "Como el ranking, pero los intervalos respetan la frecuencia real de cada categoría.",
   foreign_keys_consistency_rule:
     "Reconstruye una FK redundante copiando el valor desde la tabla padre marcada como contexto.",
+  date_to_age:
+    "Crea una columna de edad (en años) a partir de una columna de fecha y una fecha de referencia (constante u otra columna).",
+  numeric_threshold:
+    "Crea una columna booleana comparando una columna numérica con un umbral (≥, >, ≤, <).",
+  numeric_bucket:
+    "Crea una columna categórica estratificando una columna numérica por intervalos (bins). Útil para generalizar el modelo.",
+};
+
+const DERIVED_RULE_TYPES: RuleType[] = [
+  "date_to_age",
+  "numeric_threshold",
+  "numeric_bucket",
+];
+
+// Whitelist of fields per rule type — must match the backend dataclass
+// constructors in `backend/src/domain/preprocessing/logical_rules.py`. Any
+// extra kwarg triggers a TypeError that silently drops the rule
+// (`rules_config.extract_rules_and_rejection_config`).
+const RULE_TYPE_FIELDS: Record<RuleType, (keyof Rule)[]> = {
+  date_inequality: [
+    "table_origin",
+    "origin_col",
+    "table_target",
+    "target_col",
+    "aux_col",
+    "constraint",
+    "constraint_operator",
+  ],
+  numeric_inequality: [
+    "table_origin",
+    "origin_col",
+    "table_target",
+    "target_col",
+    "aux_col",
+    "constraint",
+    "constraint_operator",
+  ],
+  semantic_ranking_consistency: [
+    "table_origin",
+    "origin_col",
+    "table_target",
+    "target_col",
+  ],
+  semantic_proportional_consistency: [
+    "table_origin",
+    "origin_col",
+    "table_target",
+    "target_col",
+  ],
+  foreign_keys_consistency_rule: [
+    "table_origin",
+    "table_target",
+    "target_col",
+    "source_col",
+    "referenced_table",
+  ],
+  date_to_age: [
+    "table_origin",
+    "table_target",
+    "origin_col",
+    "aux_col",
+    "reference_date",
+    "reference_date_col",
+    "drop_origin",
+    "reconstruct_origin",
+  ],
+  numeric_threshold: [
+    "table_origin",
+    "table_target",
+    "origin_col",
+    "aux_col",
+    "threshold",
+    "operator",
+    "true_value",
+    "false_value",
+    "drop_origin",
+    "reconstruct_origin",
+  ],
+  numeric_bucket: [
+    "table_origin",
+    "table_target",
+    "origin_col",
+    "aux_col",
+    "bins",
+    "labels",
+    "include_lowest",
+    "right",
+    "drop_origin",
+    "reconstruct_origin",
+  ],
 };
 
 function summarizeRule(r: Rule): string {
@@ -126,6 +238,22 @@ function summarizeRule(r: Rule): string {
   }
   if (r.type === "foreign_keys_consistency_rule") {
     return `${right} ← ${r.table_origin ?? "?"}.${r.source_col ?? r.target_col ?? "?"}`;
+  }
+  if (DERIVED_RULE_TYPES.includes(r.type)) {
+    const tgt = r.table_target ?? "?";
+    const src = r.origin_col ?? "?";
+    const dst = r.aux_col ?? "?";
+    if (r.type === "date_to_age") {
+      const ref = r.reference_date_col ?? r.reference_date ?? "?";
+      return `${tgt}.${dst} = age(${src}, ${ref})`;
+    }
+    if (r.type === "numeric_threshold") {
+      return `${tgt}.${dst} = (${src} ${r.operator ?? ">="} ${r.threshold ?? "?"})`;
+    }
+    if (r.type === "numeric_bucket") {
+      const bins = r.bins?.length ? `[${r.bins.join(", ")}]` : "?";
+      return `${tgt}.${dst} = bucket(${src}, ${bins})`;
+    }
   }
   return `${left} → ${right}`;
 }
@@ -211,14 +339,42 @@ function RulesEditorBody({
     [columnsByTable],
   );
 
+  // Augment with aux_cols produced by derived-column rules already in the list,
+  // so a later rule can target a column that doesn't exist in source data yet
+  // (e.g. numeric_threshold on an `edad` aux column produced by date_to_age).
+  // The backend sorts dependent rules in PRE, so chaining is supported.
+  const columnsByTableWithDerived = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    for (const [t, cols] of Object.entries(columnsByTable)) {
+      m[t] = [...cols];
+    }
+    for (const r of rules) {
+      if (!DERIVED_RULE_TYPES.includes(r.type)) continue;
+      if (!r.table_target || !r.aux_col) continue;
+      const list = m[r.table_target] ?? (m[r.table_target] = []);
+      if (!list.includes(r.aux_col)) list.push(r.aux_col);
+    }
+    return m;
+  }, [columnsByTable, rules]);
+
+  const tableNamesWithDerived = useMemo(
+    () => Object.keys(columnsByTableWithDerived).sort(),
+    [columnsByTableWithDerived],
+  );
+
   const buildYaml = (rs: Rule[]): string =>
     yaml.dump(
       {
         rules: rs.map((r) => {
-          // Prune undefined/empty optional fields so the YAML stays clean.
+          // Only emit fields relevant to this rule type. The backend rule
+          // dataclasses reject unknown kwargs (TypeError), and
+          // `rules_config.extract_rules_and_rejection_config` then skips the
+          // rule silently — so leaking e.g. `constraint_operator` into a
+          // derived-column rule would make it never apply.
+          const allowed = RULE_TYPE_FIELDS[r.type];
           const out: Record<string, unknown> = { type: r.type };
-          for (const [k, v] of Object.entries(r)) {
-            if (k === "type") continue;
+          for (const k of allowed) {
+            const v = (r as Record<string, unknown>)[k];
             if (v === undefined || v === "" || v === null) continue;
             out[k] = v;
           }
@@ -329,8 +485,8 @@ function RulesEditorBody({
                   <RuleForm
                     key={idx}
                     initial={r}
-                    tableNames={tableNames}
-                    columnsByTable={columnsByTable}
+                    tableNames={tableNamesWithDerived}
+                    columnsByTable={columnsByTableWithDerived}
                     onCancel={() => setEditingIndex(null)}
                     onSubmit={(rule) => onUpdateRule(idx, rule)}
                   />
@@ -345,8 +501,8 @@ function RulesEditorBody({
               )}
               {adding && (
                 <RuleForm
-                  tableNames={tableNames}
-                  columnsByTable={columnsByTable}
+                  tableNames={tableNamesWithDerived}
+                  columnsByTable={columnsByTableWithDerived}
                   onCancel={() => setAdding(false)}
                   onSubmit={onAddRule}
                 />
@@ -585,13 +741,27 @@ function RuleForm({
   const showInequality =
     draft.type === "date_inequality" || draft.type === "numeric_inequality";
   const showFK = draft.type === "foreign_keys_consistency_rule";
+  const showDerived = DERIVED_RULE_TYPES.includes(draft.type);
 
-  const valid =
+  const derivedValid =
     !!draft.table_target &&
-    !!draft.target_col &&
-    (showFK
-      ? !!draft.table_origin
-      : !!draft.table_origin && !!draft.origin_col);
+    !!draft.origin_col &&
+    !!draft.aux_col &&
+    draft.origin_col !== draft.aux_col &&
+    (draft.type !== "date_to_age" ||
+      !!draft.reference_date ||
+      !!draft.reference_date_col) &&
+    (draft.type !== "numeric_threshold" ||
+      (draft.threshold !== undefined && draft.threshold !== null)) &&
+    (draft.type !== "numeric_bucket" || (draft.bins?.length ?? 0) >= 2);
+
+  const valid = showDerived
+    ? derivedValid
+    : !!draft.table_target &&
+      !!draft.target_col &&
+      (showFK
+        ? !!draft.table_origin
+        : !!draft.table_origin && !!draft.origin_col);
 
   return (
     <div className="rounded-md border bg-muted/30 p-3 space-y-3">
@@ -600,7 +770,10 @@ function RuleForm({
         <select
           value={draft.type}
           onChange={(e) =>
-            update({ type: e.target.value as RuleType, origin_col: undefined })
+            setDraft({
+              type: e.target.value as RuleType,
+              constraint_operator: ">=",
+            })
           }
           className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
         >
@@ -615,7 +788,14 @@ function RuleForm({
         </p>
       </div>
 
-      {showInequality ? (
+      {showDerived ? (
+        <DerivedRuleFields
+          draft={draft}
+          update={update}
+          tableNames={tableNames}
+          columnsByTable={columnsByTable}
+        />
+      ) : showInequality ? (
         <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
           <TableColumnPicker
             label="Tabla objetivo"
@@ -766,6 +946,309 @@ function RuleForm({
         >
           {initial ? "Actualizar" : "Añadir"}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function DerivedRuleFields({
+  draft,
+  update,
+  tableNames,
+  columnsByTable,
+}: {
+  draft: Rule;
+  update: (patch: Partial<Rule>) => void;
+  tableNames: string[];
+  columnsByTable: Record<string, string[]>;
+}) {
+  const targetCols = draft.table_target
+    ? (columnsByTable[draft.table_target] ?? [])
+    : [];
+  const hasSchema = tableNames.length > 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <Label className="text-xs">Tabla objetivo</Label>
+          {hasSchema ? (
+            <select
+              value={draft.table_target ?? ""}
+              onChange={(e) =>
+                update({
+                  table_target: e.target.value,
+                  origin_col: undefined,
+                  reference_date_col: undefined,
+                })
+              }
+              className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+            >
+              <option value="">— elegir —</option>
+              {tableNames.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <Input
+              value={draft.table_target ?? ""}
+              onChange={(e) => update({ table_target: e.target.value })}
+              placeholder="nombre de tabla"
+              className="mt-1"
+            />
+          )}
+        </div>
+        <div>
+          <Label className="text-xs">Columna origen</Label>
+          {hasSchema && targetCols.length > 0 ? (
+            <select
+              value={draft.origin_col ?? ""}
+              onChange={(e) => update({ origin_col: e.target.value })}
+              className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+            >
+              <option value="">— elegir —</option>
+              {targetCols.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <Input
+              value={draft.origin_col ?? ""}
+              onChange={(e) => update({ origin_col: e.target.value })}
+              placeholder="nombre de columna"
+              className="mt-1"
+            />
+          )}
+        </div>
+      </div>
+
+      <div>
+        <Label className="text-xs">Columna derivada (aux_col)</Label>
+        <Input
+          value={draft.aux_col ?? ""}
+          onChange={(e) => update({ aux_col: e.target.value || undefined })}
+          placeholder="nombre de la nueva columna"
+          className="mt-1"
+        />
+      </div>
+
+      {draft.type === "date_to_age" && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label className="text-xs">Fecha de referencia (constante)</Label>
+            <Input
+              value={draft.reference_date ?? ""}
+              onChange={(e) =>
+                update({
+                  reference_date: e.target.value || undefined,
+                  reference_date_col: e.target.value
+                    ? undefined
+                    : draft.reference_date_col,
+                })
+              }
+              placeholder="p. ej. 2020-01-01"
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">o columna de referencia</Label>
+            {hasSchema && targetCols.length > 0 ? (
+              <select
+                value={draft.reference_date_col ?? ""}
+                onChange={(e) =>
+                  update({
+                    reference_date_col: e.target.value || undefined,
+                    reference_date: e.target.value
+                      ? undefined
+                      : draft.reference_date,
+                  })
+                }
+                className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+              >
+                <option value="">— ninguna —</option>
+                {targetCols.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <Input
+                value={draft.reference_date_col ?? ""}
+                onChange={(e) =>
+                  update({ reference_date_col: e.target.value || undefined })
+                }
+                placeholder="nombre de columna"
+                className="mt-1"
+              />
+            )}
+          </div>
+          <p className="col-span-2 text-[11px] text-muted-foreground">
+            Indica una fecha constante o una columna de referencia (no ambas).
+          </p>
+        </div>
+      )}
+
+      {draft.type === "numeric_threshold" && (
+        <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+          <div>
+            <Label className="text-xs">Operador</Label>
+            <select
+              value={draft.operator ?? ">="}
+              onChange={(e) =>
+                update({
+                  operator: e.target.value as ">=" | ">" | "<=" | "<",
+                })
+              }
+              className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+            >
+              <option value=">=">≥</option>
+              <option value=">">&gt;</option>
+              <option value="<=">≤</option>
+              <option value="<">&lt;</option>
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Umbral</Label>
+            <Input
+              type="number"
+              value={draft.threshold == null ? "" : String(draft.threshold)}
+              onChange={(e) =>
+                update({
+                  threshold: e.target.value === "" ? null : Number(e.target.value),
+                })
+              }
+              className="mt-1"
+            />
+          </div>
+          <div className="col-span-3 grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">Valor si verdadero (opcional)</Label>
+              <Input
+                value={
+                  draft.true_value == null ? "" : String(draft.true_value)
+                }
+                onChange={(e) =>
+                  update({ true_value: e.target.value || undefined })
+                }
+                placeholder="True"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Valor si falso (opcional)</Label>
+              <Input
+                value={
+                  draft.false_value == null ? "" : String(draft.false_value)
+                }
+                onChange={(e) =>
+                  update({ false_value: e.target.value || undefined })
+                }
+                placeholder="False"
+                className="mt-1"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {draft.type === "numeric_bucket" && (
+        <div className="space-y-2">
+          <div>
+            <Label className="text-xs">Bordes de bins (coma o espacio)</Label>
+            <Input
+              value={(draft.bins ?? []).join(", ")}
+              onChange={(e) => {
+                const parts = e.target.value
+                  .split(/[,\s]+/)
+                  .map((s) => s.trim())
+                  .filter((s) => s.length > 0);
+                const nums = parts
+                  .map((s) => (s === "inf" || s === "Infinity" ? Infinity : Number(s)))
+                  .filter((n) => !Number.isNaN(n));
+                update({ bins: nums });
+              }}
+              placeholder="0, 18, 65, Infinity"
+              className="mt-1 font-mono"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Se necesitan al menos 2 valores. Usa &quot;Infinity&quot; para
+              límites abiertos.
+            </p>
+          </div>
+          <div>
+            <Label className="text-xs">Etiquetas (opcional)</Label>
+            <Input
+              value={(draft.labels ?? []).join(", ")}
+              onChange={(e) => {
+                const parts = e.target.value
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter((s) => s.length > 0);
+                update({ labels: parts.length ? parts : undefined });
+              }}
+              placeholder="child, adult, senior"
+              className="mt-1"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Si se indican, deben ser exactamente {(draft.bins?.length ?? 0) - 1 || "N-1"}{" "}
+              etiquetas.
+            </p>
+          </div>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={draft.include_lowest ?? true}
+                onChange={(e) =>
+                  update({ include_lowest: e.target.checked })
+                }
+              />
+              include_lowest
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={draft.right ?? false}
+                onChange={(e) => update({ right: e.target.checked })}
+              />
+              right (bins inclusivos por la derecha)
+            </label>
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-4 border-t pt-3">
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={draft.drop_origin ?? false}
+            onChange={(e) =>
+              update({
+                drop_origin: e.target.checked,
+                reconstruct_origin: e.target.checked
+                  ? draft.reconstruct_origin
+                  : false,
+              })
+            }
+          />
+          Eliminar columna origen (drop_origin)
+        </label>
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={draft.reconstruct_origin ?? false}
+            disabled={!draft.drop_origin}
+            onChange={(e) =>
+              update({ reconstruct_origin: e.target.checked })
+            }
+          />
+          Reconstruir en POST (reconstruct_origin)
+        </label>
       </div>
     </div>
   );

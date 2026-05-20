@@ -47,6 +47,17 @@ import { STORAGE_KEYS } from "@/lib/storage-keys";
 
 type StartInput = { inspection_id: string };
 
+const ENTRENAMIENTO_OUTLINE = [
+  { id: "preparacion", label: "Preparación", level: 1 },
+  { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
+  { id: "nuevo-entrenamiento", label: "Nuevo entrenamiento", level: 2 },
+  { id: "configuracion-modelo", label: "Configuración del modelo", level: 2 },
+  { id: "resultados", label: "Resultados", level: 1 },
+  { id: "entrenamiento-actual", label: "Entrenamiento actual", level: 2 },
+  { id: "historial", label: "Historial", level: 1 },
+  { id: "modelos-entrenados", label: "Modelos entrenados", level: 2 },
+] as const;
+
 export default function EntrenamientoPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmCleanup, setConfirmCleanup] = useState(false);
@@ -158,7 +169,7 @@ export default function EntrenamientoPage() {
   ];
 
   return (
-    <WizardShell currentSlug="entrenamiento" canAdvance={lc.hasCompleted}>
+    <WizardShell currentSlug="entrenamiento" canAdvance={lc.hasCompleted} outline={ENTRENAMIENTO_OUTLINE}>
       <div className="mx-auto max-w-5xl space-y-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Entrenamiento</h1>
@@ -170,11 +181,14 @@ export default function EntrenamientoPage() {
           </p>
         </div>
 
-        <WorkflowGroup label="Preparación">
-          <RulesBanner inspectionId={selectedInspectionId || null} />
+        <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
+          <div id="reglas-preprocesamiento" className="scroll-mt-24">
+            <RulesBanner inspectionId={selectedInspectionId || null} />
+          </div>
 
-          <Card>
-            <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-end">
+          <div id="nuevo-entrenamiento" className="scroll-mt-24">
+            <Card>
+              <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-end">
               <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
                 <Sparkles className="h-5 w-5" />
               </div>
@@ -220,13 +234,17 @@ export default function EntrenamientoPage() {
                     : "Iniciar entrenamiento"}
               </Button>
             </CardContent>
-          </Card>
+            </Card>
+          </div>
 
-          <ConfigPanel configId="mostly_ai" />
+          <div id="configuracion-modelo" className="scroll-mt-24">
+              <ConfigPanel configId="mostly_ai" />
+          </div>
         </WorkflowGroup>
 
-        <WorkflowGroup label="Resultados">
-          <ActiveJobCard
+        <WorkflowGroup id="resultados" label="Resultados" className="scroll-mt-24">
+          <div id="entrenamiento-actual" className="scroll-mt-24">
+            <ActiveJobCard
             id={lc.activeId}
             title="Entrenamiento actual"
             description="Estado del último entrenamiento iniciado desde esta sesión."
@@ -289,11 +307,13 @@ export default function EntrenamientoPage() {
                 )}
               </>
             }
-          />
+            />
+          </div>
         </WorkflowGroup>
 
-        <WorkflowGroup label="Historial">
-          <HistoryCard
+        <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
+          <div id="modelos-entrenados" className="scroll-mt-24">
+            <HistoryCard
             title="Modelos entrenados"
             description="Catálogo completo de modelos disponibles en el servidor."
             items={lc.list}
@@ -343,7 +363,8 @@ export default function EntrenamientoPage() {
                 )}
               </>
             )}
-          />
+            />
+          </div>
         </WorkflowGroup>
       </div>
 

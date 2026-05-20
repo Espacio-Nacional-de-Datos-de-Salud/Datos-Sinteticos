@@ -21,12 +21,19 @@ from backend.src.domain.preprocessing.logical_rules import (
     DateInequalityRule,
     DateToAgeRule,
     ForeignKeysConsistencyRule,
+    InteractionType,
     LogicalRule,
     LogicalRuleManager,
     NumericBucketRule,
     NumericInequalityRule,
     NumericThresholdRule,
     SemanticProportionalConsistencyRule,
+    SemanticRankingConsistencyRule,
+)
+from backend.src.domain.preprocessing.utils import (
+    assign_default_context_keys,
+    format_relationships,
+    infer_foreign_keys_consistency_rules,
 )
 
 
@@ -36,6 +43,7 @@ class _DummyRule(LogicalRule):
     origin_col: str = None
     source_col: str = None
     aux_col: str = None
+    interaction_type: InteractionType = InteractionType.ISOLATED
 
     def apply_pre(self, df: pd.DataFrame) -> pd.DataFrame:
         return df
@@ -363,7 +371,6 @@ def test_detect_rule_interactions_raises_on_superimposition() -> None:
 
 def test_detect_rule_interactions_no_op() -> None:
     manager = LogicalRuleManager(rules=[])
-    manager.concat_rules = []
 
     first = _DummyRule(table_target="visits", table_origin="patients", target_col="visit_id")
     second = _DummyRule(table_target="patients", table_origin="visits", target_col="patient_id")
@@ -371,27 +378,28 @@ def test_detect_rule_interactions_no_op() -> None:
 
     manager._detect_rule_interactions(second)
 
-    assert manager.concat_rules == []
+    assert [rule for rule in manager.rules if rule.interaction_type != InteractionType.ISOLATED and not rule.rejection_sampling] == []
 
 
 def test_sort_concat_rules_orders_by_dependency_chain() -> None:
     manager = LogicalRuleManager(rules=[])
-    manager.concat_rules = []
 
     rule_create_bucket = _DummyRule(
         table_target="patients",
         table_origin="patients",
         origin_col="age",
-        target_col="age_bucket",
+        aux_col="age_bucket",
+        interaction_type=InteractionType.CONCATENATED,
     )
     rule_use_bucket = _DummyRule(
         table_target="patients",
         table_origin="patients",
         origin_col="age_bucket",
-        target_col="is_adult",
+        aux_col="is_adult",
+        interaction_type=InteractionType.CONCATENATED,
     )
 
-    manager.concat_rules = [rule_use_bucket, rule_create_bucket]
+    manager.rules = [rule_use_bucket, rule_create_bucket]
 
     sorted_rules = manager._sort_concat_rules(
         {"patients.age", "patients.age_bucket", "patients.is_adult"}
@@ -400,34 +408,57 @@ def test_sort_concat_rules_orders_by_dependency_chain() -> None:
     assert sorted_rules == [rule_create_bucket, rule_use_bucket]
 
 
-def test_sort_concat_rules_orders_by_aux_dependency() -> None:
+def test_sort_concat_rules_orders_by_target_dependency() -> None:
     manager = LogicalRuleManager(rules=[])
-    manager.concat_rules = []
 
-    rule_create_aux = _DummyRule(
+    rule_delete_col = _DummyRule(
         table_target="visits",
         target_col="visit_end_date",
-        aux_col="duration_visit_end_date",
+        interaction_type=InteractionType.CONCATENATED,
     )
-    rule_use_aux = _DummyRule(
+    rule_use_col = _DummyRule(
         table_target="visits",
         table_origin="visits",
-        origin_col="duration_visit_end_date",
+        origin_col="visit_end_date",
         target_col="stay_class",
+        interaction_type=InteractionType.CONCATENATED,
     )
 
-    manager.concat_rules = [rule_use_aux, rule_create_aux]
+    manager.rules = [rule_delete_col, rule_use_col]
 
     sorted_rules = manager._sort_concat_rules(
         {"visits.visit_end_date", "visits.stay_class"}
     )
 
-    assert sorted_rules == [rule_create_aux, rule_use_aux]
+    assert sorted_rules == [rule_use_col, rule_delete_col]
+
+def test_sort_concat_rules_orders_by_target_dependency_no_swap() -> None:
+    manager = LogicalRuleManager(rules=[])
+
+    rule_delete_col = _DummyRule(
+        table_target="visits",
+        target_col="visit_end_date",
+        interaction_type=InteractionType.CONCATENATED,
+    )
+    rule_use_col = _DummyRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="visit_end_date",
+        target_col="stay_class",
+        interaction_type=InteractionType.CONCATENATED,
+    )
+
+    manager.rules = [rule_use_col, rule_delete_col]
+
+    sorted_rules = manager._sort_concat_rules(
+        {"visits.visit_end_date", "visits.stay_class"}
+    )
+
+    assert sorted_rules == [rule_use_col, rule_delete_col]
 
 
 def test_sort_concat_rules_handles_derived_rules() -> None:
     manager = LogicalRuleManager(rules=[])
-    manager.concat_rules = []
 
     rule_bucket = NumericBucketRule(
         table_target="patients",
@@ -437,6 +468,7 @@ def test_sort_concat_rules_handles_derived_rules() -> None:
         bins=[0, 18, 65],
         labels=["minor", "adult"],
     )
+    rule_bucket.interaction_type = InteractionType.CONCATENATED
     rule_threshold = NumericThresholdRule(
         table_target="patients",
         table_origin="patients",
@@ -447,8 +479,9 @@ def test_sort_concat_rules_handles_derived_rules() -> None:
         true_value=True,
         false_value=False,
     )
+    rule_threshold.interaction_type = InteractionType.CONCATENATED
 
-    manager.concat_rules = [rule_threshold, rule_bucket]
+    manager.rules = [rule_threshold, rule_bucket]
 
     sorted_rules = manager._sort_concat_rules(
         {
@@ -459,9 +492,39 @@ def test_sort_concat_rules_handles_derived_rules() -> None:
     assert sorted_rules == [rule_bucket, rule_threshold]
 
 
+def test_sort_concat_rules_orders_rejection_sampling_last() -> None:
+    manager = LogicalRuleManager(rules=[])
+
+    rule_age_bucket = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="age_bucket",
+    )
+    rule_age_bucket.interaction_type = InteractionType.CONCATENATED
+
+    rule_is_adult_reject = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age_bucket",
+        aux_col="is_adult",
+        rejection_sampling=True,
+    )
+    rule_is_adult_reject.interaction_type = InteractionType.CONCATENATED
+
+    manager.rules = [rule_is_adult_reject, rule_age_bucket]
+
+    sorted_rules = manager._sort_concat_rules(
+        {
+            "patients.age",
+        }
+    )
+
+    assert sorted_rules == [rule_age_bucket, rule_is_adult_reject]
+
+
 def test_sort_concat_rules_orders_derived_and_numeric_dependency() -> None:
     manager = LogicalRuleManager(rules=[])
-    manager.concat_rules = []
 
     rule_age = DateToAgeRule(
         table_target="patients",
@@ -470,6 +533,8 @@ def test_sort_concat_rules_orders_derived_and_numeric_dependency() -> None:
         aux_col="age",
         reference_date="2020-01-01",
     )
+    rule_age.interaction_type = InteractionType.CONCATENATED
+
     rule_is_adult = NumericThresholdRule(
         table_target="patients",
         table_origin="patients",
@@ -480,8 +545,9 @@ def test_sort_concat_rules_orders_derived_and_numeric_dependency() -> None:
         true_value=True,
         false_value=False,
     )
+    rule_is_adult.interaction_type = InteractionType.CONCATENATED
 
-    manager.concat_rules = [rule_is_adult, rule_age]
+    manager.rules = [rule_is_adult, rule_age]
 
     sorted_rules = manager._sort_concat_rules(
         {
@@ -494,7 +560,231 @@ def test_sort_concat_rules_orders_derived_and_numeric_dependency() -> None:
 
 def test_sort_concat_rules_orders_three_rule_chain_with_semantic_consistency() -> None:
     manager = LogicalRuleManager(rules=[])
-    manager.concat_rules = []
+
+    rule_age = DateToAgeRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="birth_date",
+        aux_col="age",
+        reference_date="2020-01-01",
+    )
+    rule_age.interaction_type = InteractionType.CONCATENATED
+
+    rule_is_senior = NumericThresholdRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="is_senior",
+        threshold=65,
+        operator=">=",
+        true_value=True,
+        false_value=False,
+    )
+    rule_is_senior.interaction_type = InteractionType.CONCATENATED
+
+    rule_diagnosis = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="is_senior",
+        target_col="diagnosis",
+    )
+    rule_diagnosis.interaction_type = InteractionType.CONCATENATED
+
+    manager.rules = [rule_diagnosis, rule_is_senior, rule_age]
+
+    sorted_rules = manager._sort_concat_rules(
+        {
+            "patients.birth_date",
+            "patients.diagnosis",
+        }
+    )
+
+    assert sorted_rules == [rule_age, rule_is_senior, rule_diagnosis]
+
+
+def test_sort_concat_rules_large_integration_all_rule_types() -> None:
+    manager = LogicalRuleManager(rules=[])
+
+    rule_age = DateToAgeRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="birth_date",
+        aux_col="age",
+        reference_date="2020-01-01",
+    )
+    rule_age.interaction_type = InteractionType.CONCATENATED
+
+    rule_is_senior = NumericThresholdRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="is_senior",
+        threshold=65,
+        operator=">=",
+        true_value=True,
+        false_value=False,
+    )
+    rule_is_senior.interaction_type = InteractionType.CONCATENATED
+
+    rule_bucket = NumericBucketRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="age_bucket",
+        bins=[0, 18, 65, 120],
+        labels=["minor", "adult", "senior"],
+    )
+    rule_bucket.interaction_type = InteractionType.CONCATENATED
+
+    rule_diagnosis = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="is_senior",
+        target_col="diagnosis",
+    )
+    rule_diagnosis.interaction_type = InteractionType.CONCATENATED
+
+    rule_risk_band = SemanticRankingConsistencyRule(
+        table_target="patients",
+        origin_col="age_bucket",
+        target_col="risk_band",
+    )
+    rule_risk_band.interaction_type = InteractionType.CONCATENATED
+
+    rule_visit_duration = DateInequalityRule(
+        table_target="visits",
+        origin_col="visit_start_date",
+        target_col="visit_end_date",
+        constraint_operator=">=",
+    )
+    rule_visit_duration.interaction_type = InteractionType.CONCATENATED
+
+    rule_long_stay = NumericThresholdRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="duration_visit_end_date",
+        aux_col="long_stay",
+        threshold=10,
+        operator=">=",
+        true_value=True,
+        false_value=False,
+    )
+    rule_long_stay.interaction_type = InteractionType.CONCATENATED
+
+    rule_lab_value = NumericInequalityRule(
+        table_target="labs",
+        origin_col="lab_upper",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    rule_lab_value.interaction_type = InteractionType.CONCATENATED
+
+    rule_lab_within_range = NumericThresholdRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="diff_lab_value",
+        aux_col="lab_within_range",
+        threshold=0,
+        operator=">=",
+        true_value=True,
+        false_value=False,
+    )
+    rule_lab_within_range.interaction_type = InteractionType.CONCATENATED
+
+    manager.rules = [
+        rule_diagnosis,
+        rule_is_senior,
+        rule_bucket,
+        rule_risk_band,
+        rule_age,
+        rule_long_stay,
+        rule_visit_duration,
+        rule_lab_value,
+        rule_lab_within_range,
+    ]
+
+    sorted_rules = manager._sort_concat_rules(
+        {
+            "patients.birth_date",
+            "patients.diagnosis",
+            "patients.risk_band",
+            "visits.visit_start_date",
+            "visits.visit_end_date",
+            "visits.person_id",
+            "labs.lab_upper",
+            "labs.lab_value",
+            "conditions.person_id",
+        }
+    )
+
+    positions = {id(rule): idx for idx, rule in enumerate(sorted_rules)}
+
+    assert positions[id(rule_age)] < positions[id(rule_is_senior)]
+    assert positions[id(rule_is_senior)] < positions[id(rule_diagnosis)]
+    assert positions[id(rule_age)] < positions[id(rule_bucket)]
+    assert positions[id(rule_bucket)] < positions[id(rule_risk_band)]
+    assert positions[id(rule_visit_duration)] < positions[id(rule_long_stay)]
+    assert positions[id(rule_lab_value)] < positions[id(rule_lab_within_range)]
+
+
+def test_full_pipeline_with_add_rule_orders_and_transforms() -> None:
+    data = {
+        "patients": pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "birth_date": ["1950-01-01", "1990-06-15"],
+                "diagnosis": ["flu", "allergy"],
+                "risk_band": ["low", "high"],
+            }
+        ),
+        "visits": pd.DataFrame(
+            {
+                "visit_id": [10, 20],
+                "person_id": [1, 2],
+                "visit_start_date": ["2020-01-01", "2020-02-01"],
+                "visit_end_date": ["2020-01-05", "2020-02-10"],
+            }
+        ),
+        "conditions": pd.DataFrame(
+            {
+                "condition_id": [100, 200],
+                "visit_id": [10, 20],
+                "person_id": [1, 2],
+            }
+        ),
+        "labs": pd.DataFrame(
+            {
+                "lab_id": [1, 2],
+                "lab_upper": [10.0, 5.0],
+                "lab_value": [7.0, 4.0],
+            }
+        ),
+    }
+    relationships_autodetect = {
+        "fks": [
+            {
+                "child": "conditions",
+                "parent": "visits",
+                "fk_column": "visit_id",
+                "pk_column": "visit_id",
+            },
+            {
+                "child": "visits",
+                "parent": "patients",
+                "fk_column": "person_id",
+                "pk_column": "person_id",
+            },
+            {
+                "child": "conditions",
+                "parent": "patients",
+                "fk_column": "person_id",
+                "pk_column": "person_id",
+            },
+        ]
+    }
+    # 3 foreign key consistency rules
+    relationships_autodetect = assign_default_context_keys(relationships_autodetect)
+    relationships = format_relationships(relationships_autodetect)
+
+    manager = LogicalRuleManager()
 
     rule_age = DateToAgeRule(
         table_target="patients",
@@ -513,27 +803,118 @@ def test_sort_concat_rules_orders_three_rule_chain_with_semantic_consistency() -
         true_value=True,
         false_value=False,
     )
+    rule_bucket = NumericBucketRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="age_bucket",
+        bins=[0, 18, 65, 120],
+        labels=["minor", "adult", "senior"],
+    )
     rule_diagnosis = SemanticProportionalConsistencyRule(
         table_target="patients",
         origin_col="is_senior",
         target_col="diagnosis",
     )
-
-    manager.concat_rules = [rule_diagnosis, rule_is_senior, rule_age]
-
-    sorted_rules = manager._sort_concat_rules(
-        {
-            "patients.birth_date",
-            "patients.diagnosis",
-        }
+    rule_risk_band = SemanticRankingConsistencyRule(
+        table_target="patients",
+        origin_col="age_bucket",
+        target_col="risk_band",
     )
+    rule_visit_duration = DateInequalityRule(
+        table_target="visits",
+        origin_col="visit_start_date",
+        target_col="visit_end_date",
+        constraint_operator=">=",
+    )
+    rule_long_stay = NumericThresholdRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="duration_visit_end_date",
+        aux_col="long_stay",
+        threshold=5,
+        operator=">=",
+        true_value=True,
+        false_value=False,
+    )
+    rule_lab_value = NumericInequalityRule(
+        table_target="labs",
+        origin_col="lab_upper",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    rule_lab_within_range = NumericThresholdRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="diff_lab_value",
+        aux_col="lab_within_range",
+        threshold=0,
+        operator=">=",
+        true_value=True,
+        false_value=False,
+    )
+    inferred_fk_rules = infer_foreign_keys_consistency_rules(relationships_autodetect)
+    
+    for rule in (
+        rule_age,
+        rule_is_senior,
+        rule_bucket,
+        rule_diagnosis,
+        rule_risk_band,
+        rule_visit_duration,
+        rule_long_stay,
+        rule_lab_value,
+        rule_lab_within_range,
+    ):
+        manager.add_rule(rule)
+    for rule in inferred_fk_rules:
+        manager.add_rule(rule)
 
-    assert sorted_rules == [rule_age, rule_is_senior, rule_diagnosis]
+    # pass all of the table columns in data to sort concat rules
+    original_columns = set()
+    for df in data.values():
+        original_columns.update(df.columns)
+    prefixed_columns = {f"{table}.{col}" for table, df in data.items() for col in df.columns}
+
+    sorted_rules = manager._sort_concat_rules(prefixed_columns)
+
+    assert len(sorted_rules) == 9 # fk rules are not concat
+    positions = {id(rule): idx for idx, rule in enumerate(sorted_rules)}
+    assert positions[id(rule_age)] < positions[id(rule_is_senior)]
+    assert positions[id(rule_is_senior)] < positions[id(rule_diagnosis)]
+    assert positions[id(rule_age)] < positions[id(rule_bucket)]
+    assert positions[id(rule_bucket)] < positions[id(rule_risk_band)]
+    assert positions[id(rule_visit_duration)] < positions[id(rule_long_stay)]
+    assert positions[id(rule_lab_value)] < positions[id(rule_lab_within_range)]
+
+    preprocessed = manager.apply_all_pre(data, relationships)
+
+    assert "age" in preprocessed["patients"].columns
+    assert "is_senior" in preprocessed["patients"].columns
+    assert "age_bucket" in preprocessed["patients"].columns
+    assert "diagnosis" not in preprocessed["patients"].columns
+    assert "risk_band" not in preprocessed["patients"].columns
+    assert "diagnosis_score" in preprocessed["patients"].columns
+    assert "risk_band_score" in preprocessed["patients"].columns
+    assert "visit_end_date" not in preprocessed["visits"].columns
+    assert "duration_visit_end_date" in preprocessed["visits"].columns
+    assert "long_stay" in preprocessed["visits"].columns
+    assert "lab_value" not in preprocessed["labs"].columns
+    assert "diff_lab_value" in preprocessed["labs"].columns
+    assert "lab_within_range" in preprocessed["labs"].columns
+    assert "person_id" not in preprocessed["conditions"].columns
+
+    reconstructed = manager.apply_all_post(preprocessed)
+
+    assert "diagnosis" in reconstructed["patients"].columns
+    assert "risk_band" in reconstructed["patients"].columns
+    assert "visit_end_date" in reconstructed["visits"].columns
+    assert "lab_value" in reconstructed["labs"].columns
+    assert "person_id" in reconstructed["conditions"].columns
 
 
 def test_sort_concat_rules_skips_when_origin_column_missing() -> None:
     manager = LogicalRuleManager(rules=[])
-    manager.concat_rules = []
 
     rule_missing_origin = _DummyRule(
         table_target="patients",
@@ -542,7 +923,7 @@ def test_sort_concat_rules_skips_when_origin_column_missing() -> None:
         target_col="derived",
     )
 
-    manager.concat_rules = [rule_missing_origin]
+    manager.rules = [rule_missing_origin]
 
     sorted_rules = manager._sort_concat_rules({"patients.age"})
 
@@ -550,7 +931,6 @@ def test_sort_concat_rules_skips_when_origin_column_missing() -> None:
 
 def test_sort_concat_rules_detects_cycles() -> None:
     manager = LogicalRuleManager(rules=[])
-    manager.concat_rules = []
 
     rule_a = _DummyRule(
         table_target="patients",
@@ -558,14 +938,17 @@ def test_sort_concat_rules_detects_cycles() -> None:
         origin_col="b",
         target_col="a",
     )
+    rule_a.interaction_type = InteractionType.CONCATENATED
+
     rule_b = _DummyRule(
         table_target="patients",
         table_origin="patients",
         origin_col="a",
         target_col="b",
     )
+    rule_b.interaction_type = InteractionType.CONCATENATED
 
-    manager.concat_rules = [rule_a, rule_b]
+    manager.rules = [rule_a, rule_b]
 
     with pytest.raises(RuleConcatenationError):
         manager._sort_concat_rules({"patients.a", "patients.b"})
@@ -579,21 +962,27 @@ def test_multiple_concat_rules() -> None:
         origin_col="b",
         target_col="a",
     )
+    rule_a.interaction_type = InteractionType.CONCATENATED
+
     rule_b = _DummyRule(
         table_target="patients",
         table_origin="patients",
         origin_col="c",
-        target_col="b",
+        aux_col="b",
     )
+    rule_b.interaction_type = InteractionType.CONCATENATED
+
     rule_c = _DummyRule(
         table_target="patients",
         table_origin="patients",
         origin_col="age",
-        target_col="c",
+        aux_col="c",
     )
-    manager.concat_rules = [rule_b, rule_c, rule_a]
+    rule_c.interaction_type = InteractionType.CONCATENATED
 
-    sorted_rules = manager._sort_concat_rules({"patients.age", "patients.a", "patients.b", "patients.c"})
+    manager.rules = [rule_b, rule_c, rule_a]
+
+    sorted_rules = manager._sort_concat_rules({"patients.age", "patients.a"})
 
     assert sorted_rules == [rule_c, rule_b, rule_a]
 
@@ -607,49 +996,55 @@ def test_sort_concat_rules_with_two_independent_chains() -> None:
         origin_col="b",
         target_col="a",
     )
+    rule_a.interaction_type = InteractionType.CONCATENATED
+
     rule_b = _DummyRule(
         table_target="patients",
         table_origin="patients",
         origin_col="c",
-        target_col="b",
+        aux_col="b",
     )
+    rule_b.interaction_type = InteractionType.CONCATENATED
+
     rule_c = _DummyRule(
         table_target="patients",
         table_origin="patients",
         origin_col="age",
-        target_col="c",
+        aux_col="c",
     )
+    rule_c.interaction_type = InteractionType.CONCATENATED
+
     rule_x = _DummyRule(
         table_target="visits",
         table_origin="visits",
         origin_col="y",
-        target_col="x",
+        aux_col="x",
     )
+    rule_x.interaction_type = InteractionType.CONCATENATED
+
     rule_y = _DummyRule(
         table_target="visits",
         table_origin="visits",
         origin_col="z",
-        target_col="y",
+        aux_col="y",
     )
+    rule_y.interaction_type = InteractionType.CONCATENATED
+
     rule_z = _DummyRule(
         table_target="visits",
         table_origin="visits",
         origin_col="visit_date",
-        target_col="z",
+        aux_col="z",
     )
+    rule_z.interaction_type = InteractionType.CONCATENATED
 
-    manager.concat_rules = [rule_b, rule_x, rule_z, rule_c, rule_y, rule_a]
+    manager.rules = [rule_b, rule_x, rule_z, rule_c, rule_y, rule_a]
 
     sorted_rules = manager._sort_concat_rules(
         {
             "patients.age",
             "patients.a",
-            "patients.b",
-            "patients.c",
             "visits.visit_date",
-            "visits.x",
-            "visits.y",
-            "visits.z",
         }
     )
 

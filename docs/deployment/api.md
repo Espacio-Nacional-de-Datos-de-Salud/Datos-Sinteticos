@@ -37,7 +37,7 @@ Route order matters when a router defines both static paths like `/cleanup` or `
 We use **Pydantic Schemas** (`src/api/schemas/`) to define the exact data structure a caller sends or receives:
 
 *   **Response schemas** (output): define what the API returns. E.g. `ModelSummary` guarantees every model entry has `model_id`, `status`, and optional accuracy/size fields. Internal filesystem paths are intentionally excluded.
-*   **Request schemas** (input): define what the client must send in the body of a `POST`. E.g. `TrainingCreateRequest` enforces that exactly one of `file_paths` or `inspection_id` is provided; `SimulationCreateRequest` requires `model_id` and accepts an optional `sample_size`.
+*   **Request schemas** (input): define what the client must send in the body of a `POST`. E.g. `TrainingCreateRequest` enforces that exactly one of `file_paths` or `inspection_id` is provided; `SimulationCreateRequest` requires `model_id` and accepts an optional `sample_size` (or a `table_sample_sizes` map for per-table overrides on subject tables — context-child entries are ignored, see below).
 *   **Job schemas** (async ack): lightweight handles like `TrainingJob`, `SimulationJob`, `EvaluationJob`, `PipelineJob` returned on `202`.
 
 > [!NOTE]
@@ -48,7 +48,7 @@ We use **Pydantic Schemas** (`src/api/schemas/`) to define the exact data struct
 *   **Documentation**: Schemas automatically populate the interactive docs at `/docs`.
 
 ### Separation of Layers
-The API is a **thin interface layer**. It does not contain business logic; it orchestrates calls to `src/services/` (training, simulation, inspection, pipeline, evaluation flows) and `src/core/catalog/` (listing, deletion, cleanup, download bundles). This keeps the core decoupled from the delivery mechanism.
+The API is a **thin interface layer**. It does not contain business logic; it delegates to `src/sessions/` (training, simulation, inspection, pipeline, evaluation session wrappers) and `src/runs/catalog/` (listing, deletion, cleanup, download bundles). The sessions layer in turn wraps the engines in `src/domain/`. This keeps the engines decoupled from the delivery mechanism.
 
 
 ## 3. Available Endpoints
@@ -75,7 +75,7 @@ Verifies that the API process is running and reachable. Returns `{"status": "ok"
 
 ### Simulations (`/simulations`)
 *   **GET `/`**: Lists all simulation runs (including `in_progress`, with `sample_size`).
-*   **POST `/`**: Launches a simulation asynchronously from a trained model. Body: `model_id` (required), optional `sample_size`. Returns `202` with `simulation_id`.
+*   **POST `/`**: Launches a simulation asynchronously from a trained model. Body: `model_id` (required), optional `sample_size`, optional `table_sample_sizes` (per-subject-table overrides; entries for context children are accepted but ignored, since Mostly AI cascades their counts from the parent). Returns `202` with `simulation_id`.
 *   **GET `/{id}`**: Returns details for a simulation run.
 *   **POST `/{id}/evaluate`**: Launches evaluation for a completed simulation asynchronously. **No body** — `real_data` and `model_id` are traced back from the sim card → model card chain. Returns `202`. Poll completion via `GET /{id}/download/evaluation` (404 while running, 200 once done).
 *   **GET `/{id}/download/synthetic-dataset`**: Downloads only the `synthetic_data/` subfolder.

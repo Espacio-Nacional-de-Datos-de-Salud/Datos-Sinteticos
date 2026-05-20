@@ -139,7 +139,8 @@ def _generate_with_rejection_sampling(
     rule_manager: LogicalRuleManager,
     sample_size: int,
     cancel_event: threading.Event | None = None,
-) -> tuple[dict[str, pd.DataFrame], dict[str, Any]]:
+    progress_copy_dest: str | None = None,
+) -> tuple[dict[str, pd.DataFrame], dict[str, Any], str]:
     config = _resolve_rejection_sampling_config(rule_manager)
     max_attempts = config["max_attempts"]
     overgenerate_factor = config["overgenerate_factor"]
@@ -153,6 +154,7 @@ def _generate_with_rejection_sampling(
     accepted_batches: dict[str, list[pd.DataFrame]] = {}
     accepted_counts: dict[str, int] = {}
     table_columns: dict[str, list[str]] = {}
+    last_sd_id: str = ""
     stats: dict[str, Any] = {
         "enabled": True,
         "max_attempts": max_attempts,
@@ -180,8 +182,9 @@ def _generate_with_rejection_sampling(
         batch_size = max(1, int(max_remaining * overgenerate_factor))
 
         simulation_config = create_simulation_config(metadata, batch_size)
-        raw_synthetic_results = engine.simulate(
-            generator, simulation_config, cancel_event=cancel_event
+        raw_synthetic_results, last_sd_id = engine.simulate(
+            generator, simulation_config, cancel_event=cancel_event,
+            progress_copy_dest=progress_copy_dest,
         )
         synthetic_results = rule_manager.apply_all_post(raw_synthetic_results)
 
@@ -226,7 +229,7 @@ def _generate_with_rejection_sampling(
         accepted_counts.get(table_name, 0) < sample_size for table_name in table_names
     )
     # apply post rules
-    return final_results, stats
+    return final_results, stats, last_sd_id
 
 
 @dataclass(frozen=True)
@@ -370,6 +373,7 @@ def run_simulation_flow(
     job_name: str | None = None,
     session: SimulationSession | None = None,
     cancel_event: threading.Event | None = None,
+    table_sample_sizes: dict[str, int] | None = None,
 ) -> str | None:
     """Execute the core simulation workflow entirely isolated from callers.
 
@@ -382,10 +386,18 @@ def run_simulation_flow(
         metadata (dict | object): Restored model schema metadata from training.
         rule_manager (object): Restored applied rules to use in post-processing.
         model_id (str): The unique ID or folder name for the model context.
-        sample_size (int | None): Expected bounds for produced samples.
+        sample_size (int | None): Default row count applied to subject tables
+            (those without an ``is_context`` FK) when ``table_sample_sizes``
+            does not override them. Mostly AI cascades counts for context
+            children from their parent, so this value never directly sets a
+            child table's size.
         mostly_config_path (str): Mostly AI configuration bindings.
         mostly_ai_overrides (dict | None, optional): Real-time parameter overlaps.
         pipeline_id (str, optional): ID grouping this run optionally.
+        table_sample_sizes (dict[str, int] | None, optional): Per-table row-count
+            overrides. Only entries targeting subject tables take effect;
+            entries for context children are ignored with a warning (Mostly
+            AI has no native way to set their size — they always cascade).
         job_name (str | None, optional): Explicit nomenclature for job logging.
 
     Returns:
@@ -430,7 +442,7 @@ def run_simulation_flow(
             # Re-import from the zip so this server's instance knows about it.
             generator, _ = engine.load_generator_by_id(model_id)
 
-            simulation_config = create_simulation_config(metadata, sample_size)
+            simulation_config = create_simulation_config(metadata, sample_size, table_sample_sizes)
             sim_tracker.save_sim_config(simulation_config)
             sim_tracker.save_sim_card(sample_size=sample_size)
 
@@ -446,14 +458,16 @@ def run_simulation_flow(
             ]
             use_rejection = bool(rejection_rules) and sample_size is not None
             with profiler.phase("mostlyai simulate"):
+                job_progress_dest = os.path.join(sim_tracker.output_directory, "job_progress.json")
                 if use_rejection:
-                    synthetic_results, rejection_stats = _generate_with_rejection_sampling(
+                    synthetic_results, rejection_stats, _ = _generate_with_rejection_sampling(
                         engine=engine,
                         generator=generator,
                         metadata=metadata,
                         rule_manager=rule_manager,
                         sample_size=sample_size,
                         cancel_event=cancel_event,
+                        progress_copy_dest=job_progress_dest,
                     )
                     rejection_stats["sample_size"] = sample_size
                     sim_tracker.save_rejection_sampling_report(rejection_stats)
@@ -462,8 +476,9 @@ def run_simulation_flow(
                         logger.warning(
                             "Rejection sampling requested but sample_size is None; falling back to single-pass simulation."
                         )
-                    raw_synthetic_results = engine.simulate(
-                        generator, simulation_config, cancel_event=cancel_event
+                    raw_synthetic_results, _ = engine.simulate(
+                        generator, simulation_config, cancel_event=cancel_event,
+                        progress_copy_dest=job_progress_dest,
                     )
                     if session:
                         advance_progress(
@@ -524,6 +539,7 @@ def run_simulation_flow_from_model(
     job_name: str | None = None,
     session: SimulationSession | None = None,
     cancel_event: threading.Event | None = None,
+    table_sample_sizes: dict[str, int] | None = None,
 ) -> str | None:
     """Load a trained generator by model ID and run the simulation flow.
 
@@ -532,13 +548,17 @@ def run_simulation_flow_from_model(
 
     Args:
         model_id: Folder name of the trained model to simulate from.
-        sample_size: Number of synthetic records to generate.
+        sample_size: Default row count for subject tables (see
+            ``run_simulation_flow``).
         mostly_config_path: Path to the Mostly AI configuration file.
         mostly_ai_overrides: Engine overrides applied at runtime.
         pipeline_id: Pipeline ID grouping this run.
         job_name: Human name of the job currently executing.
         session: Pre-initialized session; when provided its ``simulation_id`` is
             reused so the client-facing ID is stable across pre-init and execution.
+        table_sample_sizes: Per-table row-count overrides for subject tables.
+            Context-child entries are ignored (Mostly AI cascades their counts
+            from the parent).
 
     Returns:
         The ``simulation_id`` if successful, ``None`` on failure.
@@ -567,6 +587,7 @@ def run_simulation_flow_from_model(
             job_name=job_name,
             session=session,
             cancel_event=cancel_event,
+            table_sample_sizes=table_sample_sizes,
         )
     except Exception as error:
         logger.error("Simulation-from-model flow failed: %s", error, exc_info=True)

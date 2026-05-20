@@ -20,16 +20,11 @@ from backend.src.config.general import (
     METADATA_FILENAME,
     MODEL_CARD_FILENAME,
     MODELS_DIR,
+    PROCESSED_DATA_DIRNAME,
     SIM_CARD_FILENAME,
     SIMULATION_RUN_FOLDER_PREFIX,
     SIMULATIONS_DIR,
 )
-from backend.src.runs.card_io import read_json, write_json
-from backend.src.runs.catalog._base import (
-    find_run_cleanup_candidates,
-    purge_all_runs,
-)
-from backend.src.runs.catalog.evaluations import list_available_evaluations
 from backend.src.infrastructure.errors import (
     DataSourceNotFoundError,
     ModelCardNotFoundError,
@@ -37,6 +32,12 @@ from backend.src.infrastructure.errors import (
     SimulationNotFoundError,
 )
 from backend.src.infrastructure.logging_config import get_logger
+from backend.src.runs.card_io import read_json, write_json
+from backend.src.runs.catalog._base import (
+    find_run_cleanup_candidates,
+    purge_all_runs,
+)
+from backend.src.runs.catalog.evaluations import list_available_evaluations
 
 logger = get_logger(__name__)
 
@@ -462,28 +463,11 @@ def resolve_simulation_inputs(simulation_id: str) -> ResolvedSimulationInputs:
             f"Failed to read model_card.json at {model_card_path}: {exc}"
         ) from exc
 
-    data_sources = model_card.get("data_sources") or []
-    if not data_sources:
-        raise DataSourceNotFoundError(f"model_card.json at {model_card_path} has no data_sources.")
-
-    real_data_files: list[str] = []
-    missing: list[str] = []
-    for entry in data_sources:
-        path = entry.get("path") if isinstance(entry, dict) else None
-        if not path:
-            continue
-        if not os.path.exists(path):
-            missing.append(path)
-            continue
-        real_data_files.append(path)
-
-    if missing:
-        raise DataSourceNotFoundError(
-            f"Real data files referenced by model '{model_id}' are missing: {missing}"
-        )
+    real_data_files = _resolve_real_data_paths_from_card(model_id, model_card)
     if not real_data_files:
         raise DataSourceNotFoundError(
-            f"model_card.json at {model_card_path} has no usable data_source paths."
+            f"No real data available for model '{model_id}': neither a preprocessed "
+            f"copy nor any usable data_source paths in {model_card_path}."
         )
 
     metadata_path = os.path.join(model_dir, METADATA_FILENAME)
@@ -559,6 +543,65 @@ def _columns_from_files(paths: list[str]) -> dict[str, list[str]]:
         if columns:
             tables[_table_name_from_file(path)] = columns
     return tables
+
+
+def _resolve_real_data_paths_from_card(model_id: str, model_card: dict) -> list[str]:
+    """Return the paths that represent the data the model trained on.
+
+    Preference order keeps evaluation honest: the synthetic side carries the
+    post-preprocess schema (derived columns present, dropped columns absent),
+    so the real side must too. Falls back to raw ``data_sources`` only for
+    legacy models that pre-date persisted preprocessing.
+
+    1. ``outputs/models/<model_id>/processed_data/*.parquet`` — model-local
+       copy written by training when inspection metadata is edited.
+    2. ``outputs/inspections/<inspection_id>/processed_data/*.parquet`` —
+       inspection-level copy linked from the model card.
+    3. Raw ``data_sources`` paths from the model card (only when no
+       preprocessed copy exists).
+    """
+    model_processed = os.path.join(MODELS_DIR, model_id, PROCESSED_DATA_DIRNAME)
+    if os.path.isdir(model_processed):
+        paths = sorted(
+            os.path.join(model_processed, name)
+            for name in os.listdir(model_processed)
+            if name.endswith(".parquet")
+        )
+        if paths:
+            return paths
+
+    inspection_id = model_card.get("inspection_id")
+    if inspection_id:
+        inspection_processed = os.path.join(INSPECTIONS_DIR, inspection_id, PROCESSED_DATA_DIRNAME)
+        if os.path.isdir(inspection_processed):
+            paths = sorted(
+                os.path.join(inspection_processed, name)
+                for name in os.listdir(inspection_processed)
+                if name.endswith(".parquet")
+            )
+            if paths:
+                return paths
+
+    data_sources = model_card.get("data_sources") or []
+    raw_paths: list[str] = []
+    missing: list[str] = []
+    for entry in data_sources:
+        path = entry.get("path") if isinstance(entry, dict) else None
+        if not path:
+            continue
+        if not os.path.exists(path):
+            missing.append(path)
+            continue
+        raw_paths.append(path)
+    if missing and not raw_paths:
+        # Surface the missing-paths context only when there's no preprocessed
+        # fallback and no usable raw file — gives a clearer error.
+        logger.warning(
+            "Raw data_sources for model '%s' are missing and no preprocessed copy was found: %s",
+            model_id,
+            missing,
+        )
+    return raw_paths
 
 
 def _columns_from_model_metadata(metadata_path: str) -> dict[str, list[str]]:

@@ -6,9 +6,9 @@
 // order.
 
 export type PipelineStep = {
-  /** URL segment under /pipeline/ — e.g. "ingesta" -> /pipeline/ingesta */
+  /** URL segment under /pipeline/ */
   slug: string;
-  /** Display label (matches the mockup, in Spanish) */
+  /** Display label shown in navigation */
   label: string;
   /** True if the step has a real implementation; false means stub/coming soon */
   implemented: boolean;
@@ -16,6 +16,7 @@ export type PipelineStep = {
 
 export const PIPELINE_STEPS: PipelineStep[] = [
   { slug: "inspeccion", label: "Inspección", implemented: true },
+  { slug: "profiling", label: "Profiling", implemented: true },
   { slug: "entrenamiento", label: "Entrenamiento", implemented: true },
   { slug: "generacion", label: "Generación", implemented: true },
   { slug: "auditoria", label: "Auditoría", implemented: true },

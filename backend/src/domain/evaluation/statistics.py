@@ -1,13 +1,21 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import pandas as pd
-from backend.src.config.evaluation import NUM_BOOTSTRAP_SAMPLES
-from backend.src.infrastructure.logging_config import get_logger
 from scipy import stats
 
+from backend.src.config.evaluation import NUM_BOOTSTRAP_SAMPLES
+from backend.src.infrastructure.logging_config import get_logger
+
 logger = get_logger(__name__)
+
+
+# Bootstrap is run in chunks so the transient (chunk, n) index matrix stays
+# bounded regardless of dataset size: at chunk_size=256 and n=100_000 this
+# is ~205 MB (int64). Tune downward if memory pressure surfaces in practice.
+_BOOTSTRAP_CHUNK_SIZE: int = 256
 
 
 class Statistic(ABC):
@@ -40,6 +48,19 @@ class Statistic(ABC):
             bool: True when categorical-to-numeric conversion is enabled.
         """
         return self.convert_to_categorical
+
+    def bootstrap_signature(self) -> tuple | None:
+        """Identify the data series this statistic bootstraps over.
+
+        Returns a hashable signature when the statistic operates on a single
+        column drawn from ``self.column`` — used by ``ConfidenceIntervalOverlap``
+        to share resampling work across statistics that target the same series.
+        Returning ``None`` opts the statistic out of sharing (multi-column or
+        custom-data statistics).
+        """
+        if self.column is None:
+            return None
+        return (self.table, self.column, self.convert_to_categorical)
 
     def _preprocess_series(self, data: pd.DataFrame) -> pd.Series | None:
         """Preprocess and validate data series for statistical calculation.
@@ -74,13 +95,73 @@ class Statistic(ABC):
 
         return series
 
+    def _percentile_ci(self, bootstrap_values: np.ndarray) -> tuple[float, float]:
+        """Reduce a 1D array of bootstrap statistics to a percentile CI."""
+        alpha = 1 - self.confidence_level
+        lower_percentile = (alpha / 2) * 100
+        upper_percentile = (1 - alpha / 2) * 100
+        bootstrap_values = bootstrap_values[~np.isnan(bootstrap_values)]
+        if bootstrap_values.size == 0:
+            return (float("nan"), float("nan"))
+        return (
+            float(np.percentile(bootstrap_values, lower_percentile)),
+            float(np.percentile(bootstrap_values, upper_percentile)),
+        )
+
+    def _vectorized_bootstrap_ci(
+        self,
+        values: np.ndarray,
+        vec_stat_func: Callable[[np.ndarray], np.ndarray],
+        bootstrap_rng_seed: int | None = None,
+        num_samples: int | None = None,
+        chunk_size: int = _BOOTSTRAP_CHUNK_SIZE,
+    ) -> tuple[float, float]:
+        """Vectorised percentile bootstrap CI.
+
+        Resamples ``values`` in chunks of ``chunk_size`` bootstraps at a time
+        and applies ``vec_stat_func`` to each chunked ``(chunk, n)`` matrix
+        along ``axis=1``. Chunking caps the transient memory footprint while
+        keeping the inner loop fully vectorised.
+
+        Args:
+            values: 1D array of the underlying series.
+            vec_stat_func: Callable mapping a ``(chunk, n)`` array to a
+                ``(chunk,)`` array of bootstrap statistics.
+            bootstrap_rng_seed: Optional seed. When two statistics on the
+                same series share a seed they draw identical resamples,
+                which is how :class:`ConfidenceIntervalOverlap` shares work.
+            num_samples: Override for ``NUM_BOOTSTRAP_SAMPLES``.
+            chunk_size: Bootstraps per chunk; tune for memory.
+        """
+        n = len(values)
+        if n < 2:
+            return (float("nan"), float("nan"))
+
+        B = num_samples if num_samples is not None else NUM_BOOTSTRAP_SAMPLES
+        rng = np.random.default_rng(bootstrap_rng_seed)
+
+        bootstrap_stats: list[np.ndarray] = []
+        for start in range(0, B, chunk_size):
+            stop = min(start + chunk_size, B)
+            idx_chunk = rng.integers(0, n, size=(stop - start, n), dtype=np.int64)
+            samples_2d = values[idx_chunk]
+            stat_chunk = np.asarray(vec_stat_func(samples_2d), dtype=np.float64).ravel()
+            bootstrap_stats.append(stat_chunk)
+
+        return self._percentile_ci(np.concatenate(bootstrap_stats))
+
     def _bootstrap_confidence_interval(
         self,
         data: pd.Series,
         statistic_value: float,
         statistic_func,
     ) -> tuple[float, float]:
-        """Calculate confidence interval using bootstrap resampling.
+        """Legacy bootstrap CI helper kept for user-defined custom statistics.
+
+        Replaced internally by :meth:`_vectorized_bootstrap_ci`. This wrapper
+        survives so existing custom statistics that pass a ``pd.Series``-taking
+        callable continue to work, but each draw still incurs Python-level
+        overhead — prefer the vectorised path for new statistics.
 
         Args:
             data (pd.Series): Data series.
@@ -94,28 +175,61 @@ class Statistic(ABC):
         if n < 2:
             return (statistic_value, statistic_value)
 
-        # Bootstrap confidence interval
-        bootstrap_statistics = []
+        values = data.to_numpy()
+        rng = np.random.default_rng()
+        bootstrap_statistics: list[float] = []
 
-        for _ in range(NUM_BOOTSTRAP_SAMPLES):
-            bootstrap_sample = data.sample(n=n, replace=True)
-            bootstrap_statistics.append(statistic_func(bootstrap_sample))
+        for start in range(0, NUM_BOOTSTRAP_SAMPLES, _BOOTSTRAP_CHUNK_SIZE):
+            stop = min(start + _BOOTSTRAP_CHUNK_SIZE, NUM_BOOTSTRAP_SAMPLES)
+            idx_chunk = rng.integers(0, n, size=(stop - start, n), dtype=np.int64)
+            for row in idx_chunk:
+                sample = pd.Series(values[row])
+                bootstrap_statistics.append(statistic_func(sample))
 
-        alpha = 1 - self.confidence_level
-        lower_percentile = (alpha / 2) * 100
-        upper_percentile = (1 - alpha / 2) * 100
+        return self._percentile_ci(np.asarray(bootstrap_statistics, dtype=np.float64))
 
-        ci_lower = np.percentile(bootstrap_statistics, lower_percentile)
-        ci_upper = np.percentile(bootstrap_statistics, upper_percentile)
+    # ------------------------------------------------------------------
+    # Shared-bootstrap protocol
+    #
+    # Statistics that implement ``_scalar_stat`` and ``_vec_stat`` opt in to
+    # the shared chunked bootstrap path driven by
+    # :meth:`ConfidenceIntervalOverlap.evaluate`. The orchestrator generates
+    # ``(chunk, n)`` resamples once per chunk and feeds the same matrix to
+    # every statistic in the group, so the dominant cost — materialising
+    # ``values[indices]`` — is paid once instead of once per statistic.
+    #
+    # Statistics that do not implement these (mode, formula, age) fall back
+    # to per-stat ``calculate(data, bootstrap_rng_seed=...)``.
+    # ------------------------------------------------------------------
 
-        return (ci_lower, ci_upper)
+    def _scalar_stat(self, values: np.ndarray) -> float:
+        """Central estimate from the full 1D values array (no resampling)."""
+        raise NotImplementedError
+
+    def _vec_stat(self, samples_2d: np.ndarray) -> np.ndarray:
+        """Statistic applied across ``axis=1`` of a ``(chunk, n)`` matrix."""
+        raise NotImplementedError
+
+    def supports_shared_bootstrap(self) -> bool:
+        """Whether this statistic implements the shared-bootstrap protocol.
+
+        Subclasses opting in should override both ``_scalar_stat`` and
+        ``_vec_stat`` and return ``True`` here.
+        """
+        return False
 
     @abstractmethod
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
+    def calculate(
+        self,
+        data: pd.DataFrame,
+        bootstrap_rng_seed: int | None = None,
+    ) -> dict[str, Any]:
         """Calculate statistic and confidence interval.
 
         Args:
             data (pd.DataFrame): Input data.
+            bootstrap_rng_seed (int | None): When provided, seeds the bootstrap
+                RNG so multiple statistics on the same series share resamples.
 
         Returns:
             Dict[str, Any]: Dictionary with 'value' and 'ci' keys.
@@ -123,35 +237,46 @@ class Statistic(ABC):
         pass
 
 
+def _vectorized_mode(samples_2d: np.ndarray) -> np.ndarray:
+    """Per-row mode of a (B, n) matrix, picking the smallest value on ties."""
+    result, _ = stats.mode(samples_2d, axis=1, keepdims=False)
+    return result.astype(np.float64, copy=False)
+
+
+def _default_calculate(
+    self: Statistic,
+    data: pd.DataFrame,
+    bootstrap_rng_seed: int | None = None,
+) -> dict[str, Any]:
+    """Shared ``calculate`` for stats that implement the shared-bootstrap protocol."""
+    series = self._preprocess_series(data)
+    if series is None:
+        return {"value": np.nan, "ci": (np.nan, np.nan)}
+    values = series.to_numpy()
+    return {
+        "value": self._scalar_stat(values),
+        "ci": self._vectorized_bootstrap_ci(values, self._vec_stat, bootstrap_rng_seed),
+    }
+
+
 class MeanStatistic(Statistic):
     """Calculate mean and confidence interval."""
 
     @staticmethod
     def name() -> str:
-        """Return the canonical statistic name.
-
-        Returns:
-            str: Statistic identifier used in reports.
-        """
+        """Return the canonical statistic name."""
         return "mean"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate mean and confidence interval.
+    def supports_shared_bootstrap(self) -> bool:
+        return True
 
-        Args:
-            data (pd.DataFrame): Input data.
+    def _scalar_stat(self, values: np.ndarray) -> float:
+        return float(values.mean())
 
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys.
-        """
-        series = self._preprocess_series(data)
-        if series is None:
-            return {"value": np.nan, "ci": (np.nan, np.nan)}
+    def _vec_stat(self, samples_2d: np.ndarray) -> np.ndarray:
+        return samples_2d.mean(axis=1)
 
-        mean_val = float(series.mean())
-        ci = self._bootstrap_confidence_interval(series, mean_val, lambda x: x.mean())
-
-        return {"value": mean_val, "ci": ci}
+    calculate = _default_calculate
 
 
 class MedianStatistic(Statistic):
@@ -159,30 +284,19 @@ class MedianStatistic(Statistic):
 
     @staticmethod
     def name() -> str:
-        """Return the canonical statistic name.
-
-        Returns:
-            str: Statistic identifier used in reports.
-        """
+        """Return the canonical statistic name."""
         return "median"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate median and confidence interval.
+    def supports_shared_bootstrap(self) -> bool:
+        return True
 
-        Args:
-            data (pd.DataFrame): Input data.
+    def _scalar_stat(self, values: np.ndarray) -> float:
+        return float(np.median(values))
 
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys.
-        """
-        series = self._preprocess_series(data)
-        if series is None:
-            return {"value": np.nan, "ci": (np.nan, np.nan)}
+    def _vec_stat(self, samples_2d: np.ndarray) -> np.ndarray:
+        return np.median(samples_2d, axis=1)
 
-        median_val = float(series.median())
-        ci = self._bootstrap_confidence_interval(series, median_val, lambda x: x.median())
-
-        return {"value": median_val, "ci": ci}
+    calculate = _default_calculate
 
 
 class ModeStatistic(Statistic):
@@ -190,36 +304,38 @@ class ModeStatistic(Statistic):
 
     @staticmethod
     def name() -> str:
-        """Return the canonical statistic name.
-
-        Returns:
-            str: Statistic identifier used in reports.
-        """
+        """Return the canonical statistic name."""
         return "mode"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate mode and confidence interval.
+    def supports_shared_bootstrap(self) -> bool:
+        return True
 
-        Args:
-            data (pd.DataFrame): Input data.
+    def _scalar_stat(self, values: np.ndarray) -> float:
+        mode_result, _ = stats.mode(values, keepdims=False)
+        return float(mode_result)
 
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys.
-        """
+    def _vec_stat(self, samples_2d: np.ndarray) -> np.ndarray:
+        return _vectorized_mode(samples_2d)
+
+    def calculate(
+        self,
+        data: pd.DataFrame,
+        bootstrap_rng_seed: int | None = None,
+    ) -> dict[str, Any]:
+        """Calculate mode and confidence interval."""
         series = self._preprocess_series(data)
         if series is None:
             return {"value": np.nan, "ci": (np.nan, np.nan)}
 
+        # Preserve the original "smallest-on-ties" semantics from pandas mode().
         mode_result = series.mode()
         if len(mode_result) == 0:
             logger.debug(f"No mode found for column '{self.column}' in table '{self.table}'")
             return {"value": np.nan, "ci": (np.nan, np.nan)}
 
+        values = series.to_numpy()
         mode_val = float(mode_result.iloc[0])
-        ci = self._bootstrap_confidence_interval(
-            series, mode_val, lambda x: float(x.mode().iloc[0]) if len(x.mode()) > 0 else np.nan
-        )
-
+        ci = self._vectorized_bootstrap_ci(values, self._vec_stat, bootstrap_rng_seed)
         return {"value": mode_val, "ci": ci}
 
 
@@ -228,30 +344,20 @@ class VarianceStatistic(Statistic):
 
     @staticmethod
     def name() -> str:
-        """Return the canonical statistic name.
-
-        Returns:
-            str: Statistic identifier used in reports.
-        """
+        """Return the canonical statistic name."""
         return "variance"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate variance and confidence interval.
+    def supports_shared_bootstrap(self) -> bool:
+        return True
 
-        Args:
-            data (pd.DataFrame): Input data.
+    def _scalar_stat(self, values: np.ndarray) -> float:
+        # ddof=1 matches pandas' default `Series.var()`.
+        return float(np.var(values, ddof=1))
 
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys.
-        """
-        series = self._preprocess_series(data)
-        if series is None:
-            return {"value": np.nan, "ci": (np.nan, np.nan)}
+    def _vec_stat(self, samples_2d: np.ndarray) -> np.ndarray:
+        return np.var(samples_2d, axis=1, ddof=1)
 
-        variance_val = float(series.var())
-        ci = self._bootstrap_confidence_interval(series, variance_val, lambda x: x.var())
-
-        return {"value": variance_val, "ci": ci}
+    calculate = _default_calculate
 
 
 class SkewnessStatistic(Statistic):
@@ -259,30 +365,19 @@ class SkewnessStatistic(Statistic):
 
     @staticmethod
     def name() -> str:
-        """Return the canonical statistic name.
-
-        Returns:
-            str: Statistic identifier used in reports.
-        """
+        """Return the canonical statistic name."""
         return "skewness"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate skewness and confidence interval.
+    def supports_shared_bootstrap(self) -> bool:
+        return True
 
-        Args:
-            data (pd.DataFrame): Input data.
+    def _scalar_stat(self, values: np.ndarray) -> float:
+        return float(stats.skew(values))
 
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys.
-        """
-        series = self._preprocess_series(data)
-        if series is None:
-            return {"value": np.nan, "ci": (np.nan, np.nan)}
+    def _vec_stat(self, samples_2d: np.ndarray) -> np.ndarray:
+        return stats.skew(samples_2d, axis=1)
 
-        skewness_val = float(stats.skew(series))
-        ci = self._bootstrap_confidence_interval(series, skewness_val, lambda x: stats.skew(x))
-
-        return {"value": skewness_val, "ci": ci}
+    calculate = _default_calculate
 
 
 class KurtosisStatistic(Statistic):
@@ -290,32 +385,19 @@ class KurtosisStatistic(Statistic):
 
     @staticmethod
     def name() -> str:
-        """Return the canonical statistic name.
-
-        Returns:
-            str: Statistic identifier used in reports.
-        """
+        """Return the canonical statistic name."""
         return "kurtosis"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate excess kurtosis and confidence interval.
+    def supports_shared_bootstrap(self) -> bool:
+        return True
 
-        Args:
-            data (pd.DataFrame): Input data.
+    def _scalar_stat(self, values: np.ndarray) -> float:
+        return float(stats.kurtosis(values, fisher=True))
 
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys.
-        """
-        series = self._preprocess_series(data)
-        if series is None:
-            return {"value": np.nan, "ci": (np.nan, np.nan)}
+    def _vec_stat(self, samples_2d: np.ndarray) -> np.ndarray:
+        return stats.kurtosis(samples_2d, axis=1, fisher=True)
 
-        kurtosis_val = float(stats.kurtosis(series, fisher=True))
-        ci = self._bootstrap_confidence_interval(
-            series, kurtosis_val, lambda x: stats.kurtosis(x, fisher=True)
-        )
-
-        return {"value": kurtosis_val, "ci": ci}
+    calculate = _default_calculate
 
 
 class RangeStatistic(Statistic):
@@ -323,21 +405,17 @@ class RangeStatistic(Statistic):
 
     @staticmethod
     def name() -> str:
-        """Return the canonical statistic name.
-
-        Returns:
-            str: Statistic identifier used in reports.
-        """
+        """Return the canonical statistic name."""
         return "range"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
+    def calculate(
+        self,
+        data: pd.DataFrame,
+        bootstrap_rng_seed: int | None = None,
+    ) -> dict[str, Any]:
         """Calculate range (min and max values).
 
-        Args:
-            data (pd.DataFrame): Input data.
-
-        Returns:
-            dict[str, Any]: Dictionary with 'value' as (min, max) tuple and 'ci' as same tuple.
+        Note: deterministic on the input — no bootstrap.
         """
         series = self._preprocess_series(data)
         if series is None:
@@ -381,25 +459,20 @@ class QuantileStatistic(Statistic):
         """
         return "quantile"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate quantile and confidence interval.
+    def supports_shared_bootstrap(self) -> bool:
+        return True
 
-        Args:
-            data (pd.DataFrame): Input data.
+    def _scalar_stat(self, values: np.ndarray) -> float:
+        return float(np.quantile(values, self.quantile))
 
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys.
-        """
-        series = self._preprocess_series(data)
-        if series is None:
-            return {"value": np.nan, "ci": (np.nan, np.nan)}
+    def _vec_stat(self, samples_2d: np.ndarray) -> np.ndarray:
+        return np.quantile(samples_2d, self.quantile, axis=1)
 
-        quantile_val = float(series.quantile(self.quantile))
-        ci = self._bootstrap_confidence_interval(
-            series, quantile_val, lambda x: x.quantile(self.quantile)
-        )
+    # ``bootstrap_signature`` (table, column, convert_to_categorical) is inherited:
+    # two quantile stats on the same column with different ``quantile`` values
+    # still resample the same series, so they belong in the same shared group.
 
-        return {"value": quantile_val, "ci": ci}
+    calculate = _default_calculate
 
 
 class FormulaStatistic(Statistic):
@@ -561,15 +634,16 @@ class FormulaStatistic(Statistic):
         """
         return "custom_formula"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate formula-based statistic with confidence interval.
+    def bootstrap_signature(self) -> tuple | None:
+        """Formula statistics span multiple columns and opt out of sharing."""
+        return None
 
-        Args:
-            data (pd.DataFrame): Input data.
-
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys.
-        """
+    def calculate(
+        self,
+        data: pd.DataFrame,
+        bootstrap_rng_seed: int | None = None,
+    ) -> dict[str, Any]:
+        """Calculate formula-based statistic with confidence interval."""
         series_dict = self._preprocess_series_dict(data)
         if series_dict is None:
             return {"value": np.nan, "ci": (np.nan, np.nan)}
@@ -579,38 +653,36 @@ class FormulaStatistic(Statistic):
         if np.isnan(value):
             return {"value": np.nan, "ci": (np.nan, np.nan)}
 
-        # Bootstrap confidence interval
+        # Bootstrap confidence interval. The formula evaluator works on
+        # pd.Series instances (its ALLOWED_FUNCTIONS call ``x.mean()`` etc.),
+        # so we resample with numpy indices but materialise one Series per
+        # placeholder per draw. Indices are batched in chunks via a shared
+        # RNG for memory bounds and reproducibility.
         primary_series = series_dict[list(self.columns.keys())[0]]
         n = len(primary_series)
-
-        def bootstrap_formula_func(indices):
-            """Apply formula to bootstrap-resampled data."""
-            bootstrap_dict = {}
-            for placeholder, series in series_dict.items():
-                bootstrap_dict[placeholder] = series.iloc[indices].reset_index(drop=True)
-            return self._evaluate_formula(bootstrap_dict)
-
-        # Generate bootstrap samples
-        bootstrap_values = []
-
-        for _ in range(NUM_BOOTSTRAP_SAMPLES):
-            indices = np.random.choice(n, size=n, replace=True)
-            bootstrap_val = bootstrap_formula_func(indices)
-            if not np.isnan(bootstrap_val):
-                bootstrap_values.append(bootstrap_val)
-
-        if len(bootstrap_values) == 0:
+        if n < 2:
             return {"value": value, "ci": (value, value)}
 
-        # Calculate confidence interval from bootstrap samples
-        alpha = 1 - self.confidence_level
-        lower_percentile = (alpha / 2) * 100
-        upper_percentile = (1 - alpha / 2) * 100
+        np_dict = {ph: s.to_numpy() for ph, s in series_dict.items()}
+        rng = np.random.default_rng(bootstrap_rng_seed)
+        bootstrap_values: list[float] = []
 
-        ci_lower = np.percentile(bootstrap_values, lower_percentile)
-        ci_upper = np.percentile(bootstrap_values, upper_percentile)
+        for start in range(0, NUM_BOOTSTRAP_SAMPLES, _BOOTSTRAP_CHUNK_SIZE):
+            stop = min(start + _BOOTSTRAP_CHUNK_SIZE, NUM_BOOTSTRAP_SAMPLES)
+            idx_chunk = rng.integers(0, n, size=(stop - start, n), dtype=np.int64)
+            for row in idx_chunk:
+                resampled = {ph: pd.Series(arr[row]) for ph, arr in np_dict.items()}
+                val = self._evaluate_formula(resampled)
+                if not np.isnan(val):
+                    bootstrap_values.append(val)
 
-        return {"value": value, "ci": (ci_lower, ci_upper)}
+        if not bootstrap_values:
+            return {"value": value, "ci": (value, value)}
+
+        return {
+            "value": value,
+            "ci": self._percentile_ci(np.asarray(bootstrap_values, dtype=np.float64)),
+        }
 
 
 statistic_map = {

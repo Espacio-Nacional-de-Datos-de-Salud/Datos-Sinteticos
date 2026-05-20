@@ -41,8 +41,9 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from backend.src.infrastructure.logging_config import get_logger
+
 from backend.src.domain.evaluation.statistics import Statistic
+from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -64,34 +65,40 @@ class CoefficientOfVariationStatistic(Statistic):
         """Return the canonical statistic name."""
         return "coefficient_of_variation"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate coefficient of variation and confidence interval.
+    def supports_shared_bootstrap(self) -> bool:
+        return True
 
-        Args:
-            data (pd.DataFrame): Input data.
-
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys.
-        """
-        series = self._preprocess_series(data)
-        if series is None:
-            return {"value": np.nan, "ci": (np.nan, np.nan)}
-
-        mean_val = series.mean()
+    def _scalar_stat(self, values: np.ndarray) -> float:
+        mean_val = values.mean()
         if mean_val == 0:
             logger.debug(
                 f"Mean of column '{self.column}' in table '{self.table}' is zero; cannot compute CV"
             )
+            return float("nan")
+        return float((values.std(ddof=1) / mean_val) * 100)
+
+    def _vec_stat(self, samples_2d: np.ndarray) -> np.ndarray:
+        m = samples_2d.mean(axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            cv = (samples_2d.std(axis=1, ddof=1) / m) * 100
+        cv[m == 0] = np.nan
+        return cv
+
+    def calculate(
+        self,
+        data: pd.DataFrame,
+        bootstrap_rng_seed: int | None = None,
+    ) -> dict[str, Any]:
+        """Calculate coefficient of variation and confidence interval."""
+        series = self._preprocess_series(data)
+        if series is None:
             return {"value": np.nan, "ci": (np.nan, np.nan)}
 
-        cv_val = float((series.std() / mean_val) * 100)
-
-        def cv_func(x):
-            m = x.mean()
-            return (x.std() / m * 100) if m != 0 else np.nan
-
-        ci = self._bootstrap_confidence_interval(series, cv_val, cv_func)
-
+        values = series.to_numpy()
+        cv_val = self._scalar_stat(values)
+        if np.isnan(cv_val):
+            return {"value": np.nan, "ci": (np.nan, np.nan)}
+        ci = self._vectorized_bootstrap_ci(values, self._vec_stat, bootstrap_rng_seed)
         return {"value": cv_val, "ci": ci}
 
 
@@ -111,27 +118,29 @@ class InterquartileRangeStatistic(Statistic):
         """Return the canonical statistic name."""
         return "interquartile_range"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
-        """Calculate IQR and confidence interval.
+    def supports_shared_bootstrap(self) -> bool:
+        return True
 
-        Args:
-            data (pd.DataFrame): Input data.
+    def _scalar_stat(self, values: np.ndarray) -> float:
+        return float(np.quantile(values, 0.75) - np.quantile(values, 0.25))
 
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys.
-        """
+    def _vec_stat(self, samples_2d: np.ndarray) -> np.ndarray:
+        qs = np.quantile(samples_2d, [0.25, 0.75], axis=1)
+        return qs[1] - qs[0]
+
+    def calculate(
+        self,
+        data: pd.DataFrame,
+        bootstrap_rng_seed: int | None = None,
+    ) -> dict[str, Any]:
+        """Calculate IQR and confidence interval."""
         series = self._preprocess_series(data)
         if series is None:
             return {"value": np.nan, "ci": (np.nan, np.nan)}
 
-        q1 = series.quantile(0.25)
-        q3 = series.quantile(0.75)
-        iqr_val = float(q3 - q1)
-
-        ci = self._bootstrap_confidence_interval(
-            series, iqr_val, lambda x: x.quantile(0.75) - x.quantile(0.25)
-        )
-
+        values = series.to_numpy()
+        iqr_val = self._scalar_stat(values)
+        ci = self._vectorized_bootstrap_ci(values, self._vec_stat, bootstrap_rng_seed)
         return {"value": iqr_val, "ci": ci}
 
 
@@ -152,17 +161,15 @@ class NullProportionStatistic(Statistic):
         """Return the canonical statistic name."""
         return "null_proportion"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
+    def calculate(
+        self,
+        data: pd.DataFrame,
+        bootstrap_rng_seed: int | None = None,
+    ) -> dict[str, Any]:
         """Calculate proportion of null values.
 
         Note: This statistic does not apply bootstrap CI because null proportion
         is deterministic (no variability across resamples of same data).
-
-        Args:
-            data (pd.DataFrame): Input data.
-
-        Returns:
-            dict[str, Any]: Dictionary with 'value' and 'ci' keys (CI = value).
         """
         if self.column not in data.columns:
             logger.debug(f"Column '{self.column}' not found in table '{self.table}'")
@@ -227,7 +234,15 @@ class AgeStatistic(Statistic):
         """Return the canonical statistic name."""
         return "age"
 
-    def calculate(self, data: pd.DataFrame) -> dict[str, Any]:
+    def bootstrap_signature(self) -> tuple | None:
+        """Age is derived from two columns; do not share resamples with single-column stats."""
+        return None
+
+    def calculate(
+        self,
+        data: pd.DataFrame,
+        bootstrap_rng_seed: int | None = None,
+    ) -> dict[str, Any]:
         """Calculate mean age at admission.
 
         Computes age in years for each patient as (admittime - dob) / 365.25,
@@ -280,12 +295,12 @@ class AgeStatistic(Statistic):
             return {"value": np.nan, "ci": (np.nan, np.nan)}
 
         # Calculate mean age
-        mean_age = float(age_years.mean())
+        values = age_years.to_numpy()
+        mean_age = float(values.mean())
 
-        logger.debug(f"Age calculation: mean={mean_age:.2f} years, n={len(age_years)} records")
+        logger.debug(f"Age calculation: mean={mean_age:.2f} years, n={len(values)} records")
 
-        # Calculate bootstrap confidence interval
-        ci = self._bootstrap_confidence_interval(age_years, mean_age, lambda x: x.mean())
+        ci = self._vectorized_bootstrap_ci(values, lambda s2d: s2d.mean(axis=1), bootstrap_rng_seed)
 
         return {"value": mean_age, "ci": ci}
 

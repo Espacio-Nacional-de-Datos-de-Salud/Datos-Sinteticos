@@ -106,6 +106,7 @@ def preview_files(req: FilePreviewRequest) -> list[FilePreview]:
                     sample_rows=req.sample_rows,
                     offset=req.offset,
                     include_total=req.include_total,
+                    csv_delimiter=req.csv_delimiter,
                 )
             )
         except FilePreviewError:

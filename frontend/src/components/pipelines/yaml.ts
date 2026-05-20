@@ -103,7 +103,7 @@ export function parseYamlToDoc(text: string): PipelineDoc {
       }
       | undefined;
     const ev = rawJob.evaluate as
-      | { real_data?: string[]; simulation_id?: string | null; model_id?: string | null }
+      | { simulation_id?: string | null; model_id?: string | null }
       | undefined;
     return {
       name: typeof rawJob.name === "string" ? rawJob.name : `job_${i + 1}`,
@@ -124,7 +124,6 @@ export function parseYamlToDoc(text: string): PipelineDoc {
         : null,
       evaluate: ev
         ? {
-          real_data: ev.real_data ?? [],
           simulation_id: ev.simulation_id ?? "",
           model_id: ev.model_id ?? "",
         }
@@ -198,7 +197,11 @@ export function docToYaml(doc: PipelineDoc): string {
         job.simulate = sim;
       }
       if (j.evaluate) {
-        const ev: Record<string, unknown> = { real_data: j.evaluate.real_data };
+        // No real_data emitted: the backend auto-binds to the model's
+        // preprocessed training data. Power users who need a manual override
+        // can still set it directly in the YAML — load_pipeline_config
+        // accepts the field.
+        const ev: Record<string, unknown> = {};
         if (j.evaluate.simulation_id) ev.simulation_id = j.evaluate.simulation_id;
         if (j.evaluate.model_id) ev.model_id = j.evaluate.model_id;
         job.evaluate = ev;

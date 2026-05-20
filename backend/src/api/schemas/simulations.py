@@ -45,6 +45,16 @@ class SimulationCreateRequest(BaseModel):
         description="Synthetic output table format for this simulation run.",
         pattern=f"^({'|'.join(SYNTHETIC_DATA_FILE_FORMATS)})$",
     )
+    table_sample_sizes: dict[str, int] | None = Field(
+        default=None,
+        description=(
+            "Per-table row-count overrides. Only honored for subject tables "
+            "(those without a context foreign key); Mostly AI cascades counts "
+            "for context children from their parent, so entries targeting "
+            "children are accepted but ignored with a server-side warning. "
+            "Falls back to `sample_size` for subject tables not listed here."
+        ),
+    )
 
 
 class SimulationJob(BaseModel):

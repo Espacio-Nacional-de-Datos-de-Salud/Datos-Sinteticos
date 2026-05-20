@@ -29,7 +29,6 @@ import { DetectedTablesCard } from "@/components/inspection/detected-tables-card
 import { FilePickerCard } from "@/components/inspection/file-picker-card";
 import { HistoryCard } from "@/components/inspection/history-card";
 import { InspectionStatusCard } from "@/components/inspection/inspection-status-card";
-import { ProfilingCard } from "@/components/inspection/profiling-card";
 import { RelationshipsCard } from "@/components/inspection/relationships-card";
 import { SelectionPreviewCard } from "@/components/inspection/selection-preview-card";
 import { TypesCard } from "@/components/inspection/types-card";
@@ -41,6 +40,19 @@ import { api, type FilePreview } from "@/lib/api";
 import { ALLOW_SERVER_FILES as ALLOW_SERVER_FILES_FLAG } from "@/lib/features";
 import { useIsDev } from "@/lib/mode";
 
+const INSPECCION_OUTLINE = [
+  { id: "preparacion", label: "Preparación", level: 1 },
+  { id: "seleccion-ficheros", label: "Selección de ficheros", level: 2 },
+  { id: "inspeccion-actual", label: "Inspección actual", level: 2 },
+  { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
+  { id: "resultados", label: "Resultados", level: 1 },
+  { id: "tablas-detectadas", label: "Tablas detectadas", level: 2 },
+  { id: "relaciones-detectadas", label: "Relaciones detectadas", level: 2 },
+  { id: "tipos-codificacion", label: "Tipos de codificación", level: 2 },
+  { id: "historial", label: "Historial", level: 1 },
+  { id: "inspecciones-previas", label: "Inspecciones previas", level: 2 },
+] as const;
+
 export default function InspeccionPage() {
   const insp = useInspeccionPage();
 
@@ -48,6 +60,7 @@ export default function InspeccionPage() {
   // card; excluded columns are only meaningful at start time but the user
   // toggles them per-table from the preview card, hence parent ownership.
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [csvDelimiter, setCsvDelimiter] = useState(",");
   const [excludedColumns, setExcludedColumns] = useState<Record<string, Set<string>>>({});
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmCleanup, setConfirmCleanup] = useState(false);
@@ -68,17 +81,14 @@ export default function InspeccionPage() {
     [selected],
   );
   const selectedPreviewQuery = useQuery({
-    queryKey: ["files", "preview", "rows", selectedKey],
+    queryKey: ["files", "preview", "rows", selectedKey, csvDelimiter],
     enabled: selected.size > 0,
     queryFn: async () => {
       const { data } = await api.post<FilePreview[]>("/files/preview", {
         paths: Array.from(selected),
-        // 50 rows is enough to spot column drift / encoding issues without
-        // tipping the request into multi-MB payloads when many files are
-        // selected at once. The drill-down container scrolls past that, and
-        // the "Ver completa" dialog pages through the rest server-side.
         sample_rows: 50,
         include_total: true,
+        csv_delimiter: csvDelimiter,
       });
       return data;
     },
@@ -112,6 +122,7 @@ export default function InspeccionPage() {
     insp.startInspection({
       filePaths: Array.from(selected),
       enableProfiling,
+      csvDelimiter,
       excludedColumns: excluded,
     });
     // Clear column exclusions after launch so the next selection starts fresh.
@@ -119,7 +130,7 @@ export default function InspeccionPage() {
   };
 
   return (
-    <WizardShell currentSlug="inspeccion" canAdvance={insp.isCompleted}>
+    <WizardShell currentSlug="inspeccion" canAdvance={insp.isCompleted} outline={INSPECCION_OUTLINE}>
       <div className="mx-auto max-w-5xl space-y-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Inspección</h1>
@@ -129,14 +140,15 @@ export default function InspeccionPage() {
           </p>
         </div>
 
-        <WorkflowGroup label="Preparación">
-          <div
-            className={
-              selected.size > 0
-                ? "grid gap-4 lg:grid-cols-2 lg:items-start"
-                : ""
-            }
-          >
+        <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
+          <div id="seleccion-ficheros" className="scroll-mt-24">
+            <div
+              className={
+                selected.size > 0
+                  ? "grid gap-4 lg:grid-cols-2 lg:items-start"
+                  : ""
+              }
+            >
             <FilePickerCard
               selected={selected}
               onToggleSelected={toggleSelected}
@@ -145,6 +157,8 @@ export default function InspeccionPage() {
               allowServerFiles={allowServerFiles}
               isStartDisabled={selected.size === 0}
               isStarting={insp.isStarting}
+              csvDelimiter={csvDelimiter}
+              onCsvDelimiterChange={setCsvDelimiter}
               onStart={handleStart}
             />
 
@@ -153,6 +167,7 @@ export default function InspeccionPage() {
                 previews={selectedPreviewQuery.data ?? []}
                 isLoading={selectedPreviewQuery.isLoading}
                 isError={selectedPreviewQuery.isError}
+                csvDelimiter={csvDelimiter}
                 excludedColumns={excludedColumns}
                 onToggleColumn={(table, col) => {
                   setExcludedColumns((prev) => {
@@ -166,25 +181,31 @@ export default function InspeccionPage() {
                 }}
               />
             )}
+            </div>
           </div>
 
-          <RulesPanel
-            autodetect={insp.autodetectQuery.data ?? null}
-            pendingFilePaths={Array.from(selected)}
-          />
-
           {insp.inspectionId && (
-            <InspectionStatusCard
+            <div id="inspeccion-actual" className="scroll-mt-24">
+              <InspectionStatusCard
               inspectionId={insp.inspectionId}
               inspection={insp.inspectionQuery.data}
               isLoading={insp.inspectionQuery.isLoading}
               isError={insp.inspectionQuery.isError}
-            />
+              />
+            </div>
           )}
+
+          <div id="reglas-preprocesamiento" className="scroll-mt-24">
+            <RulesPanel
+            autodetect={insp.autodetectQuery.data ?? null}
+            pendingFilePaths={Array.from(selected)}
+            />
+          </div>
         </WorkflowGroup>
 
-        <WorkflowGroup label="Resultados">
-          <DetectedTablesCard
+        <WorkflowGroup id="resultados" label="Resultados" className="scroll-mt-24">
+          <div id="tablas-detectadas" className="scroll-mt-24">
+            <DetectedTablesCard
             inspectionId={insp.inspectionId}
             inspection={insp.inspectionQuery.data}
             isLoading={insp.inspectionQuery.isLoading}
@@ -192,34 +213,36 @@ export default function InspeccionPage() {
             inspections={insp.inspectionsQuery.data ?? []}
             onRename={insp.renameInspection}
             onReset={insp.resetActive}
-          />
+            />
+          </div>
 
           {insp.isCompleted && (
             <>
-              <RelationshipsCard
+              <div id="relaciones-detectadas" className="scroll-mt-24">
+                <RelationshipsCard
                 query={insp.autodetectQuery}
                 draft={insp.draft}
                 setDraft={insp.setDraft}
                 originalAvailable={insp.originalAvailable}
                 {...insp.relationships}
-              />
-              <TypesCard
+                />
+              </div>
+              <div id="tipos-codificacion" className="scroll-mt-24">
+                <TypesCard
                 query={insp.autodetectQuery}
                 draft={insp.draft}
                 setDraft={insp.setDraft}
                 originalAvailable={insp.originalAvailable}
                 {...insp.types}
-              />
-              <ProfilingCard
-                inspectionId={insp.inspectionId}
-                query={insp.profilingQuery}
-              />
+                />
+              </div>
             </>
           )}
         </WorkflowGroup>
 
-        <WorkflowGroup label="Historial">
-          <HistoryCard
+        <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
+          <div id="inspecciones-previas" className="scroll-mt-24">
+            <HistoryCard
             inspections={insp.inspectionsQuery.data ?? []}
             isLoading={insp.inspectionsQuery.isLoading}
             isError={insp.inspectionsQuery.isError}
@@ -234,7 +257,8 @@ export default function InspeccionPage() {
             isCleaning={insp.isCleaning}
             isPurging={insp.isPurging}
             isCancelling={insp.isCancelling}
-          />
+            />
+          </div>
         </WorkflowGroup>
 
         <ConfirmDialog

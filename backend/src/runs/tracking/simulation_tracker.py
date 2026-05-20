@@ -14,6 +14,7 @@ import pandas as pd
 from backend.src.config.general import (
     MODEL_CARD_FILENAME,
     MODELS_DIR,
+    MOSTLYAI_DIR,
     NO_PIPELINE_ID,
     SIM_CARD_FILENAME,
     SIM_CONFIG_FILENAME,
@@ -151,6 +152,20 @@ class SimulationTracker(BaseRunTracker):
             json.dump(stats, file_handle, indent=4)
         logger.info("Rejection sampling report saved to '%s'.", report_path)
         self.patch_card(rejection_sampling=stats)
+
+    def save_job_progress(self, synthetic_dataset_id: str) -> None:
+        """Copy job_progress.json from MostlyAI's synthetic-dataset folder to the sim folder.
+
+        Args:
+            synthetic_dataset_id (str): The MostlyAI synthetic dataset UUID returned by simulate().
+        """
+        src = os.path.join(MOSTLYAI_DIR, "synthetic-datasets", synthetic_dataset_id, "job_progress.json")
+        dst = os.path.join(self.output_directory, "job_progress.json")
+        if not os.path.exists(src):
+            logger.warning("job_progress.json not found at '%s'; skipping copy.", src)
+            return
+        shutil.copy2(src, dst)
+        logger.info("Job progress copied to '%s'.", dst)
 
     def save_sim_metadata(self, metadata: dict) -> None:
         """Save the extracted metadata from synthetic data to JSON.

@@ -43,7 +43,7 @@ QUASI_IDENTIFIER_SUBSETS: dict[str, list[str]] | None = _METRICS.get("quasi_iden
 SENSITIVE_COLUMNS: list[str] | None = _METRICS.get("sensitive_columns")
 
 CONFIDENCE_INTERVAL_LEVEL: float = _METRICS.get("confidence_interval_level", 0.95)
-NUM_BOOTSTRAP_SAMPLES: int = _METRICS.get("num_bootstrap_samples", 10000)
+NUM_BOOTSTRAP_SAMPLES: int = _METRICS.get("num_bootstrap_samples", 1000)
 AVERAGE_COMPLEMENTARY_TVD_N_BINS: int = _METRICS.get("average_complementary_tvd_n_bins", 10)
 
 TSTR_TARGET_COLUMN: str = _TSTR.get("target_column", "expire_flag")

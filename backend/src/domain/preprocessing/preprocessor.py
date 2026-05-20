@@ -170,5 +170,5 @@ class DataPreprocessor:
             )
             if inferred_key in existing_rule_keys:
                 continue
-            self.rule_manager.add_rule(inferred_rule)
-            existing_rule_keys.add(inferred_key)
+            if self.rule_manager.add_rule(inferred_rule):
+                existing_rule_keys.add(inferred_key)

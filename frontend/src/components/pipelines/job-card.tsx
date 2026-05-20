@@ -85,9 +85,7 @@ export function JobCard({
       });
     } else {
       onChange({
-        evaluate: job.evaluate
-          ? null
-          : { real_data: [], simulation_id: "", model_id: "" },
+        evaluate: job.evaluate ? null : { simulation_id: "", model_id: "" },
       });
     }
   };
@@ -336,14 +334,11 @@ export function JobCard({
               onClose={() => setEvaluationConfigOpen(false)}
             />
 
-            <Label className="text-xs">Datos reales (referencia)</Label>
-            <FilesMultiSelect
-              files={files}
-              selected={job.evaluate.real_data}
-              onChange={(next) =>
-                onChange({ evaluate: { ...job.evaluate!, real_data: next } })
-              }
-            />
+            <p className="text-xs text-muted-foreground">
+              Los datos reales de referencia se enlazan automáticamente con el
+              dataset preprocesado del modelo entrenado (columnas derivadas
+              incluidas, columnas descartadas excluidas).
+            </p>
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div className="space-y-1">
                 <Label className="text-xs">

@@ -168,6 +168,7 @@ def preview_file(
     sample_rows: int = 0,
     offset: int = 0,
     include_total: bool = False,
+    csv_delimiter: str = ",",
 ) -> FilePreview:
     """Returns table name, columns, and optional sample rows for a file path.
 
@@ -213,7 +214,7 @@ def preview_file(
     try:
         if extension == "csv":
             with open(target, encoding="utf-8", newline="") as fh:
-                reader = csv.reader(fh)
+                reader = csv.reader(fh, delimiter=csv_delimiter)
                 columns = next(reader, []) or []
                 # Skip+sample in one pass; if include_total, keep iterating
                 # past the sample to count remaining rows.

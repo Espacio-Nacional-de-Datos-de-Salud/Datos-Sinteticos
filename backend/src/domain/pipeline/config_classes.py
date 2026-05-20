@@ -47,7 +47,12 @@ class EvaluateStepConfig:
     """Configuration for an evaluation step.
 
     Attributes:
-        real_data (list[str] | None): Paths to real data files for comparison.
+        real_data (list[str] | None): Advanced override — explicit paths to use
+            as the real-data reference. Normally left as ``None``: the eval
+            session auto-binds it to the model's preprocessed training data via
+            :func:`backend.src.runs.catalog.models.resolve_model_real_data_paths`,
+            which keeps the real and synthetic sides on the same post-rule
+            schema (derived columns present, dropped columns absent).
         simulation_id (str | None): Explicit simulation ID to evaluate. If None and
             a simulate step precedes this in the same job, that simulation is used.
         model_id (str | None): Explicit model ID. If None, inferred from job context.

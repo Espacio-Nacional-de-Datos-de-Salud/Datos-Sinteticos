@@ -31,12 +31,14 @@ export function SelectionPreviewCard({
   previews,
   isLoading,
   isError,
+  csvDelimiter,
   excludedColumns,
   onToggleColumn,
 }: {
   previews: FilePreview[];
   isLoading: boolean;
   isError: boolean;
+  csvDelimiter: string;
   excludedColumns: Record<string, Set<string>>;
   onToggleColumn: (table: string, col: string) => void;
 }) {
@@ -65,6 +67,7 @@ export function SelectionPreviewCard({
             <SelectionPreviewRow
               key={p.path}
               preview={p}
+              csvDelimiter={csvDelimiter}
               excludedCols={excludedColumns[p.table] ?? new Set()}
               onToggleColumn={(col) => onToggleColumn(p.table, col)}
             />
@@ -76,10 +79,12 @@ export function SelectionPreviewCard({
 
 function SelectionPreviewRow({
   preview,
+  csvDelimiter,
   excludedCols,
   onToggleColumn,
 }: {
   preview: FilePreview;
+  csvDelimiter: string;
   excludedCols: Set<string>;
   onToggleColumn: (col: string) => void;
 }) {
@@ -224,6 +229,7 @@ function SelectionPreviewRow({
           path={preview.path}
           table={preview.table}
           totalRows={preview.total_rows}
+          csvDelimiter={csvDelimiter}
           onClose={() => setExplorerOpen(false)}
         />
       )}

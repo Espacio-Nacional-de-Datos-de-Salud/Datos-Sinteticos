@@ -1,33 +1,39 @@
-// Bottom-of-page wizard navigation: Anterior / dots / Siguiente.
-//
-// Each pipeline step page wraps its content in <WizardShell currentSlug=…>.
-// The shell figures out prev/next from PIPELINE_STEPS and renders the nav.
-// Pages pass `canAdvance` to gate the Siguiente button (e.g. Ingesta only
-// lets you advance once an inspection has completed).
-
 "use client";
 
 import Link from "next/link";
+import { useMemo, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { PageOutline, type OutlineItem } from "@/components/layout/page-outline";
 import { PIPELINE_STEPS, findStepIndex, stepHref } from "@/lib/pipeline-steps";
 import { cn } from "@/lib/utils";
 
 export function WizardShell({
   currentSlug,
   canAdvance = true,
+  outline = [],
   children,
 }: {
   currentSlug: string;
   canAdvance?: boolean;
+  outline?: OutlineItem[];
   children: React.ReactNode;
 }) {
   const index = findStepIndex(currentSlug);
   const prev = index > 0 ? PIPELINE_STEPS[index - 1] : null;
   const next = index < PIPELINE_STEPS.length - 1 ? PIPELINE_STEPS[index + 1] : null;
+  const outlineKey = useMemo(() => outline.map((item) => item.id).join("|"), [outline]);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-auto px-8 py-6">{children}</div>
+      <div className="flex-1 overflow-auto">
+        <div className="mx-auto flex min-h-full max-w-[1800px] items-stretch">
+          <PageOutline key={outlineKey} items={outline} />
+          <div ref={contentRef} className="min-w-0 flex-1 py-6 pl-8 pr-8">
+            {children}
+          </div>
+        </div>
+      </div>
 
       <div className="flex items-center justify-between border-t bg-background px-8 py-4">
         {prev ? (

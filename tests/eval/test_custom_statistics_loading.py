@@ -14,10 +14,10 @@ import logging
 import pytest
 
 from backend.src.config.evaluation import CONFIDENCE_INTERVAL_LEVEL
-from backend.src.evaluation.custom_metrics.confidence_interval_overlap import (
+from backend.src.domain.evaluation.custom_metrics.confidence_interval_overlap import (
     ConfidenceIntervalOverlap,
 )
-from backend.src.evaluation.statistics import (
+from backend.src.domain.evaluation.statistics import (
     MeanStatistic,
     Statistic,
     create_statistic,
@@ -34,7 +34,7 @@ def _bind_loader(module_path: str | None) -> dict | None:
 
 def test_default_module_resolves_and_exposes_expected_statistics() -> None:
     module = importlib.import_module(
-        "backend.src.evaluation.custom_metrics.custom_statistics"
+        "backend.src.domain.evaluation.custom_metrics.custom_statistics"
     )
     assert hasattr(module, "CUSTOM_STATISTIC_MAP")
 
@@ -45,7 +45,7 @@ def test_default_module_resolves_and_exposes_expected_statistics() -> None:
 
 
 def test_loader_returns_map_when_module_path_is_valid() -> None:
-    custom_map = _bind_loader("backend.src.evaluation.custom_metrics.custom_statistics")
+    custom_map = _bind_loader("backend.src.domain.evaluation.custom_metrics.custom_statistics")
 
     assert custom_map is not None
     assert "age" in custom_map and "null_proportion" in custom_map
@@ -60,11 +60,11 @@ def test_loader_returns_none_and_logs_on_bad_module_path() -> None:
 
     handler = _ListHandler(level=logging.ERROR)
     target_logger = logging.getLogger(
-        "backend.src.evaluation.custom_metrics.confidence_interval_overlap"
+        "backend.src.domain.evaluation.custom_metrics.confidence_interval_overlap"
     )
     target_logger.addHandler(handler)
     try:
-        custom_map = _bind_loader("backend.src.evaluation.this_module_does_not_exist")
+        custom_map = _bind_loader("backend.src.domain.evaluation.this_module_does_not_exist")
     finally:
         target_logger.removeHandler(handler)
 
@@ -83,7 +83,7 @@ def test_create_statistic_with_builtin_op_returns_builtin_class() -> None:
 
 def test_create_statistic_with_custom_op_uses_custom_map() -> None:
     custom_map = importlib.import_module(
-        "backend.src.evaluation.custom_metrics.custom_statistics"
+        "backend.src.domain.evaluation.custom_metrics.custom_statistics"
     ).CUSTOM_STATISTIC_MAP
 
     stat = create_statistic(

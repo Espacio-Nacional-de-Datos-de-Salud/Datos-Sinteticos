@@ -1,4 +1,4 @@
-.PHONY: help setup config clean-config reset-config local cli inspect train simulate eval pipeline format lint ty test test-eval coverage models simulations inspections evaluations pipelines api frontend compose compose-api compose-cli compose-prod compose-stop clean copy-repo
+.PHONY: help setup config clean-config reset-config local cli inspect train simulate eval pipeline format lint ty test test-eval coverage models simulations inspections evaluations pipelines api frontend compose compose-api compose-cli compose-prod compose-stop kill-ports nuke clean copy-repo
 
 SHELL := /bin/bash
 
@@ -15,8 +15,8 @@ endif
 
 
 API_HOST ?= 0.0.0.0
-API_PORT ?= 8000
-FRONTEND_PORT ?= 3000
+API_PORT ?= 8001
+FRONTEND_PORT ?= 3001
 FRONTEND_DIR := frontend
 NODE_MIN_VERSION ?= 20.9.0
 NODE_VERSION ?= 20
@@ -91,6 +91,7 @@ help:
 	@printf "  make compose-cli      Build and start backend, then open interactive CLI\n"
 	@printf "  make compose-prod     Build and start services in prod mode (no bind mounts, baked config)\n"
 	@printf "  make compose-stop     Stop and remove all running compose containers\n"
+	@printf "  make kill-ports       Full reset: stop compose + kill stray uvicorn/next + free ports (alias: make nuke)\n"
 	@printf "\nDev:\n"
 	@printf "  make clean        Remove generated run artifacts and local caches\n"
 	@printf "  make copy-repo    Create a clean copy of the repo in the parent folder (excludes venvs, deps, outputs, etc.)\n"
@@ -209,6 +210,21 @@ compose-prod:
 
 compose-stop:
 	$(DOCKER_COMPOSE) down
+
+kill-ports nuke:
+	@echo "==> Stopping compose containers (with orphans)..."
+	-$(DOCKER_COMPOSE) down --remove-orphans
+	@echo "==> Killing stray backend/frontend host processes..."
+	-@pkill -f 'uvicorn backend.src.api.main:app' 2>/dev/null && echo "  killed stray uvicorn" || echo "  no stray uvicorn"
+	-@pkill -f '$(FRONTEND_DIR).*next' 2>/dev/null && echo "  killed stray next" || true
+	-@pkill -f 'next-server' 2>/dev/null && echo "  killed stray next-server" || true
+	@echo "==> Freeing ports..."
+	@for p in $$(echo "$(API_PORT) $(FRONTEND_PORT) 3000 3001 8000 8001" | tr ' ' '\n' | sort -un); do \
+		pids=$$(lsof -nP -tiTCP:$$p -sTCP:LISTEN 2>/dev/null); \
+		if [ -n "$$pids" ]; then echo "  port $$p -> killing PID(s) $$pids"; kill -9 $$pids 2>/dev/null || true; \
+		else echo "  port $$p free"; fi; \
+	done
+	@echo "==> Environment clean. Relaunch with: make compose   (or make local)"
 
 clean:
 	$(CORE_PYTHON) -m backend.src.runs.catalog.cleanup

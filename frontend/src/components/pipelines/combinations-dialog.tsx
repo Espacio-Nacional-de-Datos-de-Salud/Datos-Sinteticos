@@ -515,7 +515,6 @@ function buildBase(
   }
   if (steps.evaluate) {
     job.evaluate = {
-      real_data: [],
       simulation_id: "",
       model_id: "",
     };

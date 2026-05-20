@@ -36,6 +36,9 @@ Adhere to the Conventional Commits format. Messages should be:
 **Format**: `<type>(<scope>): <subject>`
 
 - **Simple scopes only**: examples `frontend`, `backend`, `api`.
+- **Subject**: Keep it short and non-technical — one brief phrase (e.g., `add date inequality rule`) in the imperative present tense.
+- **No sign-off**: Do not add `Signed-off-by`, `Co-authored-by`, or any other trailer lines.
+- **AI agents**: Use only `<type>(<scope>): <subject>` — no body, no long descriptions, no trailers.<scope> optional and only if relevant. Should be generic for example backend, frontend api...
 
 | Type | Description |
 | :--- | :--- |
@@ -47,7 +50,6 @@ Adhere to the Conventional Commits format. Messages should be:
 | `🧪test` | Adding or correcting tests |
 | `🧹chore` | Changes to build process, tools, or libraries |
 
-- **Subject**: A short description in the imperative, present tense (e.g., `add date inequality rule` and not `Date inequality rule was added`).
 - **Emoji**: Not mandatory, just makes it visually easier to group or identify types of commits.
 ---
 
