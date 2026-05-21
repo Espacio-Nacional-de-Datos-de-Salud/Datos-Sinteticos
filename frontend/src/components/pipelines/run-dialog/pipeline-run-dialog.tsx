@@ -105,10 +105,10 @@ export function PipelineRunDialog({
         <header className="flex items-center justify-between border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
             <div
-              className={cn(
-                "h-2 w-2 rounded-full",
-                run.status === "completed" ? "bg-emerald-500" : "bg-amber-500",
-              )}
+              className="h-2 w-2 rounded-full"
+              style={{
+                backgroundColor: run.status === "completed" ? "var(--status-completed)" : "#f59e0b",
+              }}
             />
             <h3 className="text-lg font-semibold tracking-tight">{run.pipeline_id}</h3>
           </div>
@@ -174,21 +174,29 @@ export function PipelineRunDialog({
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="rounded-md border border-border bg-background p-3 text-center">
-                  <div className="text-2xl font-bold text-emerald-600">{counts.completed}</div>
-                  <div className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
+                  <div
+                    className="text-2xl font-bold rounded px-2 py-1"
+                    style={{
+                      color: "var(--status-completed)",
+                      backgroundColor: "var(--status-completed-bg)"
+                    }}
+                  >
+                    {counts.completed}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground mt-2">
                     Completados
                   </div>
                 </div>
                 <div className="rounded-md border border-border bg-background p-3 text-center">
-                  <div className="text-2xl font-bold text-red-600">{counts.failed}</div>
-                  <div className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
+                  <div className="text-2xl font-bold text-red-500">{counts.failed}</div>
+                  <div className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground mt-2">
                     Fallidos
                   </div>
                 </div>
                 <div className="rounded-md border border-border bg-background p-3 text-center">
-                  <div className="text-2xl font-bold text-amber-600">{counts.other}</div>
-                  <div className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
-                    Otros
+                  <div className="text-2xl font-bold text-amber-500">{counts.other}</div>
+                  <div className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground mt-2">
+                    En progreso
                   </div>
                 </div>
               </div>
@@ -228,7 +236,7 @@ export function PipelineRunDialog({
                 const jobStatus = job.status ?? "unknown";
                 const statusColor =
                   jobStatus === "completed"
-                    ? "text-emerald-600"
+                    ? ""
                     : jobStatus === "failed"
                       ? "text-red-600"
                       : "text-amber-600";
@@ -258,10 +266,13 @@ export function PipelineRunDialog({
                         {job.job_name ?? `job_${i + 1}`}
                       </span>
                       <Badge
-                        variant="secondary"
-                        className={cn("ml-1 text-[9px] capitalize", statusColor)}
+                        variant={jobStatus === "completed" ? "default" : "secondary"}
+                        className={cn(
+                          "ml-1 text-[9px]",
+                          jobStatus === "completed" && "!bg-blue-500/20 !text-blue-400"
+                        )}
                       >
-                        {jobStatus}
+                        {jobStatus === "completed" ? "Completado" : jobStatus === "failed" ? "Fallido" : "En progreso"}
                       </Badge>
                       {!isOpen && hasArtifacts && (
                         <span className="ml-2 truncate font-mono text-[10px] text-muted-foreground">

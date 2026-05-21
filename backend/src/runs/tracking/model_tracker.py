@@ -306,6 +306,7 @@ class ModelTracker(BaseRunTracker):
                 "model_id": self.model_id,
                 "USERPROFILENAME": USERPROFILENAME,
                 "timestamp": general_config.get_run_timestamp(),
+                "timestamp_ms": int(pd.Timestamp.utcnow().timestamp() * 1000),
                 "pipeline_id": self.pipeline_id,
                 "job_name": self.job_name,
                 "data_sources": [

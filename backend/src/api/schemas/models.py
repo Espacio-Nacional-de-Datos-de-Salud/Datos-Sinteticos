@@ -12,6 +12,7 @@ class ModelSummary(BaseModel):
     model_name: str | None = None
     status: str = ""
     timestamp: str = ""
+    timestamp_ms: int | None = None
     tables: str = ""
     train_size: int | None = None
     training_table_sizes: dict[str, int] = {}

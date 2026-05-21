@@ -247,6 +247,8 @@ class LogicalRuleManager:
                     new_rule.interaction_type = InteractionType.SUPERIMPOSED
 
                     new_rule.flip()
+                    # also have to set aux column so they dont have same name
+                    new_rule.aux_col = f"{new_rule.target_col}_flipped"
                     return
 
 
@@ -272,12 +274,13 @@ class LogicalRuleManager:
                 )
                 existing_rule.interaction_type = InteractionType.CONCATENATED
                 new_rule.interaction_type = InteractionType.CONCATENATED
-                return
-        logger.info(
-            f"No interactions detected for new rule {type(new_rule).__name__} on "
-            f"'{new_rule.table_target}'. Registered as an independent rule."
-        )
-        new_rule.interaction_type = InteractionType.ISOLATED
+        
+        if new_rule.interaction_type != InteractionType.CONCATENATED and new_rule.interaction_type != InteractionType.SUPERIMPOSED:
+            logger.info(
+                f"No interactions detected for new rule {type(new_rule).__name__} on "
+                f"'{new_rule.table_target}'. Registered as an independent rule."
+            )
+            new_rule.interaction_type = InteractionType.ISOLATED
 
     def _sort_concat_rules(self, columnNames: set[str]) -> list[LogicalRule]:
         """Sorts concatenation rules based on their dependencies to ensure correct application order
@@ -1369,6 +1372,9 @@ class DateInequalityRule(LogicalRule):
                                     Format: string parseable by pd.to_datetime (e.g.: "2020-01-01").
         constraint_operator (str): Relationship between target and constraint. Values: ">=" (default) or "<=".
                         ">=" -> target >= bound  |  "<=" -> target <= bound
+        enforce_non_negative (bool): Whether to enforce non-negative durations. Default: True.
+                        If True, negative durations are clipped to 0 during post-processing.
+                        If False, durations can be negative (allowing model flexibility).
     """
 
     origin_col: str = None
@@ -1376,6 +1382,7 @@ class DateInequalityRule(LogicalRule):
     aux_col: str = None
     constraint: str = None
     constraint_operator: str = ">="
+    enforce_non_negative: bool = True
     table_origin: str = None
     table_target: str = None
     _constraint_dt: pd.Timestamp = field(default=None, init=False, repr=False)
@@ -1442,7 +1449,8 @@ class DateInequalityRule(LogicalRule):
             ).dt.tz_localize(None)
 
         bound = self._get_bound(df)
-        df[self.aux_col] = df[self.aux_col].clip(lower=0)
+        if self.enforce_non_negative:
+            df[self.aux_col] = df[self.aux_col].clip(lower=0)
         if self.constraint_operator == ">=":
             reconstructed = bound + pd.to_timedelta(df[self.aux_col], unit="D")
         else:

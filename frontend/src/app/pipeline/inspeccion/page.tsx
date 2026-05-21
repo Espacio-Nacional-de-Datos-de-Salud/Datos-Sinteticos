@@ -25,6 +25,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { RulesPanel } from "@/components/config/rules-editor";
+import { DatasetPreviewCard } from "@/components/dataset/dataset-preview-card";
 import { DetectedTablesCard } from "@/components/inspection/detected-tables-card";
 import { FilePickerCard } from "@/components/inspection/file-picker-card";
 import { HistoryCard } from "@/components/inspection/history-card";
@@ -49,6 +50,7 @@ const INSPECCION_OUTLINE = [
   { id: "tablas-detectadas", label: "Tablas detectadas", level: 2 },
   { id: "relaciones-detectadas", label: "Relaciones detectadas", level: 2 },
   { id: "tipos-codificacion", label: "Tipos de codificación", level: 2 },
+  { id: "datos-preprocesados", label: "Datos preprocesados", level: 2 },
   { id: "historial", label: "Historial", level: 1 },
   { id: "inspecciones-previas", label: "Inspecciones previas", level: 2 },
 ] as const;
@@ -236,6 +238,11 @@ export default function InspeccionPage() {
                 {...insp.types}
                 />
               </div>
+              {insp.inspectionId && (
+                <div id="datos-preprocesados" className="scroll-mt-24">
+                  <PreprocessedDataCard inspectionId={insp.inspectionId} />
+                </div>
+              )}
             </>
           )}
         </WorkflowGroup>
@@ -296,5 +303,37 @@ export default function InspeccionPage() {
         />
       </div>
     </WizardShell>
+  );
+}
+
+function PreprocessedDataCard({ inspectionId }: { inspectionId: string }) {
+  const tablesQuery = useQuery({
+    queryKey: ["inspections", inspectionId, "preprocessed", "tables"],
+    queryFn: async () => {
+      const { data } = await api.get<string[]>(
+        `/inspections/${inspectionId}/preprocessed`,
+      );
+      return data;
+    },
+  });
+
+  return (
+    <DatasetPreviewCard
+      title="Datos preprocesados"
+      description="Vista previa del dataset que se usará para entrenar el modelo."
+      cacheKey={`inspections/${inspectionId}/preprocessed/preview`}
+      tables={tablesQuery.data ?? []}
+      isLoadingTables={tablesQuery.isLoading}
+      isError={tablesQuery.isError}
+      fetcher={async (table, params) => {
+        const { data } = await api.get<FilePreview>(
+          `/inspections/${inspectionId}/preprocessed/${encodeURIComponent(table)}`,
+          { params },
+        );
+        return data;
+      }}
+      downloadHref={`/inspections/${inspectionId}/download/preprocessed`}
+      emptyMessage="No hay datos preprocesados disponibles para esta inspección."
+    />
   );
 }

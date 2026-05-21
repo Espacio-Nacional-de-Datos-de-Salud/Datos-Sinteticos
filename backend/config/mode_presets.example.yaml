@@ -1,0 +1,61 @@
+# Mode presets for training configuration.
+# Define sensible defaults for Privacy, Balanced, and Utility modes.
+# These are merged into mostly_ai.yaml when selected.
+# Users can customize these by copying to mode_presets.yaml and editing.
+
+modes:
+  privacy:
+    label: "Modo Privacidad"
+    description: "Privacidad máxima con modelo pequeño"
+    details:
+      - "Modelo pequeño para reducir riesgo de fuga"
+      - "Privacidad diferencial robusta (ε=1.0)"
+      - "Utilidad reducida pero máxima protección"
+    icon: "🔒"
+    config:
+      model_settings:
+        model: "MOSTLY_AI/Small"
+        max_epochs: 1
+        batch_size: 16
+        enable_flexible_generation: false
+        differential_privacy:
+          max_epsilon: 1.0
+          delta: 0.00001
+          noise_multiplier: 2.0
+          max_grad_norm: 1.0
+          value_protection_epsilon: 1.0
+
+  balanced:
+    label: "Modo Equilibrado"
+    description: "Balance recomendado entre privacidad y utilidad"
+    details:
+      - "Modelo mediano para buena utilidad"
+      - "Flexible generation habilitada"
+      - "Configuración recomendada para la mayoría de casos"
+    icon: "⚖️"
+    config:
+      model_settings:
+        model: "MOSTLY_AI/Medium"
+        max_epochs: 1
+        batch_size: 16
+        enable_flexible_generation: true
+        # No differential privacy for balanced mode
+        differential_privacy: null
+
+  utility:
+    label: "Modo Utilidad"
+    description: "Máxima calidad sintética con privacidad mínima"
+    details:
+      - "Modelo grande para mejor síntesis"
+      - "Privacidad diferencial mínima"
+      - "Mejor calidad sintética pero menor privacidad"
+      - "Útil para datos no sensibles"
+    icon: "✨"
+    config:
+      model_settings:
+        model: "MOSTLY_AI/Large"
+        max_epochs: 1
+        batch_size: 32
+        enable_flexible_generation: true
+        # No differential privacy for utility mode
+        differential_privacy: null

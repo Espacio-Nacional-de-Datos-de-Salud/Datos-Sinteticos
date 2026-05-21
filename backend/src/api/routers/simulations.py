@@ -13,7 +13,11 @@ from backend.src.api.schemas.simulations import (
     SimulationJob,
     SimulationSummary,
 )
+from backend.src.api.schemas.files import FilePreview
 from backend.src.config.general import SIM_CARD_FILENAME, SIMULATIONS_DIR
+from backend.src.runs.catalog.simulations import SYNTHETIC_DATA_DIRNAME
+from backend.src.sessions.files import FilePreviewError, read_file_preview
+from pathlib import Path
 from backend.src.infrastructure.cancellation import register as register_cancel
 from backend.src.infrastructure.cancellation import request_cancel
 from backend.src.runs.card_io import update_card_status
@@ -255,6 +259,73 @@ def download_simulation_folder(simulation_id: SimulationId) -> StreamingResponse
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{bundle.archive_name}"'},
     )
+
+
+def _resolve_synthetic_table_file(simulation_id: SimulationId, table: str) -> Path:
+    """Resolve ``<simulation>/synthetic_data/<table>{,_synthetic}.{parquet,csv}``."""
+    if "/" in table or "\\" in table or table.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid table name.")
+    folder = Path(SIMULATIONS_DIR) / simulation_id / SYNTHETIC_DATA_DIRNAME
+    if not folder.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Synthetic data not found for simulation '{simulation_id}'.",
+        )
+    candidates = [
+        f"{table}_synthetic.parquet",
+        f"{table}_synthetic.csv",
+        f"{table}.parquet",
+        f"{table}.csv",
+    ]
+    for name in candidates:
+        candidate = folder / name
+        if candidate.is_file():
+            return candidate
+    raise HTTPException(
+        status_code=404,
+        detail=f"Synthetic table '{table}' not found in simulation '{simulation_id}'.",
+    )
+
+
+@router.get("/{simulation_id}/synthetic", response_model=list[str])
+def list_simulation_synthetic_tables(simulation_id: SimulationId) -> list[str]:
+    """Lists synthetic table names available for a simulation."""
+    folder = Path(SIMULATIONS_DIR) / simulation_id / SYNTHETIC_DATA_DIRNAME
+    if not folder.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Synthetic data not found for simulation '{simulation_id}'.",
+        )
+    names: set[str] = set()
+    for entry in folder.iterdir():
+        if not entry.is_file() or entry.suffix.lower() not in {".parquet", ".csv"}:
+            continue
+        stem = entry.stem
+        if stem.endswith("_synthetic"):
+            stem = stem[: -len("_synthetic")]
+        names.add(stem)
+    return sorted(names)
+
+
+@router.get("/{simulation_id}/synthetic/{table}", response_model=FilePreview)
+def get_simulation_synthetic_preview(
+    simulation_id: SimulationId,
+    table: str,
+    sample_rows: int = Query(default=50, ge=0, le=1000),
+    offset: int = Query(default=0, ge=0),
+    include_total: bool = Query(default=False),
+) -> FilePreview:
+    """Returns preview rows for one synthetic table."""
+    target = _resolve_synthetic_table_file(simulation_id, table)
+    try:
+        return read_file_preview(
+            target,
+            sample_rows=sample_rows,
+            offset=offset,
+            include_total=include_total,
+        )
+    except FilePreviewError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from None
 
 
 @router.get("/{simulation_id}/columns", response_model=dict[str, list[str]])

@@ -22,6 +22,7 @@ from backend.src.config.general import (
     METADATA_FILENAME,
     MODELS_DIR,
     PIPELINES_DIR,
+    PROCESSED_DATA_DIRNAME,
     PROFILING_REPORTS_DIRNAME,
     SIMULATIONS_DIR,
 )
@@ -30,6 +31,7 @@ from backend.src.infrastructure.errors import (
     EvaluationNotFoundError,
     GeneratorEssentialsIncompleteError,
     InspectionNotFoundError,
+    InspectionProcessedDataNotFoundError,
     InspectionProfilingNotFoundError,
     ModelNotFoundError,
     PipelineNotFoundError,
@@ -229,6 +231,35 @@ def build_full_inspection_bundle(inspection_id: str) -> DownloadBundle:
     return DownloadBundle(
         archive_name=f"{inspection_id}.zip",
         members=_walk_folder_members(folder, inspection_id),
+    )
+
+
+def build_inspection_processed_data_bundle(inspection_id: str) -> DownloadBundle:
+    """Bundle just the ``processed_data/`` subfolder of an inspection.
+
+    Raises ``InspectionNotFoundError`` if the inspection itself is missing and
+    ``InspectionProcessedDataNotFoundError`` if the preprocessed data was never
+    produced or the folder is empty.
+    """
+    inspection_folder = os.path.join(INSPECTIONS_DIR, inspection_id)
+    if not os.path.isdir(inspection_folder):
+        raise InspectionNotFoundError(f"Inspection folder not found: {inspection_folder}")
+
+    processed_folder = os.path.join(inspection_folder, PROCESSED_DATA_DIRNAME)
+    if not os.path.isdir(processed_folder):
+        raise InspectionProcessedDataNotFoundError(
+            f"Processed data not found for inspection '{inspection_id}'."
+        )
+
+    members = _walk_folder_members(processed_folder, PROCESSED_DATA_DIRNAME)
+    if not members:
+        raise InspectionProcessedDataNotFoundError(
+            f"Processed data folder is empty: {processed_folder}"
+        )
+
+    return DownloadBundle(
+        archive_name=f"{inspection_id}_processed_data.zip",
+        members=members,
     )
 
 

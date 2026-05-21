@@ -22,6 +22,7 @@ The inspection step is special in two ways the API still relies on:
 import os
 from dataclasses import dataclass
 
+import pandas as pd
 from backend.src.config.general import (
     INSPECTION_CARD_FILENAME,
     INSPECTION_RUN_FOLDER_PREFIX,
@@ -117,6 +118,8 @@ class InspectionTracker(BaseRunTracker):
                 "inspection_id": tracker.inspection_id,
                 "inspection_name": tracker.inspection_id,
                 "status": "in_progress",
+                "timestamp": tracker.timestamp,
+                "timestamp_ms": int(pd.Timestamp.utcnow().timestamp() * 1000),
                 # The flow patches the total once profiling is known (it
                 # may drop the trailing phase). Default to the full list so
                 # the initial poll already shows a sensible bar.

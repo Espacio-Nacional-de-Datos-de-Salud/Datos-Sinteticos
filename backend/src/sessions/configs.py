@@ -93,6 +93,7 @@ _ID_ALIASES: dict[str, str] = {
     "evaluation": "evaluation.yaml",
     # "statistics" points at evaluation.yaml; consumers read the ``statistics:`` key.
     "statistics": "evaluation.yaml",
+    "mode_presets": "mode_presets.yaml",
 }
 
 

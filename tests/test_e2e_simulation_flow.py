@@ -27,7 +27,10 @@ def fake_engine(monkeypatch: pytest.MonkeyPatch):
     """
     fake = MagicMock()
     fake.return_value.simulate = MagicMock(
-        return_value={"patients": pd.DataFrame({"id": [1, 2], "age": [25, 30]})}
+        return_value=(
+            {"patients": pd.DataFrame({"id": [1, 2], "age": [25, 30]})},
+            "sd_test_1",
+        )
     )
     fake.return_value.load_generator_by_id = MagicMock(return_value=(object(), None))
     monkeypatch.setattr(simulation_service, "MostlyAIEngine", fake)

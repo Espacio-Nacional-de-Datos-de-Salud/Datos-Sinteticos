@@ -52,6 +52,10 @@ class InspectionProfilingNotFoundError(Exception):
     """Profiling reports subfolder was not found (or empty) inside an inspection."""
 
 
+class InspectionProcessedDataNotFoundError(Exception):
+    """Processed-data subfolder was not found (or empty) inside an inspection."""
+
+
 class PipelineNotFoundError(Exception):
     """Pipeline folder was not found."""
 

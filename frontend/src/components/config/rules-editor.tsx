@@ -90,6 +90,8 @@ type Rule = {
   referenced_table?: string;
   constraint?: string | number | null;
   constraint_operator?: ">=" | "<=";
+  // date_inequality
+  enforce_non_negative?: boolean;
   // Derived-column rule fields (shared)
   drop_origin?: boolean;
   reconstruct_origin?: boolean;
@@ -159,6 +161,7 @@ const RULE_TYPE_FIELDS: Record<RuleType, (keyof Rule)[]> = {
     "aux_col",
     "constraint",
     "constraint_operator",
+    "enforce_non_negative",
   ],
   numeric_inequality: [
     "table_origin",
@@ -878,6 +881,26 @@ function RuleForm({
               className="mt-1"
             />
           </div>
+
+          {draft.type === "date_inequality" && (
+            <div className="col-span-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={draft.enforce_non_negative !== false}
+                  onChange={(e) =>
+                    update({ enforce_non_negative: e.target.checked })
+                  }
+                />
+                <span>Forzar duraciones no negativas</span>
+              </label>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Limita las duraciones a valores ≥ 0. Desactiva para permitir
+                duraciones negativas (p. ej., edades futuras).
+              </p>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">

@@ -48,6 +48,7 @@ def list_available_inspections() -> list[dict]:
             "status": "",
             "folder": folder,
             "timestamp": "",
+            "timestamp_ms": None,
             "tables": {},
             "file_paths": [],
             "progress": None,
@@ -60,6 +61,7 @@ def list_available_inspections() -> list[dict]:
             info["inspection_name"] = card.get("inspection_name", "") or info["inspection_id"]
             info["status"] = card.get("status", "")
             info["timestamp"] = card.get("timestamp", "")
+            info["timestamp_ms"] = card.get("timestamp_ms")
             info["tables"] = card.get("tables", {}) or {}
             info["file_paths"] = card.get("file_paths", []) or []
             info["progress"] = card.get("progress")

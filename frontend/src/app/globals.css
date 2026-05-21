@@ -136,6 +136,9 @@
   --sidebar-accent-foreground: #FFFFFF;
   --sidebar-border: rgba(255, 255, 255, 0.10);
   --sidebar-ring: #FFDB00;
+  /* Status colors */
+  --status-completed: #5eb3ff;
+  --status-completed-bg: rgba(94, 179, 255, 0.15);
 }
 
 @layer base {

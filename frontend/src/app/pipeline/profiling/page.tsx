@@ -13,8 +13,9 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUpstreamSelection } from "@/components/pipeline-step/use-upstream-selection";
 import { api, type InspectionSummary, type ProfilingReports } from "@/lib/api";
-import { statusBadgeVariant } from "@/lib/job-status";
+import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
+import { cn } from "@/lib/utils";
 
 const PROFILING_OUTLINE = [
   { id: "preparacion", label: "Preparación", level: 1 },
@@ -117,8 +118,13 @@ export default function ProfilingPage() {
                     {selectedInspection.inspection_name || selectedInspection.inspection_id}
                   </span>
                 </div>
-                <Badge variant={statusBadgeVariant(selectedInspection.status)}>
-                  {selectedInspection.status}
+                <Badge
+                  variant={statusBadgeVariant(selectedInspection.status)}
+                  className={cn(
+                    selectedInspection.status === "completed" && "!bg-blue-500/20 !text-blue-400"
+                  )}
+                >
+                  {translateStatus(selectedInspection.status)}
                 </Badge>
                 <div className="text-muted-foreground">
                   {Object.keys(selectedInspection.tables ?? {}).length} tabla(s)

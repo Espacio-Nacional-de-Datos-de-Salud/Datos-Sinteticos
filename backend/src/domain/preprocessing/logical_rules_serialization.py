@@ -22,6 +22,7 @@ output is round-trippable.
 from __future__ import annotations
 
 import dataclasses
+from enum import Enum
 from typing import Any
 
 import numpy as np
@@ -54,6 +55,8 @@ class RuleManagerSerializationError(ValueError):
 def _encode_value(value: Any) -> Any:
     if isinstance(value, pd.Timestamp):
         return {"__ts__": value.isoformat()}
+    if isinstance(value, Enum):
+        return {"__enum__": [type(value).__name__, value.name]}
     if isinstance(value, set):
         return {"__set__": [_encode_value(v) for v in sorted(value, key=repr)]}
     if isinstance(value, tuple):
@@ -74,6 +77,12 @@ def _decode_value(value: Any) -> Any:
         payload = value[tag]
         if tag == "__ts__":
             return pd.Timestamp(payload)
+        if tag == "__enum__":
+            enum_class_name, enum_member_name = payload
+            enum_class = getattr(_rules_module, enum_class_name, None)
+            if enum_class is None:
+                raise RuleManagerSerializationError(f"Unknown enum class: {enum_class_name!r}")
+            return enum_class[enum_member_name]
         if tag == "__set__":
             return {_decode_value(v) for v in payload}
         if tag == "__tuple__":

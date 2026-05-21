@@ -8,6 +8,7 @@ import { Database, Trash2, Upload } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   Card,
   CardContent,
@@ -400,18 +401,19 @@ export function FilePickerCard({
               <span>Generar informes de profiling (ydata-profiling)</span>
             </label>
 
-
-
-            <Button
-              type="button"
-              className="w-full"
-              disabled={isStartDisabled || isStarting}
-              onClick={() => onStart(enableProfiling)}
-            >
-              {isStarting
-                ? "Iniciando…"
-                : `Iniciar Inspección (${selected.size})`}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                className="flex-1"
+                disabled={isStartDisabled || isStarting}
+                onClick={() => onStart(enableProfiling)}
+              >
+                {isStarting
+                  ? "Iniciando…"
+                  : `Iniciar Inspección (${selected.size})`}
+              </Button>
+              <Tooltip content="Analiza los archivos seleccionados para detectar automáticamente tablas, relaciones y tipos de datos. El sistema identificará claves primarias, foráneas y otros patrones en tus datos." side="left" />
+            </div>
           </CardContent>
         </TabsContent>
 

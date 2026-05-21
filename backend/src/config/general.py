@@ -111,7 +111,7 @@ else:
 
 
 _RUN_TIMESTAMP: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "RUN_TIMESTAMP", default=pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    "RUN_TIMESTAMP", default=pd.Timestamp.utcnow().strftime("%Y%m%d_%H%M%S")
 )
 
 
@@ -122,7 +122,7 @@ def get_run_timestamp() -> str:
 
 def refresh_run_timestamp() -> str:
     """Refresh ``RUN_TIMESTAMP`` for this context and return it."""
-    new_ts = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    new_ts = pd.Timestamp.utcnow().strftime("%Y%m%d_%H%M%S")
     _RUN_TIMESTAMP.set(new_ts)
     return new_ts
 

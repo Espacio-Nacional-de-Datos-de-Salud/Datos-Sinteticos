@@ -12,6 +12,7 @@ class InspectionSummary(BaseModel):
     inspection_name: str = ""
     status: str = ""
     timestamp: str = ""
+    timestamp_ms: int | None = None
     tables: dict[str, int] = {}
     file_paths: list[str] = []
     progress: JobProgress | None = None

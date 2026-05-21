@@ -59,6 +59,7 @@ export function InspectionStatusCard({
               status={inspection.status}
               progress={inspection.progress}
               timestamp={inspection.timestamp}
+              timestamp_ms={inspection.timestamp_ms}
             />
             {inspection.file_paths.length > 0 && (
               <p className="text-xs text-muted-foreground">

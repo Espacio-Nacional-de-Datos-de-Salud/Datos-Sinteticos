@@ -369,6 +369,130 @@ def test_detect_rule_interactions_raises_on_superimposition() -> None:
         )
 
 
+def test_detect_rule_interactions_flips_isolated_date_inequality_rules() -> None:
+    manager = LogicalRuleManager(rules=[])
+
+    existing_rule = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="visit_start_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    new_rule = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="admission_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+
+    assert manager.add_rule(existing_rule) is True
+    assert manager.add_rule(new_rule) is True
+
+    assert existing_rule.interaction_type == InteractionType.SUPERIMPOSED
+    assert new_rule.interaction_type == InteractionType.SUPERIMPOSED
+    assert new_rule.constraint_operator == ">="
+    assert new_rule.origin_col == "visit_end_date"
+    assert new_rule.target_col == "admission_date"
+    assert existing_rule.target_col == "visit_end_date"
+
+    # now sort and make sure the new rule gets moved before the existing rule since it depends on the same target column
+    sorted_rules = manager._sort_concat_rules(
+        {"visits.visit_start_date", "visits.visit_end_date", "visits.admission_date"}
+    )
+    assert sorted_rules[0] == new_rule
+    assert sorted_rules[1] == existing_rule
+
+
+def test_detect_rule_interactions_raises_when_existing_rule_is_concatenated() -> None:
+    manager = LogicalRuleManager(rules=[])
+
+    existing_rule = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="visit_start_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    existing_rule.interaction_type = InteractionType.CONCATENATED
+    manager.rules.append(existing_rule)
+
+    new_rule = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="admission_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+
+    with pytest.raises(RuleSuperimpositionError):
+        manager._detect_rule_interactions(new_rule)
+
+
+def test_detect_rule_interactions_flips_isolated_numeric_inequality_rules() -> None:
+    manager = LogicalRuleManager(rules=[])
+
+    existing_rule = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="min_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    new_rule = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="max_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+
+    assert manager.add_rule(existing_rule) is True
+    assert manager.add_rule(new_rule) is True
+
+    assert existing_rule.interaction_type == InteractionType.SUPERIMPOSED
+    assert new_rule.interaction_type == InteractionType.SUPERIMPOSED
+    assert new_rule.constraint_operator == ">="
+    assert new_rule.origin_col == "lab_value"
+    assert new_rule.target_col == "max_value"
+    assert new_rule.aux_col == "max_value_flipped"
+    assert existing_rule.target_col == "lab_value"
+
+    sorted_rules = manager._sort_concat_rules(
+        {"labs.min_value", "labs.lab_value", "labs.max_value"}
+    )
+    assert sorted_rules[0] == new_rule
+    assert sorted_rules[1] == existing_rule
+
+
+def test_detect_rule_interactions_raises_when_existing_numeric_rule_is_concatenated() -> (
+    None
+):
+    manager = LogicalRuleManager(rules=[])
+
+    existing_rule = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="min_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    existing_rule.interaction_type = InteractionType.CONCATENATED
+    manager.rules.append(existing_rule)
+
+    new_rule = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="max_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+
+    with pytest.raises(RuleSuperimpositionError):
+        manager._detect_rule_interactions(new_rule)
+
+
 def test_detect_rule_interactions_no_op() -> None:
     manager = LogicalRuleManager(rules=[])
 
@@ -911,6 +1035,103 @@ def test_full_pipeline_with_add_rule_orders_and_transforms() -> None:
     assert "visit_end_date" in reconstructed["visits"].columns
     assert "lab_value" in reconstructed["labs"].columns
     assert "person_id" in reconstructed["conditions"].columns
+
+
+def test_full_pipeline_with_add_rule_valid_and_invalid_flips() -> None:
+    manager = LogicalRuleManager()
+
+    existing_date_rule = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="visit_start_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    new_date_rule = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="admission_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+
+    assert manager.add_rule(existing_date_rule) is True
+    assert manager.add_rule(new_date_rule) is True
+
+    assert existing_date_rule.interaction_type == InteractionType.SUPERIMPOSED
+    assert new_date_rule.interaction_type == InteractionType.SUPERIMPOSED
+    assert new_date_rule.constraint_operator == ">="
+    assert new_date_rule.origin_col == "visit_end_date"
+    assert new_date_rule.target_col == "admission_date"
+
+    existing_numeric_rule = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="min_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    new_numeric_rule = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="max_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+
+    assert manager.add_rule(existing_numeric_rule) is True
+    assert manager.add_rule(new_numeric_rule) is True
+
+    assert existing_numeric_rule.interaction_type == InteractionType.SUPERIMPOSED
+    assert new_numeric_rule.interaction_type == InteractionType.SUPERIMPOSED
+    assert new_numeric_rule.constraint_operator == ">="
+    assert new_numeric_rule.origin_col == "lab_value"
+    assert new_numeric_rule.target_col == "max_value"
+    assert new_numeric_rule.aux_col == "max_value_flipped"
+
+    valid_concat_ineq_date = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="visit_end_date",
+        target_col="discharge_date",
+        constraint_operator="<=",
+    )
+    assert manager.add_rule(valid_concat_ineq_date) is True
+    assert valid_concat_ineq_date.interaction_type == InteractionType.CONCATENATED
+    assert valid_concat_ineq_date.origin_col == "visit_end_date"
+    assert valid_concat_ineq_date.target_col == "discharge_date"
+
+    invalid_date = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="admission_date",
+        target_col="discharge_date",
+        constraint_operator="<=",
+    )
+
+    assert manager.add_rule(invalid_date) is False
+    assert invalid_date not in manager.rules
+
+    existing_invalid_numeric = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="min_value",
+        target_col="range_value",
+        constraint_operator="<=",
+    )
+    existing_invalid_numeric.interaction_type = InteractionType.CONCATENATED
+    manager.rules.append(existing_invalid_numeric)
+
+    invalid_numeric = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="max_value",
+        target_col="range_value",
+        constraint_operator="<=",
+    )
+
+    assert manager.add_rule(invalid_numeric) is False
+    assert invalid_numeric not in manager.rules
 
 
 def test_sort_concat_rules_skips_when_origin_column_missing() -> None:

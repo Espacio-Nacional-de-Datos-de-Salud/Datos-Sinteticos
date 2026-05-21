@@ -11,8 +11,8 @@ COPY . .
 EXPOSE 3000
 
 FROM base AS dev
-CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
+CMD ["node_modules/.bin/next", "dev", "--hostname", "0.0.0.0"]
 
 FROM base AS prod
 RUN npm run build
-CMD ["npm", "start"]
+CMD ["node_modules/.bin/next", "start", "-H", "0.0.0.0"]

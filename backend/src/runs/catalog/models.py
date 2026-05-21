@@ -81,6 +81,7 @@ def list_available_models() -> list[dict]:
             "folder": folder,
             "status": "",
             "timestamp": "",
+            "timestamp_ms": None,
             "tables": "",
             "train_size": None,
             "training_table_sizes": {},
@@ -99,6 +100,7 @@ def list_available_models() -> list[dict]:
                 model_info["model_name"] = card.get("model_name") or card.get("model_id")
                 model_info["status"] = card.get("status", "")
                 model_info["timestamp"] = card.get("timestamp", "")
+                model_info["timestamp_ms"] = card.get("timestamp_ms")
                 model_info["data_sources"] = card.get("data_sources", [])
                 model_info["progress"] = card.get("progress")
                 model_info["inspection_id"] = card.get("inspection_id")

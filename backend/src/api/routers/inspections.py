@@ -22,6 +22,7 @@ from backend.src.config.general import (
     INSPECTION_CARD_FILENAME,
     INSPECTION_METADATA_FILENAME,
     INSPECTIONS_DIR,
+    PROCESSED_DATA_DIRNAME,
     PROFILING_REPORT_PATTERN,
     PROFILING_REPORTS_DIRNAME,
 )
@@ -30,9 +31,12 @@ from backend.src.infrastructure.cancellation import request_cancel
 from backend.src.runs.card_io import update_card_status
 from backend.src.runs.catalog.downloads import (
     build_full_inspection_bundle,
+    build_inspection_processed_data_bundle,
     build_inspection_profiling_bundle,
     build_zip_stream,
 )
+from backend.src.api.schemas.files import FilePreview
+from backend.src.sessions.files import FilePreviewError, read_file_preview
 from backend.src.runs.catalog.inspections import (
     cleanup_inspections as cleanup_inspections_catalog,
 )
@@ -50,6 +54,7 @@ from backend.src.runs.catalog.inspections import (
 )
 from backend.src.infrastructure.errors import (
     InspectionNotFoundError,
+    InspectionProcessedDataNotFoundError,
     InspectionProfilingNotFoundError,
 )
 from backend.src.domain.id_validation import InspectionId
@@ -545,6 +550,85 @@ def get_inspection_profiling_report(inspection_id: InspectionId, table: str) -> 
             ),
         )
     return FileResponse(report_path, media_type="text/html")
+
+
+def _resolve_inspection_processed_dir(inspection_id: InspectionId) -> Path:
+    folder = Path(INSPECTIONS_DIR) / inspection_id
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
+    processed = folder / PROCESSED_DATA_DIRNAME
+    if not processed.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Processed data not found for inspection '{inspection_id}'. "
+                "It may still be in progress or the run failed."
+            ),
+        )
+    return processed
+
+
+@router.get("/{inspection_id}/preprocessed", response_model=list[str])
+def list_inspection_preprocessed_tables(inspection_id: InspectionId) -> list[str]:
+    """Lists table names present in the inspection's ``processed_data/`` folder."""
+    processed = _resolve_inspection_processed_dir(inspection_id)
+    return sorted(p.stem for p in processed.iterdir() if p.is_file() and p.suffix == ".parquet")
+
+
+@router.get("/{inspection_id}/preprocessed/{table}", response_model=FilePreview)
+def get_inspection_preprocessed_preview(
+    inspection_id: InspectionId,
+    table: str,
+    sample_rows: int = Query(default=50, ge=0, le=1000),
+    offset: int = Query(default=0, ge=0),
+    include_total: bool = Query(default=False),
+) -> FilePreview:
+    """Returns preview rows for one preprocessed table.
+
+    Mirrors the ``/files/preview`` shape so the frontend can reuse the same
+    table-explorer UI for both raw and preprocessed views.
+    """
+    if "/" in table or "\\" in table or table.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid table name.")
+    processed = _resolve_inspection_processed_dir(inspection_id)
+    target = processed / f"{table}.parquet"
+    if not target.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Preprocessed table '{table}' not found for inspection '{inspection_id}'.",
+        )
+    try:
+        return read_file_preview(
+            target,
+            sample_rows=sample_rows,
+            offset=offset,
+            include_total=include_total,
+        )
+    except FilePreviewError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from None
+
+
+@router.get(
+    "/{inspection_id}/download/preprocessed",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"application/zip": {}}}},
+)
+def download_inspection_preprocessed(inspection_id: InspectionId) -> StreamingResponse:
+    """Downloads the ``processed_data/`` subfolder as a zip archive."""
+    try:
+        bundle = build_inspection_processed_data_bundle(inspection_id)
+    except InspectionNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Inspection '{inspection_id}' not found."
+        ) from None
+    except InspectionProcessedDataNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+
+    return StreamingResponse(
+        build_zip_stream(bundle),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{bundle.archive_name}"'},
+    )
 
 
 @router.get(

@@ -53,6 +53,9 @@ export function HistoryCard<T>({
   isCleaning,
   isPurging,
   collapseLabel,
+  onSelect,
+  activeId,
+  getRowId,
 }: {
   title: string;
   description: string;
@@ -71,6 +74,11 @@ export function HistoryCard<T>({
   isPurging: boolean;
   /** Plural noun for the collapse toggle's aria-label, e.g. "generaciones". */
   collapseLabel: string;
+  /** When provided, rows become clickable and load that run as active. */
+  onSelect?: (id: string) => void;
+  activeId?: string | null;
+  /** Required when onSelect is provided. Returns the row's id. */
+  getRowId?: (item: T) => string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -134,23 +142,40 @@ export function HistoryCard<T>({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((item, i) => (
-                  <TableRow key={i}>
-                    {columns.map((col) => (
+                {items.map((item, i) => {
+                  const rowId = getRowId ? getRowId(item) : undefined;
+                  const selectable = onSelect != null && rowId != null;
+                  const isActive = selectable && rowId === activeId;
+                  return (
+                    <TableRow
+                      key={i}
+                      onClick={selectable ? () => onSelect!(rowId!) : undefined}
+                      className={
+                        selectable
+                          ? "cursor-pointer " +
+                            (isActive ? "bg-primary/5" : "hover:bg-accent")
+                          : undefined
+                      }
+                    >
+                      {columns.map((col) => (
+                        <TableCell
+                          key={col.key}
+                          className={col.align === "right" ? "text-right" : undefined}
+                        >
+                          {col.render(item)}
+                        </TableCell>
+                      ))}
                       <TableCell
-                        key={col.key}
-                        className={col.align === "right" ? "text-right" : undefined}
+                        className="text-right"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        {col.render(item)}
+                        <div className="flex items-center justify-end gap-1">
+                          {actionsCell(item)}
+                        </div>
                       </TableCell>
-                    ))}
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {actionsCell(item)}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

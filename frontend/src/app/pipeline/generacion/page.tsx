@@ -16,7 +16,9 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download, Play, Trash2, Wand2, XCircle } from "lucide-react";
+import { Tooltip } from "@/components/ui/tooltip";
 
+import { DatasetPreviewCard } from "@/components/dataset/dataset-preview-card";
 import {
   ConditionalConfigPanel,
   EMPTY_CONDITIONAL_CONFIG,
@@ -42,11 +44,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   api,
   API_BASE_URL,
+  type FilePreview,
   type ModelSummary,
   type SimulationSummary,
 } from "@/lib/api";
-import { statusBadgeVariant } from "@/lib/job-status";
+import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
+import { cn } from "@/lib/utils";
 
 type StartInput = {
   model_id: string;
@@ -61,8 +65,10 @@ const GENERACION_OUTLINE = [
   { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
   { id: "nueva-generacion", label: "Nueva generación", level: 2 },
   { id: "condiciones", label: "Configuración condicional", level: 2 },
+  { id: "ejecutar-generacion", label: "Ejecutar generación", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
   { id: "generacion-actual", label: "Generación actual", level: 2 },
+  { id: "datos-sinteticos", label: "Datos sintéticos", level: 2 },
   { id: "historial", label: "Historial", level: 1 },
   { id: "generaciones", label: "Generaciones", level: 2 },
 ] as const;
@@ -166,7 +172,14 @@ export default function GeneracionPage() {
       key: "status",
       header: "Estado",
       width: "12%",
-      render: (s) => <Badge variant={statusBadgeVariant(s.status)}>{s.status}</Badge>,
+      render: (s) => (
+        <Badge
+          variant={statusBadgeVariant(s.status)}
+          className={cn(s.status === "completed" && "!bg-blue-500/20 !text-blue-400")}
+        >
+          {translateStatus(s.status)}
+        </Badge>
+      ),
     },
     {
       key: "model",
@@ -214,7 +227,10 @@ export default function GeneracionPage() {
                 <Wand2 className="h-5 w-5" />
               </div>
               <div className="min-w-0 space-y-1">
-                <Label htmlFor="model-select">Modelo</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="model-select">Modelo</Label>
+                  <Tooltip content="Selecciona el modelo entrenado que será usado para generar los datos sintéticos. Puede haber varios modelos disponibles si has realizado múltiples entrenamientos." />
+                </div>
                 {modelsQuery.isLoading ? (
                   <Skeleton className="h-9 w-full" />
                 ) : completedModels.length === 0 ? (
@@ -241,7 +257,10 @@ export default function GeneracionPage() {
                 )}
               </div>
               <div className="space-y-1">
-                <Label htmlFor="synthetic-format">Formato</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="synthetic-format">Formato</Label>
+                  <Tooltip content="Selecciona el formato en el que deseas descargar los datos sintéticos. CSV es universal y fácil de procesar; Parquet es más compacto y eficiente." />
+                </div>
                 <select
                   id="synthetic-format"
                   value={syntheticDataFileFormat}
@@ -252,26 +271,6 @@ export default function GeneracionPage() {
                   <option value="parquet">Parquet</option>
                 </select>
               </div>
-              <Button
-                type="button"
-                disabled={!selectedModelId || lc.isStarting || lc.isRunning}
-                onClick={() =>
-                  lc.start({
-                    model_id: selectedModelId,
-                    sampleSize,
-                    tableSampleSizes,
-                    syntheticDataFileFormat,
-                    conditional: conditionalConfig,
-                  })
-                }
-              >
-                <Play className="mr-2 h-4 w-4" />
-                {lc.isStarting
-                  ? "Iniciando…"
-                  : lc.isRunning
-                    ? "En curso…"
-                    : "Iniciar generación"}
-              </Button>
               </div>
 
               {selectedModelId && Object.keys(originalSizes).length > 0 && (
@@ -292,6 +291,39 @@ export default function GeneracionPage() {
             config={conditionalConfig}
             onChange={setConditionalConfig}
             />
+          </div>
+
+          <div id="ejecutar-generacion" className="scroll-mt-24">
+            <Card>
+              <CardContent className="flex flex-col gap-2 p-4 md:flex-row md:items-center">
+                <div className="flex-1 flex items-start gap-2">
+                  <p className="text-sm text-muted-foreground pt-0.5">
+                    Configura los parámetros de generación y haz clic en ejecutar.
+                  </p>
+                  <Tooltip content="Se generará un nuevo dataset sintético basado en el modelo y los parámetros que hayas configurado. El dataset estará disponible para descargar una vez que la generación se complete." side="left" />
+                </div>
+                <Button
+                  type="button"
+                  disabled={!selectedModelId || lc.isStarting || lc.isRunning}
+                  onClick={() =>
+                    lc.start({
+                      model_id: selectedModelId,
+                      sampleSize,
+                      tableSampleSizes,
+                      syntheticDataFileFormat,
+                      conditional: conditionalConfig,
+                    })
+                  }
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  {lc.isStarting
+                    ? "Iniciando…"
+                    : lc.isRunning
+                      ? "En curso…"
+                      : "Iniciar generación"}
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         </WorkflowGroup>
 
@@ -358,13 +390,19 @@ export default function GeneracionPage() {
             }
             />
           </div>
+
+          {lc.active?.status === "completed" && lc.activeId && (
+            <div id="datos-sinteticos" className="scroll-mt-24">
+              <SyntheticDataCard simulationId={lc.activeId} />
+            </div>
+          )}
         </WorkflowGroup>
 
         <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
           <div id="generaciones" className="scroll-mt-24">
             <HistoryCard
             title="Generaciones"
-            description="Catálogo completo de generaciones en el servidor."
+            description="Catálogo completo de generaciones en el servidor. Haz click para cargar una generación pasada y ver sus datos sintéticos."
             items={lc.list}
             isLoading={lc.listQuery.isLoading}
             isError={lc.listQuery.isError}
@@ -377,6 +415,9 @@ export default function GeneracionPage() {
             onPurge={() => setConfirmPurge(true)}
             isCleaning={lc.isCleaning}
             isPurging={lc.isPurging}
+            activeId={lc.activeId}
+            getRowId={(s) => s.simulation_id}
+            onSelect={(id) => lc.setActiveId(id)}
             actionsCell={(s) =>
               s.status === "in_progress" ? (
                 <button
@@ -434,5 +475,37 @@ export default function GeneracionPage() {
         onPurge={lc.purge}
       />
     </WizardShell>
+  );
+}
+
+function SyntheticDataCard({ simulationId }: { simulationId: string }) {
+  const tablesQuery = useQuery({
+    queryKey: ["simulations", simulationId, "synthetic", "tables"],
+    queryFn: async () => {
+      const { data } = await api.get<string[]>(
+        `/simulations/${simulationId}/synthetic`,
+      );
+      return data;
+    },
+  });
+
+  return (
+    <DatasetPreviewCard
+      title="Datos sintéticos"
+      description="Vista previa del dataset sintético generado por esta simulación."
+      cacheKey={`simulations/${simulationId}/synthetic/preview`}
+      tables={tablesQuery.data ?? []}
+      isLoadingTables={tablesQuery.isLoading}
+      isError={tablesQuery.isError}
+      fetcher={async (table, params) => {
+        const { data } = await api.get<FilePreview>(
+          `/simulations/${simulationId}/synthetic/${encodeURIComponent(table)}`,
+          { params },
+        );
+        return data;
+      }}
+      downloadHref={`/simulations/${simulationId}/download/synthetic-dataset`}
+      emptyMessage="No hay datos sintéticos disponibles para esta generación."
+    />
   );
 }

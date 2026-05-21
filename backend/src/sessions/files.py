@@ -193,8 +193,29 @@ def preview_file(
     data_root = _DATA_ROOT.resolve()
     if data_root not in target.parents and target != data_root:
         raise FilePreviewError(f"Path outside data root: {path}")
+    return read_file_preview(
+        target,
+        sample_rows=sample_rows,
+        offset=offset,
+        include_total=include_total,
+        csv_delimiter=csv_delimiter,
+    )
+
+
+def read_file_preview(
+    target: Path,
+    sample_rows: int = 0,
+    offset: int = 0,
+    include_total: bool = False,
+    csv_delimiter: str = ",",
+) -> FilePreview:
+    """Reads columns and (optionally) sample rows from a resolved file path.
+
+    Caller is responsible for path-safety checks. Use this when previewing
+    files outside ``backend/data/`` (e.g. preprocessed/synthetic outputs).
+    """
     if not target.is_file():
-        raise FilePreviewError(f"File not found: {path}")
+        raise FilePreviewError(f"File not found: {target}")
 
     extension = target.suffix.lstrip(".").lower()
     if extension not in ALLOWED_EXTENSIONS:

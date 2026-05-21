@@ -36,8 +36,9 @@ import {
   type ModelSummary,
   type SimulationSummary,
 } from "@/lib/api";
-import { statusBadgeVariant } from "@/lib/job-status";
+import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
+import { cn } from "@/lib/utils";
 
 type StartInput = { simulation_id: string };
 
@@ -46,6 +47,7 @@ const AUDITORIA_OUTLINE = [
   { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
   { id: "nueva-evaluacion", label: "Nueva evaluación", level: 2 },
   { id: "configuracion-avanzada", label: "Configuración avanzada", level: 2 },
+  { id: "ejecutar-evaluacion", label: "Ejecutar evaluación", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
   { id: "evaluacion-actual", label: "Evaluación actual", level: 2 },
   { id: "reporte", label: "Reporte", level: 1 },
@@ -145,7 +147,14 @@ export default function AuditoriaPage() {
       key: "status",
       header: "Estado",
       width: "11%",
-      render: (e) => <Badge variant={statusBadgeVariant(e.status)}>{e.status}</Badge>,
+      render: (e) => (
+        <Badge
+          variant={statusBadgeVariant(e.status)}
+          className={cn(e.status === "completed" && "!bg-blue-500/20 !text-blue-400")}
+        >
+          {translateStatus(e.status)}
+        </Badge>
+      ),
     },
     {
       key: "sim",
@@ -235,25 +244,34 @@ export default function AuditoriaPage() {
                   </select>
                 )}
               </div>
-              <Button
-                type="button"
-                className="md:w-auto"
-                disabled={!selectedSimId || lc.isStarting || lc.isRunning}
-                onClick={() => lc.start({ simulation_id: selectedSimId })}
-              >
-                <Play className="mr-2 h-4 w-4" />
-                {lc.isStarting
-                  ? "Iniciando…"
-                  : lc.isRunning
-                    ? "Evaluación en curso…"
-                    : "Iniciar evaluación"}
-              </Button>
             </CardContent>
             </Card>
           </div>
 
           <div id="configuracion-avanzada" className="scroll-mt-24">
               <ConfigPanel configId="evaluation" contextId={selectedSimId} />
+          </div>
+
+          <div id="ejecutar-evaluacion" className="scroll-mt-24">
+            <Card>
+              <CardContent className="flex flex-col gap-2 p-4 md:flex-row md:items-center">
+                <p className="flex-1 text-sm text-muted-foreground">
+                  Configura los parámetros de evaluación y haz clic en ejecutar.
+                </p>
+                <Button
+                  type="button"
+                  disabled={!selectedSimId || lc.isStarting || lc.isRunning}
+                  onClick={() => lc.start({ simulation_id: selectedSimId })}
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  {lc.isStarting
+                    ? "Iniciando…"
+                    : lc.isRunning
+                      ? "Evaluación en curso…"
+                      : "Iniciar evaluación"}
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         </WorkflowGroup>
 
@@ -342,7 +360,7 @@ export default function AuditoriaPage() {
           <div id="evaluaciones" className="scroll-mt-24">
             <HistoryCard
             title="Evaluaciones"
-            description="Catálogo completo de evaluaciones en el servidor."
+            description="Catálogo completo de evaluaciones en el servidor. Haz click para cargar una evaluación pasada y ver su informe."
             items={lc.list}
             isLoading={lc.listQuery.isLoading}
             isError={lc.listQuery.isError}
@@ -355,6 +373,9 @@ export default function AuditoriaPage() {
             onPurge={() => setConfirmPurge(true)}
             isCleaning={lc.isCleaning}
             isPurging={lc.isPurging}
+            activeId={lc.activeId}
+            getRowId={(e) => e.evaluation_id}
+            onSelect={(id) => lc.setActiveId(id)}
             actionsCell={(e) =>
               e.status === "in_progress" ? (
                 <button

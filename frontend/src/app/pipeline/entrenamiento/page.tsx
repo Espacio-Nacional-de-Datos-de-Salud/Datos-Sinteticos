@@ -36,14 +36,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   api,
   API_BASE_URL,
   type InspectionSummary,
   type ModelSummary,
 } from "@/lib/api";
-import { statusBadgeVariant } from "@/lib/job-status";
+import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
+import { cn } from "@/lib/utils";
 
 type StartInput = { inspection_id: string };
 
@@ -52,6 +54,7 @@ const ENTRENAMIENTO_OUTLINE = [
   { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
   { id: "nuevo-entrenamiento", label: "Nuevo entrenamiento", level: 2 },
   { id: "configuracion-modelo", label: "Configuración del modelo", level: 2 },
+  { id: "ejecutar-entrenamiento", label: "Ejecutar entrenamiento", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
   { id: "entrenamiento-actual", label: "Entrenamiento actual", level: 2 },
   { id: "historial", label: "Historial", level: 1 },
@@ -132,7 +135,14 @@ export default function EntrenamientoPage() {
       key: "status",
       header: "Estado",
       width: "11%",
-      render: (m) => <Badge variant={statusBadgeVariant(m.status)}>{m.status}</Badge>,
+      render: (m) => (
+        <Badge
+          variant={statusBadgeVariant(m.status)}
+          className={cn(m.status === "completed" && "!bg-blue-500/20 !text-blue-400")}
+        >
+          {translateStatus(m.status)}
+        </Badge>
+      ),
     },
     {
       key: "tables",
@@ -193,7 +203,10 @@ export default function EntrenamientoPage() {
                 <Sparkles className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1 space-y-1">
-                <Label htmlFor="inspection-select">Nuevo entrenamiento</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="inspection-select">Nuevo entrenamiento</Label>
+                  <Tooltip content="Selecciona la inspección completada sobre la que quieres entrenar el modelo. El modelo aprenderá los patrones de los datos y las reglas de preprocesamiento que definas." />
+                </div>
                 {inspectionsQuery.isLoading ? (
                   <Skeleton className="h-9 w-full" />
                 ) : completedInspections.length === 0 ? (
@@ -220,25 +233,37 @@ export default function EntrenamientoPage() {
                   </select>
                 )}
               </div>
-              <Button
-                type="button"
-                className="md:w-auto"
-                disabled={!selectedInspectionId || lc.isStarting || lc.isRunning}
-                onClick={() => lc.start({ inspection_id: selectedInspectionId })}
-              >
-                <Play className="mr-2 h-4 w-4" />
-                {lc.isStarting
-                  ? "Iniciando…"
-                  : lc.isRunning
-                    ? "Entrenamiento en curso…"
-                    : "Iniciar entrenamiento"}
-              </Button>
             </CardContent>
             </Card>
           </div>
 
           <div id="configuracion-modelo" className="scroll-mt-24">
               <ConfigPanel configId="mostly_ai" />
+          </div>
+
+          <div id="ejecutar-entrenamiento" className="scroll-mt-24">
+            <Card>
+              <CardContent className="flex flex-col gap-2 p-4 md:flex-row md:items-center">
+                <div className="flex-1 flex items-start gap-2">
+                  <p className="text-sm text-muted-foreground pt-0.5">
+                    Configura los parámetros del modelo y haz clic en ejecutar.
+                  </p>
+                  <Tooltip content="El entrenamiento creará un modelo de machine learning basado en los datos de la inspección seleccionada. Este modelo aprendera patrones y sera usado para generar datos sintéticos en el siguiente paso." side="left" />
+                </div>
+                <Button
+                  type="button"
+                  disabled={!selectedInspectionId || lc.isStarting || lc.isRunning}
+                  onClick={() => lc.start({ inspection_id: selectedInspectionId })}
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  {lc.isStarting
+                    ? "Iniciando…"
+                    : lc.isRunning
+                      ? "Entrenamiento en curso…"
+                      : "Iniciar entrenamiento"}
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         </WorkflowGroup>
 
@@ -315,7 +340,7 @@ export default function EntrenamientoPage() {
           <div id="modelos-entrenados" className="scroll-mt-24">
             <HistoryCard
             title="Modelos entrenados"
-            description="Catálogo completo de modelos disponibles en el servidor."
+            description="Catálogo completo de modelos disponibles en el servidor. Haz click para cargar un modelo pasado y ver su estado."
             items={lc.list}
             isLoading={lc.listQuery.isLoading}
             isError={lc.listQuery.isError}
@@ -328,6 +353,9 @@ export default function EntrenamientoPage() {
             onPurge={() => setConfirmPurge(true)}
             isCleaning={lc.isCleaning}
             isPurging={lc.isPurging}
+            activeId={lc.activeId}
+            getRowId={(m) => m.model_id}
+            onSelect={(id) => lc.setActiveId(id)}
             actionsCell={(m) => (
               <>
                 {m.status === "completed" && (

@@ -23,7 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { InspectionSummary } from "@/lib/api";
-import { statusBadgeVariant } from "@/lib/job-status";
+import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
+import { cn } from "@/lib/utils";
 
 // Catalogue of every inspection on the server. Click a row to load that
 // inspection's schema/profiling into the page; the per-row × deletes (or
@@ -167,8 +168,13 @@ export function HistoryCard({
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={statusBadgeVariant(i.status)}>
-                          {i.status || "—"}
+                        <Badge
+                          variant={statusBadgeVariant(i.status)}
+                          className={cn(
+                            i.status === "completed" && "!bg-blue-500/20 !text-blue-400"
+                          )}
+                        >
+                          {translateStatus(i.status) || "—"}
                         </Badge>
                       </TableCell>
                       <TableCell

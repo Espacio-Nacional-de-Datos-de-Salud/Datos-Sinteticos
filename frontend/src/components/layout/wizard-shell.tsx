@@ -15,7 +15,7 @@ export function WizardShell({
 }: {
   currentSlug: string;
   canAdvance?: boolean;
-  outline?: OutlineItem[];
+  outline?: readonly OutlineItem[];
   children: React.ReactNode;
 }) {
   const index = findStepIndex(currentSlug);

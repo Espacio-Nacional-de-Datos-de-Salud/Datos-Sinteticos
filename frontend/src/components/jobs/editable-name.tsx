@@ -62,15 +62,16 @@ export function EditableName({
 
   return (
     <span
-      className="group flex cursor-pointer items-center gap-1"
+      className="group flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-accent/50"
       onClick={(e) => {
         e.stopPropagation();
         setEditing(true);
         setValue(name);
       }}
+      title="Haz clic para editar el nombre"
     >
       <span className="truncate font-mono text-xs">{name}</span>
-      <Pencil className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-40" />
+      <Pencil className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
     </span>
   );
 }

@@ -15,18 +15,23 @@ rules:
     table_target: "procedure_occurrence"
     target_col: "procedure_end_datetime"
     aux_col: "procedure_duration_days"
+    # Optional: enforce_non_negative (default: true)
+    # Set to false to allow the model to generate negative durations
 
   - type: "date_inequality"
     table_origin: "dataset_prueba_tecnica_v2"
     origin_col: "admittime"
     table_target: "dataset_prueba_tecnica_v2"
     target_col: "dischtime"
-  
+    enforce_non_negative: true
+
   - type: "date_inequality"
     table_origin: "dataset_prueba_tecnica_v2"
     origin_col: "dob"
     table_target: "dataset_prueba_tecnica_v2"
     target_col: "admittime"
+    # This one allows negative durations (for ages in the future, for example)
+    enforce_non_negative: false
 
   - type: "semantic_ranking_consistency"
     table_origin: "dataset_prueba_tecnica_v2"

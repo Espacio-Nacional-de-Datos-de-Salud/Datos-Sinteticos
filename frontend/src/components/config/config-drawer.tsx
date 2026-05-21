@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ModeSelector, type ModeType } from "@/components/config/mode-selector";
 
 type DrawerProps = {
   configId: string;
@@ -159,6 +160,9 @@ function ConfigEditor({ configId, contextId, active, onSaved }: EditorProps) {
   const configQuery = useQuery({
     queryKey: ["config", configId],
     enabled: active,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: true,
     queryFn: async () => {
       const { data } = await api.get<ConfigContent>(
         `/configs/${encodeURIComponent(configId)}`,
@@ -415,30 +419,52 @@ export function ConfigPanel({
   const { schemas } = useConfigSchemas();
   const schema: ConfigSchema | undefined = schemas[configId];
   const [open, setOpen] = useState(defaultOpen);
+  const [selectedMode, setSelectedMode] = useState<ModeType>();
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const isMostlyAi = configId === "mostly_ai";
+
   return (
     <Card className={className}>
-      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Settings className="h-3.5 w-3.5" />
-            <span className="font-mono">{configId}.yaml</span>
+      <CardHeader className="space-y-0">
+        <div className="flex flex-row items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Settings className="h-3.5 w-3.5" />
+              <span className="font-mono">{configId}.yaml</span>
+            </div>
+            <CardTitle className="text-base">
+              {schema?.title ?? `Configuración: ${configId}`}
+            </CardTitle>
+            {schema?.description && (
+              <CardDescription>{schema.description}</CardDescription>
+            )}
           </div>
-          <CardTitle className="text-base">
-            {schema?.title ?? `Configuración: ${configId}`}
-          </CardTitle>
-          {schema?.description && (
-            <CardDescription>{schema.description}</CardDescription>
-          )}
+          <CollapseToggle
+            open={open}
+            onToggle={() => setOpen((v) => !v)}
+            ariaLabel={open ? "Contraer configuración" : "Expandir configuración"}
+          />
         </div>
-        <CollapseToggle
-          open={open}
-          onToggle={() => setOpen((v) => !v)}
-          ariaLabel={open ? "Contraer configuración" : "Expandir configuración"}
-        />
+        {isMostlyAi && open && (
+          <div className="pt-3 border-t mt-3">
+            <p className="text-xs text-muted-foreground mb-2">Presets:</p>
+            <ModeSelector
+              selectedMode={selectedMode}
+              onModeSelected={setSelectedMode}
+              onApplyMode={() => setRefreshKey((k) => k + 1)}
+            />
+          </div>
+        )}
       </CardHeader>
       {open && (
         <CardContent className="flex flex-col p-0">
-          <ConfigEditor configId={configId} contextId={contextId} active />
+          <ConfigEditor
+            key={refreshKey}
+            configId={configId}
+            contextId={contextId}
+            active
+          />
         </CardContent>
       )}
     </Card>

@@ -113,7 +113,24 @@ export default function LandingPage() {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(CONTENT_SECTIONS.map((section) => [section.id, true])),
   );
-  const [activeId, setActiveId] = useState(CONTENT_SECTIONS[0].id);
+  const [activeId, setActiveId] = useState<string>(CONTENT_SECTIONS[0].id);
+  const [showScrollHint, setShowScrollHint] = useState(true);
+
+  useEffect(() => {
+    const scrollContainer = document.querySelector<HTMLElement>("[data-landing-scroll]");
+    if (!scrollContainer) return;
+    const onScroll = () => {
+      setShowScrollHint(scrollContainer.scrollTop < 80);
+    };
+    onScroll();
+    scrollContainer.addEventListener("scroll", onScroll, { passive: true });
+    return () => scrollContainer.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const handleScrollHintClick = () => {
+    const firstSection = document.getElementById(CONTENT_SECTIONS[0].id);
+    firstSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   useEffect(() => {
     const elements = CONTENT_SECTIONS.map((section) => document.getElementById(section.id)).filter(
@@ -139,7 +156,7 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(9,187,217,0.10),_transparent_28%),linear-gradient(180deg,#f7fbff_0%,#eff5fb_48%,#e8effa_100%)]">
+    <div data-landing-scroll className="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(9,187,217,0.10),_transparent_28%),linear-gradient(180deg,#f7fbff_0%,#eff5fb_48%,#e8effa_100%)]">
       <section className="relative flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden border-b-4 border-[#FFDB00] bg-[#00215C] px-8 py-14 text-white">
         <div className="absolute inset-y-0 right-0 w-[40rem] bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.16),_transparent_58%)]" />
         <div className="absolute left-0 right-0 top-0 h-full bg-[linear-gradient(135deg,transparent_0%,transparent_58%,rgba(255,255,255,0.05)_100%)]" />
@@ -175,6 +192,22 @@ export default function LandingPage() {
             </Link>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={handleScrollHintClick}
+          aria-label="Desplazarse hacia abajo para ver más contenido"
+          className={cn(
+            "group absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2 text-white/85 transition-opacity duration-500",
+            showScrollHint ? "opacity-100" : "pointer-events-none opacity-0",
+          )}
+        >
+          <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/75 group-hover:text-white">
+            Desplázate para saber más
+          </span>
+          <span className="flex h-10 w-10 animate-bounce items-center justify-center rounded-full border border-white/40 bg-white/10 backdrop-blur transition-colors group-hover:bg-white/20">
+            <ArrowDown className="h-5 w-5" />
+          </span>
+        </button>
       </section>
 
       <div className="sticky top-0 z-20 border-b border-border/70 bg-background/95 px-8 py-4 backdrop-blur">
@@ -225,7 +258,7 @@ export default function LandingPage() {
                   </div>
                   <div>
                     <h2 className="text-2xl font-bold text-[#00215C]">{section.title}</h2>
-                    <p className="mt-1 text-sm text-slate-600">{section.body}</p>
+                    <p className="mt-1 text-sm text-slate-600">{"body" in section ? section.body : section.summary}</p>
                   </div>
                 </div>
                 {isOpen ? (
@@ -278,7 +311,7 @@ export default function LandingPage() {
                   ) : (
                     <div className="rounded-2xl border border-[#d8e3f4] bg-[#f7fbff] p-5 text-sm leading-7 text-slate-700">
                       <p>
-                        {section.body}
+                        {"body" in section ? section.body : section.content}
                       </p>
                     </div>
                   )}
