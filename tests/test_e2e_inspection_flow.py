@@ -80,7 +80,7 @@ def _stub_data_pipeline(
         ),
     )
     monkeypatch.setattr(
-        inspection_service, "DataPreprocessor", lambda _data: fake_preprocessor_instance
+        inspection_service, "DataPreprocessor", lambda _data, composite_pk_config=None: fake_preprocessor_instance
     )
 
 

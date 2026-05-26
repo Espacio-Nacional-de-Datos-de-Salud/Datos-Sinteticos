@@ -5,13 +5,12 @@ import threading
 from backend.src.config.general import (
     DEFAULT_CSV_DELIMITER,
     ENABLE_DATA_PROFILING,
+    EVALUATIONS_DIR,
+    MODELS_DIR,
+    SIMULATIONS_DIR,
     TIME_PROFILING_REPORT_FILENAME,
     refresh_run_timestamp,
 )
-from backend.src.infrastructure.logging_config import get_logger, log_run_header
-from backend.src.infrastructure.progress import ProfilerPhase, job_phase_label
-from backend.src.infrastructure.time_profiling import profiler
-from backend.src.runs.tracking import PipelineTracker
 from backend.src.domain.pipeline.config_classes import (
     EvaluateStepConfig,
     JobConfigOverrides,
@@ -20,6 +19,10 @@ from backend.src.domain.pipeline.config_classes import (
     SimulateStepConfig,
     TrainStepConfig,
 )
+from backend.src.infrastructure.logging_config import get_logger, log_run_header
+from backend.src.infrastructure.progress import ProfilerPhase, job_phase_label
+from backend.src.infrastructure.time_profiling import profiler
+from backend.src.runs.tracking import PipelineTracker
 from backend.src.sessions.configs import resolve_config_path
 
 logger = get_logger(__name__)
@@ -62,11 +65,45 @@ def _resolve_job_config(
     return rules_path, mostly_ai_path, mostly_ai_overrides, enable_profiling, csv_delimiter
 
 
+def _extract_training_parameters_from_job(job) -> dict:
+    """Extract training parameters from a pipeline job config."""
+
+    job_config = getattr(job, "config", None)
+    mostly_ai_config = None
+
+    if job_config is None:
+        mostly_ai_config = {}
+    elif isinstance(job_config, dict):
+        mostly_ai_config = job_config.get("mostly_ai") or {}
+    else:
+        mostly_ai_config = getattr(job_config, "mostly_ai", None) or {}
+
+    model_settings = (
+        mostly_ai_config.get("model_settings", {}) if isinstance(mostly_ai_config, dict) else {}
+    )
+
+    raw_model = model_settings.get("model")
+    if isinstance(raw_model, str) and "/" in raw_model:
+        model_size = raw_model.split("/")[-1]
+    else:
+        model_size = raw_model
+
+    differential_privacy = model_settings.get("differential_privacy") or {}
+
+    return {
+        "model_size": model_size,
+        "epsilon": differential_privacy.get("max_epsilon"),
+        "flexible_generation": model_settings.get("enable_flexible_generation"),
+        "raw_model": raw_model,
+    }
+
+
 def _run_train_step(
     step: TrainStepConfig,
     pipeline_id: str = "none",
     job_config: JobConfigOverrides | None = None,
     job_name: str = "",
+    cancel_event: threading.Event | None = None,
 ) -> tuple[str, object, dict, object] | None:
     """Execute a training step and return the resulting artifacts.
 
@@ -99,6 +136,7 @@ def _run_train_step(
             mostly_ai_overrides=mostly_ai_overrides,
             pipeline_id=pipeline_id,
             job_name=job_name,
+            cancel_event=cancel_event,
         )
     else:
         from backend.src.sessions.training import run_training_flow
@@ -112,6 +150,7 @@ def _run_train_step(
             mostly_ai_overrides=mostly_ai_overrides,
             pipeline_id=pipeline_id,
             job_name=job_name,
+            cancel_event=cancel_event,
         )
 
     if model_id is None:
@@ -128,6 +167,7 @@ def _run_simulate_step(
     pipeline_id: str = "none",
     job_config: JobConfigOverrides | None = None,
     job_name: str = "",
+    cancel_event: threading.Event | None = None,
 ) -> str | None:
     """Execute a simulation step and return the resulting simulation ID.
 
@@ -186,6 +226,7 @@ def _run_simulate_step(
         mostly_ai_overrides=mostly_ai_overrides,
         pipeline_id=pipeline_id,
         job_name=job_name,
+        cancel_event=cancel_event,
     )
 
     return simulation_id
@@ -197,6 +238,7 @@ def _run_evaluate_step(
     model_id: str | None,
     pipeline_id: str,
     job_name: str,
+    training_parameters: dict | None = None,
 ) -> str | None:
     """Execute an evaluation step using the unified evaluation flow service.
 
@@ -237,8 +279,8 @@ def _run_evaluate_step(
             pipeline_id=pipeline_id,
             job_name=job_name,
             session=session,
-            # Pass explicit real_data if provided via step config
             real_data=step.real_data,
+            training_parameters=training_parameters,
         )
         return evaluation_id
     except Exception as error:
@@ -274,14 +316,20 @@ def _run_job(
 
     if job.train is not None:
         logger.info("[%s] Running train step...", job.name)
+        train_mark = profiler.mark()
         with profiler.phase(job_phase_label(job.name, ProfilerPhase.TRAIN)):
             result = _run_train_step(
-                job.train, pipeline_id=pipeline_id, job_config=job.config, job_name=job.name
+                job.train,
+                pipeline_id=pipeline_id,
+                job_config=job.config,
+                job_name=job.name,
+                cancel_event=cancel_event,
             )
         if result is None:
             logger.error("[%s] Train step failed — skipping remaining steps.", job.name)
             return model_id, simulation_id, evaluation_id
         model_id, generator, metadata, rule_manager = result
+        _write_step_snapshot(train_mark, MODELS_DIR, model_id, "Training timing breakdown")
         logger.info("[%s] Train step complete. model_id=%s", job.name, model_id)
 
     if cancel_event is not None and cancel_event.is_set():
@@ -292,6 +340,7 @@ def _run_job(
 
     if job.simulate is not None:
         logger.info("[%s] Running simulate step...", job.name)
+        simulate_mark = profiler.mark()
         with profiler.phase(job_phase_label(job.name, ProfilerPhase.SIMULATE)):
             simulation_id = _run_simulate_step(
                 step=job.simulate,
@@ -302,10 +351,14 @@ def _run_job(
                 pipeline_id=pipeline_id,
                 job_config=job.config,
                 job_name=job.name,
+                cancel_event=cancel_event,
             )
         if simulation_id is None:
             logger.error("[%s] Simulate step failed — skipping evaluate step.", job.name)
             return model_id, simulation_id, evaluation_id
+        _write_step_snapshot(
+            simulate_mark, SIMULATIONS_DIR, simulation_id, "Simulation timing breakdown"
+        )
         logger.info("[%s] Simulate step complete. simulation_id=%s", job.name, simulation_id)
 
     if cancel_event is not None and cancel_event.is_set():
@@ -314,6 +367,7 @@ def _run_job(
 
     if job.evaluate is not None:
         logger.info("[%s] Running evaluate step...", job.name)
+        evaluate_mark = profiler.mark()
         with profiler.phase(job_phase_label(job.name, ProfilerPhase.EVALUATE)):
             evaluation_id = _run_evaluate_step(
                 step=job.evaluate,
@@ -321,13 +375,34 @@ def _run_job(
                 model_id=model_id,
                 pipeline_id=pipeline_id,
                 job_name=job.name,
+                training_parameters=_extract_training_parameters_from_job(job),
             )
         if evaluation_id:
+            _write_step_snapshot(
+                evaluate_mark, EVALUATIONS_DIR, evaluation_id, "Evaluation timing breakdown"
+            )
             logger.info("[%s] Evaluate step complete. evaluation_id=%s", job.name, evaluation_id)
         else:
             logger.error("[%s] Evaluate step failed.", job.name)
 
     return model_id, simulation_id, evaluation_id
+
+
+def _write_step_snapshot(start_mark: int, base_dir: str, run_id: str, header: str) -> None:
+    """Drop ``time_profiling_report.json`` into a pipeline child run folder.
+
+    The inner training/simulation/evaluation flows don't write their own
+    profiling report when invoked from the pipeline (``session=None``), so the
+    executor reaches back into the shared profiler and snapshots the slice of
+    records produced during the step.
+    """
+    import os
+
+    folder = os.path.join(base_dir, run_id)
+    if not os.path.isdir(folder):
+        return
+    output_path = os.path.join(folder, TIME_PROFILING_REPORT_FILENAME)
+    profiler.write_snapshot(start_mark, header, output_path)
 
 
 def run_pipeline(

@@ -189,14 +189,16 @@ class LogicalRuleManager:
             bool: True if the rule was added successfully, False if it was rejected
         """
         try:
-            self._detect_rule_interactions(rule)  # throws error if superimposition detected
+            should_add = self._detect_rule_interactions(rule)  # throws error if superimposition detected
         except RuleSuperimpositionError:
             logger.error("Failed to add rule: Rule Superimposition not allowed. Skipping")
             return False
+        if should_add is False:
+            return True
         self.rules.append(rule)
         return True
 
-    def _detect_rule_interactions(self, new_rule: LogicalRule):
+    def _detect_rule_interactions(self, new_rule: LogicalRule) -> bool:
         """Checks for both superimposition and concatenation rule conflicts/interactions.
         Superimpositions occur when both rules have the same target table and column.
             If any are detected, a RuleSuperimpositionError is raised. These are currently
@@ -212,6 +214,10 @@ class LogicalRuleManager:
 
         Args:
             new_rule (LogicalRule): The new rule to check against existing rules.
+        Returns:
+            bool: True if the rule should be added, False if it was merged with an existing rule (SemanticConsistencyRule)
+        Throws:
+            RuleSuperimpositionError: If an unresolvable superimposition is detected between the new rule and an existing rule.
         """
 
         for existing_rule in self.rules:
@@ -222,6 +228,22 @@ class LogicalRuleManager:
                 existing_rule.target_col == new_rule.target_col
             ):
                 # superimposition detected
+
+                if (
+                    isinstance(existing_rule, SemanticConsistencyRule)
+                    and isinstance(new_rule, SemanticConsistencyRule)
+                    and type(existing_rule) is type(new_rule) # make sure they use the same semantic consistency logic
+                ):
+                    for group_col in new_rule._get_group_cols():
+                        existing_rule.add_group_key(group_col)
+                    
+                    # we dont need to mark as superimposed since they will be merged
+                    #existing_rule.interaction_type = InteractionType.SUPERIMPOSED
+                    logger.info(
+                        "Semantic rule superimposition detected for '%s'; merged group keys into existing rule.",
+                        new_rule.target_col,
+                    )
+                    return False
 
                 # not allowed EXCEPT for edge case: 2 NumericInequalityRules or 2 DateInequalityRules
                 # these can be solved by "flipping" one of the rules
@@ -249,7 +271,7 @@ class LogicalRuleManager:
                     new_rule.flip()
                     # also have to set aux column so they dont have same name
                     new_rule.aux_col = f"{new_rule.target_col}_flipped"
-                    return
+                    return True
 
 
                 raise RuleSuperimpositionError(
@@ -281,6 +303,7 @@ class LogicalRuleManager:
                 f"'{new_rule.table_target}'. Registered as an independent rule."
             )
             new_rule.interaction_type = InteractionType.ISOLATED
+        return True
 
     def _sort_concat_rules(self, columnNames: set[str]) -> list[LogicalRule]:
         """Sorts concatenation rules based on their dependencies to ensure correct application order
@@ -314,12 +337,28 @@ class LogicalRuleManager:
                     for source_col in self._get_rule_source_cols(rule)
                     if source_col not in original_cols and source_col not in produced_cols
                 }
+                target_col = getattr(rule, "target_col", None)
+                qualified_target = self._qualify_col(rule.table_target, target_col) if target_col else None
+                missing_target = (
+                    qualified_target is not None
+                    and qualified_target not in original_cols
+                    and qualified_target not in produced_cols
+                )
                 if missing_sources:
                     logger.warning(
                         "Skipping rule %s on '%s' due to missing source columns: %s",
                         type(rule).__name__,
                         rule.table_target,
                         sorted(missing_sources),
+                    )
+                    removed_rules = True
+                    continue
+                if missing_target:
+                    logger.warning(
+                        "Skipping rule %s on '%s' due to missing target column: %s",
+                        type(rule).__name__,
+                        rule.table_target,
+                        qualified_target,
                     )
                     removed_rules = True
                     continue
@@ -675,6 +714,32 @@ class LogicalRuleManager:
         """
         self.relationships = relationships
 
+        # filter out isolated rules that reference non-existant source or target columns
+        # concat and superimposed rules are handled within sorting function
+        filtered_isolated_rules: list[LogicalRule] = []
+        for rule in [rule for rule in self.rules if rule.interaction_type == InteractionType.ISOLATED]:
+            if rule.table_target in data_dict:
+                target_col = getattr(rule, "target_col", None)
+                if target_col and target_col not in data_dict[rule.table_target].columns:
+                    logger.warning(
+                        "Removing isolated rule %s on '%s' due to missing target column '%s'.",
+                        type(rule).__name__,
+                        rule.table_target,
+                        target_col,
+                    )
+                    continue
+            if rule.table_origin and rule.table_origin in data_dict:
+                origin_col = getattr(rule, "origin_col", None)
+                if origin_col and origin_col not in data_dict[rule.table_origin].columns:
+                    logger.warning(
+                        "Removing isolated rule %s on '%s' due to missing origin column '%s'.",
+                        type(rule).__name__,
+                        rule.table_target,
+                        origin_col,
+                    )
+                    continue
+            filtered_isolated_rules.append(rule)
+
         existsConcatRules = any(rule.interaction_type != InteractionType.ISOLATED for rule in self.rules)
         if existsConcatRules:
             logger.info("Sorting concatenation rules based on detected dependencies.")
@@ -684,12 +749,15 @@ class LogicalRuleManager:
                 for col in df.columns:
                     columnNames.add(f"{table}.{col}")
             try:
-                self._sort_concat_rules(columnNames)
+                concatRules = self._sort_concat_rules(columnNames)
+                self.rules = filtered_isolated_rules + concatRules
             except RuleConcatenationError as e:
                 logger.error(
                     f"Error sorting concatenation rules: {str(e)}. Skipping all concatenation rules."
                 )
-                self.rules = [rule for rule in self.rules if rule.interaction_type == InteractionType.ISOLATED]
+                self.rules = filtered_isolated_rules
+        else:
+            self.rules = filtered_isolated_rules
 
         processed_data = data_dict.copy()
         empty_set = set()
@@ -1617,7 +1685,7 @@ class SemanticConsistencyRule(LogicalRule, ABC):
     Converts categories into continuous [0,1] intervals within specific groups.
 
     Args:
-        origin_col (str): Grouping column.
+        origin_col (str): Grouping column (used when no composite keys are set).
         target_col (str): Categorical column to transform.
         aux_col (str, optional): Numeric auxiliary column.
     """
@@ -1627,6 +1695,7 @@ class SemanticConsistencyRule(LogicalRule, ABC):
     aux_col: str = None
     table_origin: str = None
     table_target: str = None
+    group_cols: list[str] = field(default_factory=list)
     _mappings: dict[Any, list[tuple[float, Any]]] = field(default_factory=dict, init=False)
     _valid_combinations: dict[Any, set[Any]] = field(default_factory=dict, init=False)
 
@@ -1634,6 +1703,33 @@ class SemanticConsistencyRule(LogicalRule, ABC):
         aux_suffix = "score"
         if self.aux_col is None:
             self.aux_col = f"{self.target_col}_{aux_suffix}"
+
+    def add_group_key(self, key_col: str) -> None:
+        if not key_col:
+            raise ValueError("SemanticConsistencyRule add_group_key requires 'key_col'.")
+        if not self.group_cols and self.origin_col:
+            self.group_cols = [self.origin_col]
+        if key_col not in self.group_cols:
+            self.group_cols.append(key_col)
+
+    def _get_group_cols(self) -> list[str]:
+        if self.group_cols:
+            return list(self.group_cols)
+        if self.origin_col:
+            return [self.origin_col]
+        return []
+
+    def _group_key_series(self, df: pd.DataFrame) -> pd.Series:
+        group_cols = self._get_group_cols()
+        if not group_cols:
+            raise ValueError("SemanticConsistencyRule requires at least one group column.")
+        if len(group_cols) == 1:
+            return df[group_cols[0]]
+        return df[group_cols].apply(lambda row: tuple(row), axis=1)
+
+    def _group_label(self) -> str:
+        group_cols = self._get_group_cols()
+        return "|".join(group_cols) if len(group_cols) > 1 else group_cols[0]
 
     @abstractmethod
     def _calculate_intervals(self, subset: pd.Series) -> list[tuple[float, Any]]:
@@ -1656,9 +1752,12 @@ class SemanticConsistencyRule(LogicalRule, ABC):
         Args:
             df (pd.DataFrame): The original DataFrame to extract valid combinations from.
         """
-        unique_groups = df[self.origin_col].unique()
+        group_keys = self._group_key_series(df)
+        df = df.copy()
+        df["_group_key"] = group_keys
+        unique_groups = df["_group_key"].dropna().unique()
         for group in unique_groups:
-            subset = df[df[self.origin_col] == group]
+            subset = df[df["_group_key"] == group]
             if subset.empty:
                 continue
             present_categories = set(subset[self.target_col].dropna().unique())
@@ -1666,14 +1765,15 @@ class SemanticConsistencyRule(LogicalRule, ABC):
 
     def apply_pre(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
-        unique_groups = df[self.origin_col].unique()
+        df["_group_key"] = self._group_key_series(df)
+        unique_groups = df["_group_key"].dropna().unique()
 
         # Temporary columns for vectorization
         df["_temp_lower"] = 0.0
         df["_temp_upper"] = 0.0
 
         for group in unique_groups:
-            mask = df[self.origin_col] == group
+            mask = df["_group_key"] == group
             subset = df[mask]
 
             if subset.empty:
@@ -1701,13 +1801,14 @@ class SemanticConsistencyRule(LogicalRule, ABC):
         # Jittering: Generamos valor continuo dentro del intervalo asignado
         df[self.aux_col] = np.random.uniform(df["_temp_lower"], df["_temp_upper"])
 
-        return df.drop(columns=[self.target_col, "_temp_lower", "_temp_upper"])
+        return df.drop(columns=[self.target_col, "_temp_lower", "_temp_upper", "_group_key"])
 
     def apply_post(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
+        df["_group_key"] = self._group_key_series(df)
 
         def get_category(row):
-            group = row[self.origin_col]
+            group = row["_group_key"]
             aux_value = row[self.aux_col]
 
             if pd.isna(group) or pd.isna(aux_value):
@@ -1726,20 +1827,32 @@ class SemanticConsistencyRule(LogicalRule, ABC):
             return intervals[idx][1]
 
         df[self.target_col] = df.apply(get_category, axis=1)
-        return df.drop(columns=[self.aux_col])
+        return df.drop(columns=[self.aux_col, "_group_key"])
 
     def sanity_check(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Verifies that there are no (origin_col, target_col) combinations
         that were not present in the original data.
         """
-        if self.origin_col not in df.columns or self.target_col not in df.columns:
+        group_cols = self._get_group_cols()
+        if not group_cols or self.target_col not in df.columns:
+            logger.warning(
+                f"Sanity check for SemanticConsistencyRule on '{self.table_target}' skipped: "
+                f"missing group columns {group_cols} or target column '{self.target_col}'."
+            )
+            return pd.DataFrame()
+        if any(col not in df.columns for col in group_cols):
+            logger.warning(
+                f"Sanity check for SemanticConsistencyRule on '{self.table_target}' skipped: "
+                f"missing group columns {group_cols} or target column '{self.target_col}'."
+            )
             return pd.DataFrame()
 
         # If apply_pre was not executed or there are no saved rules, we cannot validate
         if not self._valid_combinations:
             return pd.DataFrame()
 
+        group_keys = self._group_key_series(df)
         error_mask = pd.Series(False, index=df.index)
 
         # Iterate over KNOWN groups to verify their rules
@@ -1747,7 +1860,7 @@ class SemanticConsistencyRule(LogicalRule, ABC):
         for group, allowed_cats in self._valid_combinations.items():
             # Filter rows that belong to the current group
             # Note: Handle NaN in origin_col if necessary
-            group_mask = df[self.origin_col] == group
+            group_mask = group_keys == group
 
             if not group_mask.any():
                 continue
@@ -1762,11 +1875,13 @@ class SemanticConsistencyRule(LogicalRule, ABC):
         failing_rows = df[error_mask].copy()
 
         if not failing_rows.empty:
+            group_label = self._group_label()
+            group_values = group_keys.loc[failing_rows.index].astype(str)
             failing_rows["error_type"] = "SEMANTIC_INCONSISTENCY"
             failing_rows["table_origin"] = self.table_target
             failing_rows["details"] = (
-                f"Group '{self.origin_col}'="
-                + failing_rows[self.origin_col].astype(str)
+                f"Group '{group_label}'="
+                + group_values
                 + f" has invalid category '{self.target_col}'="
                 + failing_rows[self.target_col].astype(str)
             )

@@ -6,12 +6,11 @@
 // editor. All edits stream up via `onChange(patch)` — JobCard is a pure view.
 
 import { useState } from "react";
-import { Copy, SlidersHorizontal, Settings, Trash2 } from "lucide-react";
+import { Copy, Settings, Trash2 } from "lucide-react";
 
 import {
-  ConditionalGenerationDrawer,
+  ConditionalConfigPanel,
   EMPTY_CONDITIONAL_CONFIG,
-  isConditionalConfigActive,
 } from "@/components/generation/conditional-config";
 import { ConfigDrawer } from "@/components/config/config-drawer";
 import { FilesMultiSelect, InspectionSelect } from "@/components/pipelines/form-widgets";
@@ -22,7 +21,6 @@ import type {
   JobOverrides,
   SyntheticDataFileFormat,
 } from "@/components/pipelines/types";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,7 +59,6 @@ export function JobCard({
   onEditRules: (id: string) => void;
   onExpand: () => void;
 }) {
-  const [conditionalOpen, setConditionalOpen] = useState(false);
   const [evaluationConfigOpen, setEvaluationConfigOpen] = useState(false);
   const setOverride = <K extends keyof JobOverrides>(key: K, val: JobOverrides[K]) => {
     onChange({ overrides: { ...job.overrides, [key]: val } });
@@ -212,39 +209,13 @@ export function JobCard({
 
         {job.simulate && (
           <StepBlock title="Generación">
-            <div className="flex items-center justify-between gap-3 rounded-md border border-dashed border-border/70 bg-muted/20 px-3 py-2">
-              <div>
-                <p className="text-xs font-medium">Generación condicionada</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Misma superficie que en Generación para definir seeds y distribuciones.
-                </p>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setConditionalOpen(true)}
-                className="h-8 shrink-0"
-              >
-                <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5" />
-                Configurar
-                {isConditionalConfigActive(job.simulate.conditional) && (
-                  <Badge variant="secondary" className="ml-2">
-                    activa
-                  </Badge>
-                )}
-              </Button>
-            </div>
-
-            <ConditionalGenerationDrawer
-              open={conditionalOpen}
+            <ConditionalConfigPanel
               modelId={job.simulate.model_id}
               pendingFilePaths={job.train?.files ?? []}
               config={job.simulate.conditional}
               onChange={(conditional) =>
                 onChange({ simulate: { ...job.simulate!, conditional } })
               }
-              onClose={() => setConditionalOpen(false)}
             />
 
             <div className="grid grid-cols-2 gap-3">

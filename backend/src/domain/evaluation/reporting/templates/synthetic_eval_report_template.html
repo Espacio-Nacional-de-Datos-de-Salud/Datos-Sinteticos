@@ -767,6 +767,197 @@
       border-radius: var(--radius-md);
     }
 
+    .plot-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .plot-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .plot-card-wide {
+      grid-column: 1 / -1;
+    }
+
+    .plot-card h4 {
+      margin: 0;
+      color: #204d74;
+      font-size: 0.88rem;
+      font-weight: 800;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .plot-meta {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .mini-chart {
+      height: 240px;
+      min-width: 0;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .matrix-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 12px;
+      min-width: 0;
+    }
+
+    .matrix-card h4 {
+      margin: 0 0 8px;
+      color: #204d74;
+      font-size: 0.88rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .dist-accuracy-box {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 16px 20px;
+      margin-bottom: 14px;
+      width: fit-content;
+      max-width: 100%;
+    }
+
+    .dist-acc-overall {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding-right: 22px;
+    }
+
+    .dist-acc-overall-label {
+      font-size: 0.74rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .dist-acc-overall-value {
+      font-size: 2.4rem;
+      line-height: 1.05;
+      font-weight: 850;
+      color: #24b37e;
+    }
+
+    .dist-acc-sep {
+      width: 1px;
+      background: var(--border);
+      margin: 0 22px;
+    }
+
+    .dist-acc-breakdown {
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 4px 18px;
+      align-items: center;
+      align-content: center;
+    }
+
+    .dist-acc-breakdown .k {
+      font-size: 0.86rem;
+      color: #25465f;
+      font-weight: 700;
+    }
+
+    .dist-acc-breakdown .v {
+      font-size: 0.86rem;
+      font-weight: 800;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .dist-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+      padding: 12px;
+    }
+
+    .dist-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 10px 12px 12px;
+      min-width: 0;
+    }
+
+    .dist-card-title {
+      text-align: center;
+      font-size: 0.86rem;
+      color: #122231;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+      margin-bottom: 6px;
+    }
+
+    .dist-card-title .dist-acc {
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: #24b37e;
+      margin-left: 5px;
+      vertical-align: super;
+    }
+
+    .dist-mini-chart {
+      height: 170px;
+      min-width: 0;
+    }
+
+    .biv-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .biv-pair-cell {
+      min-width: 0;
+    }
+
+    .biv-pair-cell h5 {
+      margin: 0 0 4px;
+      text-align: center;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .biv-pair-cell .corr-heatmap-table th,
+    .biv-pair-cell .corr-heatmap-table td {
+      font-size: 0.62rem;
+      min-width: 26px;
+      padding: 3px 4px;
+    }
+
     @media (max-width: 800px) {
       .container {
         width: min(1280px, 96vw);
@@ -814,7 +1005,7 @@
       <div class="panel-content">
         <div id="scoreCards" class="cards"></div>
         <div class="chart-wrap">
-          <canvas id="scoresChart" aria-label="Resumen de los tres ejes de evaluacion"></canvas>
+          <canvas id="scoresChart" aria-label="Resumen de los ejes principales de evaluacion"></canvas>
         </div>
         <div class="legend">
           <span class="legend-item">Verde: bueno (>= 0.75)</span>
@@ -848,13 +1039,48 @@
           <div id="fidelityAxisScore" class="axis-score-banner"></div>
           <div id="fidelityAggregated" class="metrics-grid"></div>
           <div id="fidelityTvdBars" class="fidelity-bars"></div>
-          <div id="correlationDiffHeatmap" class="fidelity-bars"></div>
+
+          <div id="distComparisonAccuracy" class="dist-accuracy-box"></div>
+
+          <details class="detail-table" open>
+            <summary>Correlations</summary>
+            <p class="explain">
+              Estructura de correlaciones del dato real (gris) y sintetico (verde),
+              y la diferencia absoluta (rojo). Cuanto mas se parezcan real y sintetico,
+              mejor se conservan las relaciones entre variables.
+            </p>
+            <div id="correlationMatricesGrid" class="matrix-grid"></div>
+          </details>
+
+          <details class="detail-table" open>
+            <summary>Univariate distributions</summary>
+            <p class="explain">
+              Para cada columna se compara la distribucion real (gris) con la
+              sintetica (verde). El area sombreada marca la diferencia entre ambas.
+            </p>
+            <div id="univariateDistributionPlots" class="dist-grid"></div>
+          </details>
 
           <details class="detail-table">
-            <summary>TVD por columna</summary>
+            <summary>Bivariate distributions</summary>
+            <p class="explain">
+              Distribucion conjunta de pares de columnas: original (gris) frente a
+              sintetico (verde). Se muestran los pares peor reproducidos.
+            </p>
+            <div id="bivariateDistributionPlots" class="dist-grid"></div>
+          </details>
+
+          <details class="detail-table" open>
+            <summary>Accuracy</summary>
+            <p class="explain">
+              Accuracy por columna (1-TVD): univariante, y media de las accuracies
+              bivariantes y trivariantes en las que participa cada columna. La matriz
+              muestra 1-TVD univariante en la diagonal y bivariante en el resto.
+            </p>
             <div class="table-wrap">
-              <table id="tvdTable"></table>
+              <table id="accuracyByColumnTable"></table>
             </div>
+            <div id="accuracyMatrixHeatmap" class="matrix-grid"></div>
           </details>
 
           <details class="detail-table">
@@ -928,19 +1154,34 @@
         </summary>
         <div class="panel-content">
           <p class="explain">
-            Esta seccion evalua si los datos sinteticos permiten entrenar modelos predictivos
-            utiles. La comparacion clave es entre el rendimiento usando datos reales y el
-            rendimiento usando datos sinteticos.
+            Esta seccion muestra pruebas de utilidad orientadas al uso del dataset sintetico.
+            No participa en el score global. Actualmente incluye utilidad predictiva mediante
+            modelos entrenados con datos reales y sinteticos; en futuras versiones tambien
+            incluira baterias de metricas estadisticas definidas por el usuario.
           </p>
           <div id="utilityAxisScore" class="axis-score-banner"></div>
           <div id="utilityAggregated" class="metrics-grid"></div>
+
+          <div id="utilityTestsSummary" class="score-breakdown"></div>
+
+          <details class="detail-table" open>
+            <summary>Pruebas de utilidad estadística</summary>
+            <p class="explain">
+              Estas pruebas comparan indicadores definidos por el usuario entre el dataset real
+              y el sintético. El score se calcula a partir del error relativo ponderado por la
+              importancia de cada prueba. Esta sección es informativa y no modifica el score global.
+            </p>
+            <div class="table-wrap">
+              <table id="utilityTestsTable"></table>
+            </div>
+          </details>
 
           <p class="explain">
             <strong>Interpretacion TSTR:</strong> GT es rendimiento entrenando y evaluando con datos reales.
             SYN_ID entrena con sinteticos y evalua en test in-distribution.
             SYN_OOD entrena con sinteticos y evalua en escenario out-of-distribution.
-            Cuanto mas cercanos a GT esten SYN_ID y SYN_OOD, mejor utilidad.
-            Utility relative score es el ratio entre utilidad sintetica y utilidad real.
+            Cuanto mas cercanos a GT esten SYN_ID y SYN_OOD, mayor utilidad predictiva.
+            Esta informacion es diagnostica y no modifica el score global.
           </p>
 
           <div class="chart-wrap utility-chart-wrap">
@@ -994,9 +1235,18 @@ __REPORT_DATA_JSON__
       return "Bajo";
     }
 
-    function formatScore(value, digits = 4) {
+    function formatScore(value, digits = 1) {
       if (typeof value !== "number" || Number.isNaN(value)) return "-";
-      return value.toFixed(digits);
+
+      const maxDigits = Math.min(
+        typeof digits === "number" ? digits : 1,
+        1
+      );
+
+      return value.toLocaleString("es-ES", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: maxDigits
+      });
     }
 
     function scorePercent(score) {
@@ -1005,7 +1255,7 @@ __REPORT_DATA_JSON__
     }
 
     function formatScorePart(label, value) {
-      return label + " " + formatScore(value, 3);
+      return label + " " + formatScore(value, 1);
     }
 
     function lowerIsBetterScore(value, maxValue) {
@@ -1027,11 +1277,23 @@ __REPORT_DATA_JSON__
       return Number.isFinite(n) ? n : value;
     }
 
-    function createField(label, value) {
+    function createField(label, value, tooltipText) {
       const wrapper = document.createElement("article");
       wrapper.className = "field";
       wrapper.innerHTML = '<div class="field-label"></div><div class="field-value"></div>';
-      wrapper.querySelector(".field-label").textContent = label;
+
+      const labelEl = wrapper.querySelector(".field-label");
+      labelEl.textContent = label;
+
+      if (tooltipText) {
+        const tip = document.createElement("span");
+        tip.className = "tooltip";
+        tip.dataset.tip = tooltipText;
+        tip.textContent = "i";
+        labelEl.appendChild(document.createTextNode(" "));
+        labelEl.appendChild(tip);
+      }
+
       wrapper.querySelector(".field-value").textContent = value;
       return wrapper;
     }
@@ -1333,6 +1595,441 @@ __REPORT_DATA_JSON__
       root.replaceChildren(...children);
     }
 
+    // Mostly QA color scales: original (grey), synthetic (green),
+    // difference (red), accuracy matrix (blue).
+    const HEAT_SCALES = {
+      original: ["#ffffff", "#a7a7a7", "#7b7b7b", "#666666"],
+      synthetic: ["#ffffff", "#81eac3", "#43e0a5", "#24db96"],
+      difference: ["#ffffff", "#ffc7b8", "#ff7a55", "#ff3300"],
+      accuracy: ["#f5f6ff", "#3d4fff"]
+    };
+
+    function hexToRgb(hex) {
+      const h = hex.replace("#", "");
+      return [
+        parseInt(h.slice(0, 2), 16),
+        parseInt(h.slice(2, 4), 16),
+        parseInt(h.slice(4, 6), 16)
+      ];
+    }
+
+    function interpStops(stops, t) {
+      const x = Math.max(0, Math.min(1, t));
+      const seg = x * (stops.length - 1);
+      const i = Math.min(stops.length - 2, Math.floor(seg));
+      const f = seg - i;
+      const a = hexToRgb(stops[i]);
+      const b = hexToRgb(stops[i + 1]);
+      const mix = (j) => Math.round(a[j] + (b[j] - a[j]) * f);
+      return `rgb(${mix(0)}, ${mix(1)}, ${mix(2)})`;
+    }
+
+    function rgbLuminance(rgb) {
+      const m = /(\d+),\s*(\d+),\s*(\d+)/.exec(rgb);
+      if (!m) return 1;
+      const r = Number(m[1]);
+      const g = Number(m[2]);
+      const b = Number(m[3]);
+      return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    }
+
+    function heatColor(value, mode = "difference", scaleMax = 1) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "#edf2f6";
+      const stops = HEAT_SCALES[mode] || HEAT_SCALES.difference;
+      let t;
+      if (mode === "accuracy") {
+        t = (value - 0.8) / 0.2;
+      } else {
+        t = Math.abs(value) / (scaleMax || 1);
+      }
+      return interpStops(stops, t);
+    }
+
+    function renderHeatmapTable(payload, options = {}) {
+      const columns = (payload && payload.columns) || options.xLabels || [];
+      const rows = options.yLabels || columns;
+      const values = (payload && payload.values) || [];
+      const mode = options.mode || "difference";
+      const scaleMax = options.scaleMax || 1;
+      const digits = options.digits ?? 2;
+      const emptyText = options.emptyText || "Sin datos disponibles.";
+
+      const wrap = document.createElement("div");
+      wrap.className = "corr-heatmap";
+
+      if (!columns.length || !rows.length || !values.length) {
+        const empty = document.createElement("p");
+        empty.className = "visual-caption corr-empty";
+        empty.textContent = emptyText;
+        wrap.appendChild(empty);
+        return wrap;
+      }
+
+      const table = document.createElement("table");
+      table.className = "corr-heatmap-table";
+
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      headerRow.appendChild(document.createElement("th"));
+      columns.forEach((col) => {
+        const th = document.createElement("th");
+        th.className = "corr-label";
+        th.textContent = col;
+        th.title = col;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+
+      const tbody = document.createElement("tbody");
+      rows.forEach((rowLabel, i) => {
+        const tr = document.createElement("tr");
+        const rowHeader = document.createElement("th");
+        rowHeader.className = "corr-label";
+        rowHeader.textContent = rowLabel;
+        rowHeader.title = rowLabel;
+        tr.appendChild(rowHeader);
+
+        columns.forEach((_, j) => {
+          const td = document.createElement("td");
+          const value = Number((values[i] || [])[j]);
+          td.className = "corr-cell";
+          if (!Number.isFinite(value)) {
+            td.textContent = "-";
+            td.style.background = "#edf2f6";
+          } else {
+            const bg = heatColor(value, mode, scaleMax);
+            td.textContent = formatScore(value, digits);
+            td.style.background = bg;
+            td.style.color = rgbLuminance(bg) < 0.58 ? "#ffffff" : "#122231";
+            td.title = `${rowLabel} / ${columns[j]}: ${formatScore(value, digits + 2)}`;
+          }
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      return wrap;
+    }
+
+    function renderCorrelationMatrices(correlations) {
+      const root = document.getElementById("correlationMatricesGrid");
+      if (!root) return;
+
+      const items = [
+        ["Original", correlations && correlations.real, "original"],
+        ["Synthetic", correlations && correlations.synthetic, "synthetic"],
+        ["Difference", correlations && correlations.absolute_difference, "difference"]
+      ];
+
+      root.replaceChildren(
+        ...items.map(([title, payload, mode]) => {
+          const card = document.createElement("article");
+          card.className = "matrix-card";
+          const h = document.createElement("h4");
+          h.textContent = title;
+          card.appendChild(h);
+          card.appendChild(renderHeatmapTable(payload, { mode, digits: 2 }));
+          return card;
+        })
+      );
+    }
+
+    function renderAccuracyMatrix(matrix) {
+      const root = document.getElementById("accuracyMatrixHeatmap");
+      if (!root) return;
+      const card = document.createElement("article");
+      card.className = "matrix-card plot-card-wide";
+      const h = document.createElement("h4");
+      h.textContent = "1-TVD matrix";
+      const p = document.createElement("p");
+      p.className = "visual-caption";
+      p.textContent = "La diagonal contiene 1-TVD univariante; el resto contiene 1-TVD bivariante por par de columnas.";
+      card.appendChild(h);
+      card.appendChild(p);
+      card.appendChild(renderHeatmapTable(matrix, { mode: "accuracy", digits: 2 }));
+      root.replaceChildren(card);
+    }
+
+    function renderDistAccuracySummary(summary) {
+      const root = document.getElementById("distComparisonAccuracy");
+      if (!root) return;
+      const families = ["univariate", "bivariate", "trivariate"];
+      const means = families.map((f) => ((summary || {})[f] || {}).mean_1_tvd);
+      const overall = means.filter((v) => typeof v === "number" && !Number.isNaN(v));
+      const overallMean = overall.length
+        ? overall.reduce((a, b) => a + b, 0) / overall.length
+        : null;
+      const labels = {
+        univariate: "Univariante",
+        bivariate: "Bivariante",
+        trivariate: "Trivariante"
+      };
+
+      const overallBox = document.createElement("div");
+      overallBox.className = "dist-acc-overall";
+      overallBox.innerHTML = [
+        '<div class="dist-acc-overall-label">Accuracy (1-TVD)</div>',
+        '<div class="dist-acc-overall-value"></div>'
+      ].join("");
+      overallBox.querySelector(".dist-acc-overall-value").textContent =
+        formatScore(overallMean, 4);
+
+      const sep = document.createElement("div");
+      sep.className = "dist-acc-sep";
+
+      const breakdown = document.createElement("div");
+      breakdown.className = "dist-acc-breakdown";
+      families.forEach((family, idx) => {
+        const k = document.createElement("span");
+        k.className = "k";
+        const row = (summary || {})[family] || {};
+        const n = typeof row.n === "number" ? ` (${row.n})` : "";
+        k.textContent = labels[family] + n;
+        const v = document.createElement("span");
+        v.className = "v";
+        v.textContent = formatScore(means[idx], 4);
+        v.style.color = scoreToColor(means[idx]);
+        breakdown.appendChild(k);
+        breakdown.appendChild(v);
+      });
+
+      root.replaceChildren(overallBox, sep, breakdown);
+    }
+
+    function renderAccuracyByColumnTable(table, summary) {
+      const rows = (table || []).map((row) => ({
+        column: row.column,
+        univariate: row.univariate,
+        bivariate: row.bivariate,
+        trivariate: row.trivariate
+      }));
+      const totalRow = {
+        column: "Total",
+        univariate: ((summary || {}).univariate || {}).mean_1_tvd,
+        bivariate: ((summary || {}).bivariate || {}).mean_1_tvd,
+        trivariate: ((summary || {}).trivariate || {}).mean_1_tvd
+      };
+
+      const fmtScored = (v) => {
+        const span = document.createElement("span");
+        span.textContent = formatScore(v, 4);
+        if (typeof v === "number" && !Number.isNaN(v)) {
+          span.style.color = scoreToColor(v);
+          span.style.fontWeight = "800";
+        }
+        return span;
+      };
+
+      renderSimpleTable(
+        "accuracyByColumnTable",
+        [...rows, totalRow],
+        [
+          { key: "column", label: "Columna" },
+          { key: "univariate", label: "Univariante" },
+          { key: "bivariate", label: "Bivariante" },
+          { key: "trivariate", label: "Trivariante" }
+        ],
+        {
+          formatters: {
+            univariate: fmtScored,
+            bivariate: fmtScored,
+            trivariate: fmtScored
+          }
+        }
+      );
+    }
+
+    function destroyDistributionCharts() {
+      (window.__distributionCharts || []).forEach((chart) => chart.destroy());
+      window.__distributionCharts = [];
+    }
+
+    function renderUnivariateDistributionPlots(plots) {
+      const root = document.getElementById("univariateDistributionPlots");
+      if (!root) return;
+      const rows = plots || [];
+      if (!rows.length) {
+        const empty = document.createElement("p");
+        empty.className = "visual-caption corr-empty";
+        empty.textContent = "No hay distribuciones univariantes disponibles.";
+        root.replaceChildren(empty);
+        return;
+      }
+
+      const cards = rows.map((plot, index) => {
+        const card = document.createElement("article");
+        card.className = "dist-card";
+        card.innerHTML = [
+          '<div class="dist-card-title"></div>',
+          '<div class="dist-mini-chart"><canvas></canvas></div>'
+        ].join("");
+
+        const title = card.querySelector(".dist-card-title");
+        title.textContent = plot.column || "-";
+        if (typeof plot.one_minus_tvd === "number") {
+          const acc = document.createElement("span");
+          acc.className = "dist-acc";
+          acc.textContent = formatScore(plot.one_minus_tvd, 3);
+          title.appendChild(acc);
+        }
+
+        const canvas = card.querySelector("canvas");
+        canvas.id = `univariateDistributionChart${index}`;
+        if (window.Chart) {
+          const chart = new Chart(canvas, {
+            type: "line",
+            data: {
+              labels: plot.labels || [],
+              datasets: [
+                {
+                  label: "Original",
+                  data: plot.real || [],
+                  borderColor: "#666666",
+                  backgroundColor: "#666666",
+                  borderWidth: 1.6,
+                  pointRadius: 2.5,
+                  pointStyle: "rectRot",
+                  fill: false,
+                  tension: 0
+                },
+                {
+                  label: "Synthetic",
+                  data: plot.synthetic || [],
+                  borderColor: "#24db96",
+                  backgroundColor: "#ffeded",
+                  borderWidth: 1.6,
+                  pointRadius: 2.5,
+                  pointStyle: "rectRot",
+                  fill: "-1",
+                  tension: 0
+                }
+              ]
+            },
+            options: {
+              maintainAspectRatio: false,
+              interaction: { mode: "index", intersect: false },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: (ctx) => `${ctx.dataset.label}: ${formatScore(ctx.raw, 4)}`
+                  }
+                }
+              },
+              scales: {
+                x: {
+                  grid: { display: false },
+                  ticks: {
+                    maxRotation: 60,
+                    minRotation: 0,
+                    autoSkip: true,
+                    font: { size: 8 },
+                    color: "#8aa0b2"
+                  }
+                },
+                y: {
+                  beginAtZero: true,
+                  grid: { color: "#edf2f6" },
+                  ticks: {
+                    font: { size: 8 },
+                    color: "#8aa0b2",
+                    callback: (value) => formatScore(Number(value), 2)
+                  }
+                }
+              }
+            }
+          });
+          window.__distributionCharts.push(chart);
+        }
+        return card;
+      });
+
+      root.replaceChildren(...cards);
+    }
+
+    function bivariateMatrixPayload(matrix) {
+      return { values: matrix || [] };
+    }
+
+    function renderBivariateDistributionPlots(plots) {
+      const root = document.getElementById("bivariateDistributionPlots");
+      if (!root) return;
+      const rows = plots || [];
+      if (!rows.length) {
+        const empty = document.createElement("p");
+        empty.className = "visual-caption corr-empty";
+        empty.textContent = "No hay distribuciones bivariantes disponibles.";
+        root.replaceChildren(empty);
+        return;
+      }
+
+      const cards = rows.map((plot) => {
+        const card = document.createElement("article");
+        card.className = "dist-card";
+
+        const title = document.createElement("div");
+        title.className = "dist-card-title";
+        title.textContent = (plot.columns || []).join("  ~  ");
+        if (typeof plot.one_minus_tvd === "number") {
+          const acc = document.createElement("span");
+          acc.className = "dist-acc";
+          acc.textContent = formatScore(plot.one_minus_tvd, 3);
+          title.appendChild(acc);
+        }
+
+        const flatten = (matrix) => (matrix || []).flat().filter((v) => typeof v === "number");
+        const sharedMax = Math.max(
+          0.0001,
+          ...flatten(plot.real),
+          ...flatten(plot.synthetic)
+        );
+
+        const pair = document.createElement("div");
+        pair.className = "biv-pair";
+        [
+          ["original", plot.real, "original"],
+          ["synthetic", plot.synthetic, "synthetic"]
+        ].forEach(([label, values, mode]) => {
+          const cell = document.createElement("div");
+          cell.className = "biv-pair-cell";
+          const h5 = document.createElement("h5");
+          h5.textContent = label;
+          cell.appendChild(h5);
+          cell.appendChild(renderHeatmapTable(
+            bivariateMatrixPayload(values),
+            {
+              xLabels: plot.x_labels || [],
+              yLabels: plot.y_labels || [],
+              mode,
+              scaleMax: sharedMax,
+              digits: 3
+            }
+          ));
+          pair.appendChild(cell);
+        });
+
+        card.appendChild(title);
+        card.appendChild(pair);
+        return card;
+      });
+
+      root.replaceChildren(...cards);
+    }
+
+    function renderDistributionComparison(details) {
+      const comparison = (details || {}).distribution_comparison || {};
+      destroyDistributionCharts();
+      renderDistAccuracySummary(comparison.summary || {});
+      renderCorrelationMatrices(comparison.correlations || (details || {}).correlation_matrices || {});
+      renderUnivariateDistributionPlots(comparison.univariate_plots || []);
+      renderBivariateDistributionPlots(comparison.bivariate_plots || []);
+      renderAccuracyByColumnTable(comparison.accuracy_table || [], comparison.summary || {});
+      renderAccuracyMatrix(comparison.accuracy_matrix || {});
+    }
+
     function chartValue(value) {
       return typeof value === "number" && Number.isFinite(value) ? value : null;
     }
@@ -1546,6 +2243,8 @@ __REPORT_DATA_JSON__
           }
           if (value instanceof Node) {
             td.appendChild(value);
+          } else if (typeof value === "number" && Number.isFinite(value)) {
+            td.textContent = formatScore(value, 1);
           } else {
             td.textContent = value === undefined || value === null ? "-" : String(value);
           }
@@ -1591,13 +2290,60 @@ __REPORT_DATA_JSON__
       statusBadge.style.background = statusView.bg;
       statusBadge.style.borderColor = statusView.color;
 
+      const training = metadata.training_parameters || {};
+
+      const modelSize = training.model_size || "-";
+      const epsilon = training.epsilon === null || training.epsilon === undefined
+        ? "No DP"
+        : training.epsilon;
+      const flexibleGeneration = training.flexible_generation === null || training.flexible_generation === undefined
+        ? "-"
+        : (training.flexible_generation ? "Sí" : "No");
+
       const fields = [
-        ["Evaluation ID", metadata.evaluation_id || "-"],
-        ["Model ID", metadata.model_id || "-"],
-        ["Simulation ID", metadata.simulation_id || "-"],
-        ["Timestamp", formatDate(metadata.timestamp || metadata.evaluation_id)],
-        ["Status", metadata.status || "-"]
+        [
+          "Evaluation ID",
+          metadata.evaluation_id || "-",
+          "Identificador único de esta evaluación."
+        ],
+        [
+          "Model ID",
+          metadata.model_id || "-",
+          "Identificador del modelo/generador entrenado."
+        ],
+        [
+          "Simulation ID",
+          metadata.simulation_id || "-",
+          "Identificador de la generación sintética evaluada."
+        ],
+        [
+          "Model size",
+          modelSize,
+          "Tamaño/capacidad del modelo generativo usado. En general, modelos mayores pueden capturar relaciones más complejas, pero tardan más y pueden aumentar el riesgo de memorizar patrones."
+        ],
+        [
+          "Epsilon",
+          epsilon,
+          "Parámetro de privacidad diferencial. Valores más bajos implican más ruido y más privacidad; valores más altos implican menos ruido. Si aparece No DP, no se aplicó privacidad diferencial."
+        ],
+        [
+          "Flexible generation",
+          flexibleGeneration,
+          "Indica si el generador permite mayor flexibilidad en el orden/condicionamiento de generación. Puede facilitar generación condicional, aunque a veces reduce algo la fidelidad frente a una generación más fija."
+        ],
+        [
+          "Timestamp",
+          formatDate(metadata.timestamp || metadata.evaluation_id),
+          "Fecha/hora de la evaluación."
+        ],
+        [
+          "Status",
+          metadata.status || "-",
+          "Estado final de la evaluación."
+        ]
       ];
+
+grid.replaceChildren(...fields.map((x) => createField(x[0], x[1], x[2])));
 
       grid.replaceChildren(...fields.map((x) => createField(x[0], x[1])));
     }
@@ -1634,7 +2380,7 @@ __REPORT_DATA_JSON__
           privacySubtitle
         ],
         [
-          "Utility (rel.)",
+          "Relative Utility",
           utilityRelativeScore,
           "Utility relativa compara el rendimiento predictivo del sintetico contra el rendimiento con datos reales. Cercano a 1 indica que el sintetico conserva casi toda la utilidad.",
           utilitySubtitle
@@ -1642,12 +2388,12 @@ __REPORT_DATA_JSON__
         [
           "Global",
           scores.global_score,
-          "Global combina Fidelity, Privacy y Utility para dar una vision agregada.",
+          "Global combina solo Fidelity y Privacy. Relative Utility se muestra como bloque informativo independiente.",
           ""
         ]
       ];
 
-      const axisItems = cardItems.slice(0, 3);
+      const axisItems = cardItems.slice(0, 2);
 
       root.replaceChildren(...cardItems.map((x) => createScoreCard(x[0], x[1], x[2], x[3])));
 
@@ -1847,19 +2593,7 @@ __REPORT_DATA_JSON__
         "Score " + formatScore(scores.fidelity_score, 3);
 
       renderFidelityTvdBars(details.tvd_by_column || []);
-      renderCorrelationDiffHeatmap(details.correlation_difference_matrix);
-
-      renderSimpleTable(
-        "tvdTable",
-        (details.tvd_by_column || []).map((r) => ({
-          column: r.column,
-          complementary_tvd: formatScore(r.complementary_tvd, 6)
-        })),
-        [
-          { key: "column", label: "Columna" },
-          { key: "complementary_tvd", label: "Complementary TVD" }
-        ]
-      );
+      renderDistributionComparison(details);
 
       renderSimpleTable(
         "cioTable",
@@ -2268,9 +3002,9 @@ __REPORT_DATA_JSON__
 
       renderAxisScore(
         "utilityAxisScore",
-        "Score de Utilidad",
+        "Utilidad predictiva relativa",
         utilityRelativeScore,
-        "Resume cuanto rendimiento predictivo se conserva cuando se entrena con sinteticos y se evalua contra reales."
+        "Indicador informativo: resume cuanto rendimiento predictivo se conserva cuando se entrena con sinteticos. No participa en el score global."
       );
 
       aggRoot.replaceChildren(
@@ -2311,6 +3045,109 @@ __REPORT_DATA_JSON__
       );
     }
 
+    function renderUtilityTests(utilityDetails) {
+      const summaryRoot = document.getElementById("utilityTestsSummary");
+      const tableId = "utilityTestsTable";
+
+      const summary = (utilityDetails && utilityDetails.utility_tests_summary) || {};
+      const rows = (utilityDetails && utilityDetails.utility_tests_rows) || [];
+
+      if (summaryRoot) {
+        const score = summary.score;
+        const nTests = summary.n_tests;
+        const nValid = summary.n_valid_tests;
+        const totalWeight = summary.total_weight;
+
+        const items = [
+          {
+            label: "Utility tests score",
+            value: score,
+            note: "Resumen ponderado de las pruebas estadísticas definidas por el usuario."
+          },
+          {
+            label: "Pruebas válidas",
+            value: typeof nValid === "number" && typeof nTests === "number" ? `${nValid}/${nTests}` : "-",
+            note: "Número de pruebas calculadas correctamente."
+          },
+          {
+            label: "Peso total",
+            value: typeof totalWeight === "number" ? totalWeight.toFixed(1) : "-",
+            note: "Suma de pesos usados en la agregación."
+          }
+        ];
+
+        summaryRoot.replaceChildren(
+          ...items.map((item) => {
+            const card = document.createElement("article");
+            const isScore = typeof item.value === "number";
+            const color = isScore ? scoreToColor(item.value) : qualityColor("unknown");
+
+            card.className = "score-breakdown-card";
+            card.style.borderTopColor = color;
+            card.innerHTML = [
+              '<div class="score-breakdown-label"></div>',
+              '<div class="score-breakdown-value"></div>',
+              '<div class="score-breakdown-note"></div>'
+            ].join("");
+
+            card.querySelector(".score-breakdown-label").textContent = item.label;
+            card.querySelector(".score-breakdown-value").textContent =
+              isScore ? formatScore(item.value, 3) : item.value;
+            card.querySelector(".score-breakdown-value").style.color = color;
+            card.querySelector(".score-breakdown-note").textContent = item.note;
+
+            return card;
+          })
+        );
+      }
+
+      const fmtNumber = (value, digits = 1) => {
+        if (typeof value !== "number" || Number.isNaN(value)) return "-";
+        return formatScore(value, digits);
+      };
+      
+      const fmtPercent = (value) => {
+        if (typeof value !== "number" || Number.isNaN(value)) return "-";
+        return formatScore(value * 100, 1) + "%";
+      };
+
+      const fmtScore = (value) => {
+        const span = document.createElement("span");
+        span.textContent = fmtNumber(value, 3);
+        if (typeof value === "number" && !Number.isNaN(value)) {
+          span.style.color = scoreToColor(value);
+          span.style.fontWeight = "800";
+        }
+        return span;
+      };
+
+      renderSimpleTable(
+        tableId,
+        rows,
+        [
+          { key: "name", label: "Prueba" },
+          { key: "metric", label: "Métrica" },
+          { key: "weight", label: "Peso" },
+          { key: "tolerance", label: "Tolerancia" },
+          { key: "real_value", label: "Real" },
+          { key: "synthetic_value", label: "Sintético" },
+          { key: "relative_error", label: "Error relativo" },
+          { key: "score", label: "Score" },
+          { key: "status", label: "Estado" }
+        ],
+        {
+          formatters: {
+            weight: (v) => fmtNumber(v, 1),
+            tolerance: (v) => fmtPercent(v),
+            real_value: (v) => fmtNumber(v, 4),
+            synthetic_value: (v) => fmtNumber(v, 4),
+            relative_error: (v) => fmtPercent(v),
+            score: fmtScore
+          }
+        }
+      );
+    }
+
     function renderTechnical(details) {
       const logs = (details.logs || {}).time_report || "Sin time_report disponible.";
       document.getElementById("timeReport").textContent = logs;
@@ -2335,6 +3172,7 @@ __REPORT_DATA_JSON__
       renderFidelity((data.summary || {}).fidelity || {}, ((data.details || {}).fidelity || {}));
       renderPrivacy((data.summary || {}).privacy || {}, ((data.details || {}).privacy || {}));
       renderUtility((data.summary || {}).utility || {}, ((data.details || {}).utility || {}));
+      renderUtilityTests((data.details || {}).utility || {});
       renderTechnical((data.details || {}));
     }
 

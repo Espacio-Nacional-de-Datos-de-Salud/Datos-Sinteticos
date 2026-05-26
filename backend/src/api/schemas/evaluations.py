@@ -8,6 +8,10 @@ from pydantic import BaseModel, Field
 class EvaluationCreateRequest(BaseModel):
     """Payload to start a synthetic data evaluation asynchronously."""
 
+    name: str | None = Field(
+        default=None,
+        description="Optional human-readable name for this evaluation run.",
+    )
     simulation_id: str = Field(
         ...,
         description="ID of the completely generated simulation.",
@@ -28,6 +32,8 @@ class EvaluationSummary(BaseModel):
     job_name: str | None = None
     metrics_evaluated: list[str] | None = None
     progress: JobProgress | None = None
+    duration_seconds: float | None = None
+    started_at_ms: int | None = None
 
 
 class RenameRequest(BaseModel):

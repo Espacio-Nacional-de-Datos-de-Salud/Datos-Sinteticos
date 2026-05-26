@@ -86,7 +86,7 @@ SUPPORTED_FILE_FORMATS = (".csv", ".parquet", ".xls", ".xlsx")
 
 METADATA_FILENAME = "metadata.json"
 PROFILING_REPORT_PATTERN = "{name}_profiling_report.html"
-TIME_PROFILING_REPORT_FILENAME = "time_profiling_report.txt"
+TIME_PROFILING_REPORT_FILENAME = "time_profiling_report.json"
 GENERATOR_ZIP_NAME = "generator.zip"
 
 MODEL_CARD_FILENAME = "model_card.json"

@@ -56,6 +56,9 @@ export type SimulationJob = Schemas["SimulationJob"];
 export type EvaluationSummary = Schemas["EvaluationSummary"];
 export type EvaluationJob = Schemas["EvaluationJob"];
 
+export type TimeProfilingReport = Schemas["TimeProfilingReport"];
+export type TimeProfilingPhase = Schemas["TimeProfilingPhase"];
+
 export type ConfigScope = Schemas["ConfigScope"];
 export type ConfigFile = Schemas["ConfigFile"];
 export type ConfigContent = Schemas["ConfigContent"];
@@ -87,6 +90,43 @@ export const ENCODING_TYPES = [
   "LANGUAGE_DATETIME",
 ] as const;
 export type EncodingType = (typeof ENCODING_TYPES)[number];
+
+// Spanish display labels for the MostlyAI encoding types. The enum values
+// above are sent to the backend unchanged; these are only for the UI.
+export const ENCODING_TYPE_LABELS: Record<string, string> = {
+  AUTO: "Automático",
+  TABULAR_CATEGORICAL: "Categórica",
+  TABULAR_NUMERIC_AUTO: "Numérica (automática)",
+  TABULAR_NUMERIC_DISCRETE: "Numérica discreta",
+  TABULAR_NUMERIC_BINNED: "Numérica agrupada",
+  TABULAR_NUMERIC_DIGIT: "Numérica por dígitos",
+  TABULAR_CHARACTER: "Texto corto",
+  TABULAR_DATETIME: "Fecha y hora",
+  TABULAR_DATETIME_RELATIVE: "Fecha y hora relativa",
+  TABULAR_LAT_LONG: "Latitud / longitud",
+  LANGUAGE_TEXT: "Texto libre",
+  LANGUAGE_CATEGORICAL: "Categórica (lenguaje)",
+  LANGUAGE_NUMERIC: "Numérica (lenguaje)",
+  LANGUAGE_DATETIME: "Fecha y hora (lenguaje)",
+};
+
+// Spanish description of each encoding type, for help/manual content.
+export const ENCODING_TYPE_DESCRIPTIONS: Record<string, string> = {
+  AUTO: "Deja que el sistema elija automáticamente el tipo más adecuado para la columna.",
+  TABULAR_CATEGORICAL: "Conjunto cerrado de valores discretos (p. ej. servicio, sexo). El modelo respeta las categorías existentes.",
+  TABULAR_NUMERIC_AUTO: "Valores numéricos continuos; el sistema ajusta automáticamente la representación.",
+  TABULAR_NUMERIC_DISCRETE: "Valores numéricos con un número limitado de valores distintos (p. ej. número de hijos).",
+  TABULAR_NUMERIC_BINNED: "Valores numéricos agrupados en intervalos; suaviza distribuciones muy dispersas.",
+  TABULAR_NUMERIC_DIGIT: "Modela el número dígito a dígito; útil para identificadores numéricos con formato fijo.",
+  TABULAR_CHARACTER: "Texto corto con estructura fija, como códigos o matrículas.",
+  TABULAR_DATETIME: "Marcas temporales absolutas; se preservan rangos y estacionalidad.",
+  TABULAR_DATETIME_RELATIVE: "Fechas modeladas como diferencia respecto a otra fecha de la fila.",
+  TABULAR_LAT_LONG: "Pares de coordenadas geográficas (latitud y longitud).",
+  LANGUAGE_TEXT: "Texto libre sin estructura fija, como observaciones o comentarios clínicos.",
+  LANGUAGE_CATEGORICAL: "Categórica modelada con el motor de lenguaje, para categorías de texto complejas.",
+  LANGUAGE_NUMERIC: "Valores numéricos modelados con el motor de lenguaje.",
+  LANGUAGE_DATETIME: "Fechas modeladas con el motor de lenguaje.",
+};
 
 // UI-only: which editor mode the config drawer should render. Not part of
 // the backend response (the backend infers format from the file extension).
@@ -173,6 +213,18 @@ export async function getSimulationColumns(simulationId: string): Promise<Simula
 
 export async function getModelColumns(modelId: string): Promise<ModelColumns> {
   const { data } = await api.get<ModelColumns>(`/models/${modelId}/columns`);
+  return data;
+}
+
+export type ColumnKind = "numeric" | "datetime" | "categorical";
+export type ModelColumnTypes = Record<string, Record<string, ColumnKind>>;
+
+export async function getModelColumnTypes(
+  modelId: string,
+): Promise<ModelColumnTypes> {
+  const { data } = await api.get<ModelColumnTypes>(
+    `/models/${modelId}/columns/types`,
+  );
   return data;
 }
 

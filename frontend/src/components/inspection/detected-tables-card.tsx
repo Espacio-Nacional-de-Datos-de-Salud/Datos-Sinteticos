@@ -1,8 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { EditableName } from "@/components/jobs/editable-name";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -21,25 +19,19 @@ import {
 } from "@/components/ui/table";
 import type { InspectionSummary } from "@/lib/api";
 
-// Headline result of a finished inspection: rows-per-table summary, plus
-// rename + reset controls. The status while a run is in flight is shown
-// separately in InspectionStatusCard.
+// Headline result of a finished inspection: rows-per-table summary. The
+// status while a run is in flight is shown separately in
+// InspectionStatusCard, and the inspection name is edited at the page top.
 export function DetectedTablesCard({
   inspectionId,
   inspection,
   isLoading,
   isError,
-  inspections,
-  onRename,
-  onReset,
 }: {
   inspectionId: string | null;
   inspection: InspectionSummary | undefined;
   isLoading: boolean;
   isError: boolean;
-  inspections: InspectionSummary[];
-  onRename: (id: string, name: string) => Promise<void>;
-  onReset: () => void;
 }) {
   const content = useMemo(() => {
     if (!inspectionId) {
@@ -96,45 +88,18 @@ export function DetectedTablesCard({
     );
   }, [inspectionId, inspection, isLoading, isError]);
 
-  const active = inspectionId
-    ? inspections.find((x) => x.inspection_id === inspectionId)
-    : undefined;
-  const allNames = inspections.map((x) => x.inspection_name || x.inspection_id);
-
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between space-y-0">
-        <div>
-          <CardTitle className="text-base">Tablas Detectadas</CardTitle>
-          <CardDescription>
-            Resumen de tablas y nº de filas tras la inspección.
-            {inspectionId && (
-              <span
-                className="ml-2 font-mono text-xs"
-                suppressHydrationWarning
-              >
-                id: {inspectionId}
-              </span>
-            )}
-          </CardDescription>
-          {inspectionId && active && (
-            <EditableName
-              name={active.inspection_name || active.inspection_id}
-              existingNames={allNames}
-              onSave={(name) => onRename(inspectionId, name)}
-            />
+      <CardHeader>
+        <CardTitle className="text-base">Tablas Detectadas</CardTitle>
+        <CardDescription>
+          Resumen de tablas y nº de filas tras la inspección.
+          {inspectionId && (
+            <span className="ml-2 font-mono text-xs" suppressHydrationWarning>
+              id: {inspectionId}
+            </span>
           )}
-        </div>
-        {inspectionId && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={onReset}
-          >
-            Nueva inspección
-          </Button>
-        )}
+        </CardDescription>
       </CardHeader>
       <CardContent>{content}</CardContent>
     </Card>

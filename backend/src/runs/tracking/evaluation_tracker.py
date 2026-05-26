@@ -55,12 +55,14 @@ class EvaluationTracker(BaseRunTracker):
         pipeline_id: str = NO_PIPELINE_ID,
         job_name: str = "",
         evaluation_id: str | None = None,
+        training_parameters: dict | None = None,
     ) -> None:
         super().__init__()
         self.simulation_id = simulation_id
         self.model_id = model_id
         self.pipeline_id = pipeline_id
         self.job_name = job_name
+        self.training_parameters = training_parameters or {}
 
         self.evaluation_id: str = evaluation_id or (
             f"{EVALUATION_RUN_FOLDER_PREFIX}_{general_config.get_run_timestamp()}"
@@ -71,6 +73,9 @@ class EvaluationTracker(BaseRunTracker):
     # ------------------------------------------------------------------
     # Lifecycle hooks
     # ------------------------------------------------------------------
+    def _on_enter(self) -> None:
+        self.save_eval_card()
+
     def _on_exit(self, exc_type, exc_val, exc_tb) -> None:
         if exc_type is None:
             try:
@@ -96,6 +101,7 @@ class EvaluationTracker(BaseRunTracker):
                 "timestamp": general_config.get_run_timestamp(),
                 "pipeline_id": self.pipeline_id,
                 "job_name": self.job_name,
+                "training_parameters": self.training_parameters,
             }
         )
 

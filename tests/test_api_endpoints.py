@@ -343,7 +343,7 @@ def test_create_inspection_returns_new_job(
     monkeypatch.setattr(
         inspections_router,
         "initialize_inspection_session",
-        lambda: SimpleNamespace(inspection_id="inspection_20260101_120000"),
+        lambda name=None: SimpleNamespace(inspection_id="inspection_20260101_120000"),
     )
     monkeypatch.setattr(inspections_router, "run_inspection_flow", lambda **_: None)
     monkeypatch.setattr(
@@ -454,13 +454,18 @@ def test_delete_inspection_returns_deleted_id(
     monkeypatch.setattr(
         inspections_router,
         "delete_inspection_catalog",
-        lambda inspection_id: DeleteInspectionOutcome(status="deleted"),
+        lambda inspection_id, mode="safe": DeleteInspectionOutcome(status="deleted"),
     )
 
     response = client.delete("/inspections/inspection_20260101_120000")
 
     assert response.status_code == 200
-    assert response.json() == {"deleted_id": "inspection_20260101_120000"}
+    assert response.json() == {
+        "deleted_id": "inspection_20260101_120000",
+        "deleted_model_ids": [],
+        "deleted_simulation_ids": [],
+        "deleted_evaluation_ids": [],
+    }
 
 
 def test_download_inspection_returns_zip(
@@ -518,7 +523,7 @@ def test_create_model_training_returns_new_job(
     monkeypatch.setattr(
         models_router,
         "initialize_training_session",
-        lambda: SimpleNamespace(model_id="model_20260101_120000"),
+        lambda name=None: SimpleNamespace(model_id="model_20260101_120000"),
     )
     monkeypatch.setattr(models_router, "register_cancel", lambda model_id: object())
     monkeypatch.setattr(models_router, "run_training_flow", lambda **_: None)
@@ -587,13 +592,17 @@ def test_delete_model_returns_deleted_id(
     monkeypatch.setattr(
         models_router,
         "delete_model_catalog",
-        lambda model_id: DeleteModelOutcome(status="deleted"),
+        lambda model_id, mode="safe": DeleteModelOutcome(status="deleted"),
     )
 
     response = client.delete("/models/model_20260101_120000")
 
     assert response.status_code == 200
-    assert response.json() == {"deleted_id": "model_20260101_120000"}
+    assert response.json() == {
+        "deleted_id": "model_20260101_120000",
+        "deleted_simulation_ids": [],
+        "deleted_evaluation_ids": [],
+    }
 
 
 def test_download_model_generator_returns_zip(
@@ -645,7 +654,7 @@ def test_create_simulation_returns_new_job(
     monkeypatch.setattr(
         simulations_router,
         "initialize_simulation_session",
-        lambda model_id, synthetic_data_file_format=None: SimpleNamespace(
+        lambda model_id, synthetic_data_file_format=None, name=None: SimpleNamespace(
             simulation_id="simulation_20260101_120000",
             synthetic_data_file_format=synthetic_data_file_format or "csv",
         ),
@@ -732,13 +741,16 @@ def test_delete_simulation_returns_deleted_id(
     monkeypatch.setattr(
         simulations_router,
         "delete_simulation_catalog",
-        lambda simulation_id: DeleteSimulationOutcome(status="deleted"),
+        lambda simulation_id, mode="safe": DeleteSimulationOutcome(status="deleted"),
     )
 
     response = client.delete("/simulations/simulation_20260101_120000")
 
     assert response.status_code == 200
-    assert response.json() == {"deleted_id": "simulation_20260101_120000"}
+    assert response.json() == {
+        "deleted_id": "simulation_20260101_120000",
+        "deleted_evaluation_ids": [],
+    }
 
 
 def test_download_simulation_synthetic_dataset_returns_zip(
@@ -866,7 +878,7 @@ def test_create_evaluation_returns_new_job(
     monkeypatch.setattr(
         evaluations_router,
         "initialize_evaluation_session",
-        lambda simulation_id, model_id: SimpleNamespace(
+        lambda simulation_id, model_id, name=None: SimpleNamespace(
             evaluation_id="evaluation_20260101_120000"
         ),
     )

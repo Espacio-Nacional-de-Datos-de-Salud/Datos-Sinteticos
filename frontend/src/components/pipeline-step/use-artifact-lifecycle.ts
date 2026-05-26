@@ -27,7 +27,23 @@ import {
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
-import { extractDetail } from "@/lib/errors";
+import { extractDeleteConflict, extractDetail } from "@/lib/errors";
+
+export type DeleteMode = "safe" | "force" | "cascade";
+
+// Every list query whose contents a cascade delete can affect. Deleting an
+// inspection can remove downstream models/simulations/evaluations, so a
+// successful delete invalidates all of them regardless of which page ran it.
+const ALL_LIST_KEYS = ["inspections", "models", "simulations", "evaluations"];
+
+export type DeleteConflictState = {
+  /** Artifact the user tried to delete. */
+  id: string;
+  /** API explanation of why the safe delete was refused. */
+  message: string;
+  /** Count of downstream artifacts blocking the delete. */
+  linkedCount: number;
+};
 
 export type ArtifactStatus =
   | "in_progress"
@@ -99,12 +115,18 @@ export type ArtifactLifecycle<TItem extends ArtifactItem, TStartInput> = {
   hasCompleted: boolean;
   hydrated: boolean;
 
-  start: (input: TStartInput) => void;
+  start: (input: TStartInput, name?: string) => void;
   isStarting: boolean;
   cancel: (id: string) => void;
   isCancelling: boolean;
   remove: (id: string) => void;
   isDeleting: boolean;
+  /** Set when a safe delete was refused for having downstream jobs. */
+  deleteConflict: DeleteConflictState | null;
+  /** Dismiss the conflict without deleting. */
+  dismissDeleteConflict: () => void;
+  /** Retry the blocked delete with "force" (orphan) or "cascade" (downstream). */
+  resolveDeleteConflict: (mode: "force" | "cascade") => void;
   cleanup: () => void;
   isCleaning: boolean;
   purge: () => void;
@@ -122,6 +144,8 @@ export function useArtifactLifecycle<
   const queryClient = useQueryClient();
   const [activeId, setActiveIdState] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [deleteConflict, setDeleteConflict] =
+    useState<DeleteConflictState | null>(null);
 
   useEffect(() => {
     // Mount-time hydration: SSR and the first client render must agree on
@@ -179,9 +203,16 @@ export function useArtifactLifecycle<
   );
 
   const startMutation = useMutation({
-    mutationFn: async (input: TStartInput) => {
+    mutationFn: async ({ input, name }: { input: TStartInput; name?: string }) => {
       const body = config.buildStartBody(input);
-      const { data } = await api.post<TItem>(`${config.apiPath}/`, body);
+      // Include the functional name in the POST body so the backend writes it
+      // to the card synchronously before the background task starts, avoiding
+      // the race between the PATCH and the background flow overwriting the card.
+      const trimmedName = name?.trim();
+      const { data } = await api.post<TItem>(`${config.apiPath}/`, {
+        ...body,
+        ...(trimmedName ? { name: trimmedName } : {}),
+      });
       return data;
     },
     onSuccess: (job) => {
@@ -214,18 +245,33 @@ export function useArtifactLifecycle<
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`${config.apiPath}/${id}`);
+    mutationFn: async ({ id, mode }: { id: string; mode: DeleteMode }) => {
+      await api.delete(`${config.apiPath}/${id}`, {
+        params: mode === "safe" ? undefined : { mode },
+      });
     },
-    onSuccess: (_data, id) => {
+    onSuccess: (_data, { id }) => {
       toast.success(config.labels.deletedToast(id));
+      setDeleteConflict(null);
       if (activeId === id) {
         setActiveIdState(null);
         window.localStorage.removeItem(config.storageKey);
       }
-      queryClient.invalidateQueries({ queryKey: [config.listKey] });
+      // A cascade can delete artifacts on other pages, so refresh every list.
+      for (const key of ALL_LIST_KEYS) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
     },
-    onError: (err) => {
+    onError: (err, { id, mode }) => {
+      const conflict = mode === "safe" ? extractDeleteConflict(err) : null;
+      if (conflict) {
+        setDeleteConflict({
+          id,
+          message: conflict.message,
+          linkedCount: conflict.linkedIds.length,
+        });
+        return;
+      }
       toast.error(`${config.labels.deleteErrorPrefix}: ${extractDetail(err)}`);
     },
   });
@@ -264,8 +310,9 @@ export function useArtifactLifecycle<
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
       await api.patch(`${config.apiPath}/${id}/name`, { name });
     },
-    onSuccess: () => {
+    onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: [config.listKey] });
+      queryClient.invalidateQueries({ queryKey: [config.itemKey, id] });
     },
   });
 
@@ -289,12 +336,17 @@ export function useArtifactLifecycle<
     isRunning,
     hasCompleted,
     hydrated,
-    start: (input) => startMutation.mutate(input),
+    start: (input, name) => startMutation.mutate({ input, name }),
     isStarting: startMutation.isPending,
     cancel: (id) => cancelMutation.mutate(id),
     isCancelling: cancelMutation.isPending,
-    remove: (id) => deleteMutation.mutate(id),
+    remove: (id) => deleteMutation.mutate({ id, mode: "safe" }),
     isDeleting: deleteMutation.isPending,
+    deleteConflict,
+    dismissDeleteConflict: () => setDeleteConflict(null),
+    resolveDeleteConflict: (mode) => {
+      if (deleteConflict) deleteMutation.mutate({ id: deleteConflict.id, mode });
+    },
     cleanup: () => cleanupMutation.mutate(),
     isCleaning: cleanupMutation.isPending,
     purge: () => purgeMutation.mutate(),

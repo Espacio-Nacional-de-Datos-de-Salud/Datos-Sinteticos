@@ -18,7 +18,9 @@ from backend.src.config.general import (
 from backend.src.runs.catalog._base import (
     delete_run_folders,
     folder_has_files,
+    folder_started_at_ms,
     parse_folder_start_time,
+    read_total_run_duration_seconds,
 )
 from backend.src.infrastructure.logging_config import get_logger
 
@@ -51,6 +53,8 @@ def list_available_pipelines() -> list[dict]:
             "config_path": "",
             "jobs": [],
             "progress": None,
+            "started_at_ms": folder_started_at_ms(folder, PIPELINE_RUN_FOLDER_PREFIX),
+            "duration_seconds": read_total_run_duration_seconds(folder),
         }
 
         try:

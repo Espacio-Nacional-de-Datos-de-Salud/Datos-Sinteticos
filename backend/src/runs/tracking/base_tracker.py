@@ -125,6 +125,11 @@ class BaseRunTracker:
                 existing = read_json(self.card_path)
                 if "progress" in existing and "progress" not in payload:
                     payload["progress"] = existing["progress"]
+                # Preserve any user-assigned functional name written by the API
+                # before the background task started (e.g. via PATCH /{id}/name).
+                for key in ("model_name", "simulation_name", "inspection_name", "evaluation_name"):
+                    if key in existing and key not in payload:
+                        payload[key] = existing[key]
             except Exception:
                 pass
         write_json(self.card_path, payload, indent=4)

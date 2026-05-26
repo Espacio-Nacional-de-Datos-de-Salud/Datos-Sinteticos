@@ -95,7 +95,14 @@ class EvaluationRunner:
             raise
 
         if custom_metric_names:
-            report = run_custom_metrics(real_data, synthetic_data, report, custom_metric_names)
+            report = run_custom_metrics(
+                real_data,
+                synthetic_data,
+                report,
+                custom_metric_names,
+                real_data_dict=real_data_dict,
+                synthetic_data_dict=synthetic_data_dict,
+            )
 
         return report
 

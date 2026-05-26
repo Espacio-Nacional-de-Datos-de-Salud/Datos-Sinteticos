@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from backend.src.api.schemas import CancelResponse
+from backend.src.api.schemas import CancelResponse, TimeProfilingReport, load_time_profiling_report
 from backend.src.api.schemas.inspections import (
     Autodetect,
     CleanupResult,
@@ -96,7 +96,7 @@ def create_inspection(
     work runs in the background; clients poll the GET endpoint to observe the
     ``status`` transition to ``completed`` or ``failed``.
     """
-    session = initialize_inspection_session()
+    session = initialize_inspection_session(name=request.name)
     cancel_event = register_cancel(session.inspection_id)
     background_tasks.add_task(
         run_inspection_flow,
@@ -106,6 +106,7 @@ def create_inspection(
         enable_data_profiling=request.enable_data_profiling,
         csv_delimiter=request.csv_delimiter,
         excluded_columns=request.excluded_columns,
+        composite_pks=request.composite_pks,
         session=session,
         cancel_event=cancel_event,
     )
@@ -194,6 +195,21 @@ def get_inspection(inspection_id: InspectionId) -> dict:
         if inspection["inspection_id"] == inspection_id:
             return inspection
     raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
+
+
+@router.get("/{inspection_id}/time-profiling", response_model=TimeProfilingReport)
+def get_inspection_time_profiling(inspection_id: InspectionId) -> TimeProfilingReport:
+    """Returns the structured per-phase timing breakdown of an inspection run."""
+    folder = Path(INSPECTIONS_DIR) / inspection_id
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
+    report = load_time_profiling_report(str(folder))
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No time profiling report for inspection '{inspection_id}'.",
+        )
+    return report
 
 
 # NOTE: /{id}/autodetect must be declared before any bare /{id}/… catch-all.
@@ -453,12 +469,24 @@ def rename_inspection(inspection_id: InspectionId, body: RenameRequest) -> dict:
 
 
 @router.delete("/{inspection_id}", response_model=DeletedInspection)
-def delete_inspection(inspection_id: InspectionId) -> DeletedInspection:
+def delete_inspection(
+    inspection_id: InspectionId,
+    mode: Literal["safe", "force", "cascade"] = Query(
+        default="safe",
+        description=(
+            "**safe** — refuse (409) when linked models exist. "
+            "**force** — delete the inspection only, leaving its models orphaned. "
+            "**cascade** — delete the inspection and every downstream model, "
+            "simulation, and evaluation."
+        ),
+    ),
+) -> DeletedInspection:
     """Deletes an inspection session and all its stored artifacts.
 
-    Returns 409 if the inspection has linked trained models — delete those first.
+    With ``mode=safe`` (default), returns 409 if the inspection has linked
+    trained models. Use ``mode=force`` or ``mode=cascade`` to delete anyway.
     """
-    outcome = delete_inspection_catalog(inspection_id)
+    outcome = delete_inspection_catalog(inspection_id, mode=mode)
     if outcome.status == "not_found":
         raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
     if outcome.status == "has_linked_models":
@@ -467,13 +495,18 @@ def delete_inspection(inspection_id: InspectionId) -> DeletedInspection:
             status_code=409,
             detail={
                 "message": (
-                    f"Inspection '{inspection_id}' has {linked_count} linked model(s). "
-                    "Delete them first."
+                    f"La inspección '{inspection_id}' tiene {linked_count} "
+                    "modelo(s) asociado(s)."
                 ),
                 "linked_model_ids": outcome.linked_model_ids,
             },
         )
-    return DeletedInspection(deleted_id=inspection_id)
+    return DeletedInspection(
+        deleted_id=inspection_id,
+        deleted_model_ids=outcome.deleted_model_ids,
+        deleted_simulation_ids=outcome.deleted_simulation_ids,
+        deleted_evaluation_ids=outcome.deleted_evaluation_ids,
+    )
 
 
 @router.get(

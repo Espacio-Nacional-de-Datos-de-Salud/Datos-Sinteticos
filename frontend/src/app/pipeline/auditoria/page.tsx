@@ -12,11 +12,13 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Play, ShieldCheck, Trash2, XCircle } from "lucide-react";
+import { FileText, Play, ShieldCheck, Trash2, XCircle } from "lucide-react";
 
 import { ConfigPanel } from "@/components/config/config-drawer";
 import { EditableName } from "@/components/jobs/editable-name";
 import { ActiveJobCard } from "@/components/pipeline-step/active-job-card";
+import { TimeProfilingPanel } from "@/components/pipeline-step/time-profiling-panel";
+import { DownloadMenu } from "@/components/pipeline-step/download-menu";
 import { HistoryCard, type HistoryColumn } from "@/components/pipeline-step/history-card";
 import { useArtifactLifecycle } from "@/components/pipeline-step/use-artifact-lifecycle";
 import { useUpstreamSelection } from "@/components/pipeline-step/use-upstream-selection";
@@ -25,6 +27,7 @@ import { RulesBanner } from "@/components/config/rules-banner";
 import { EvaluationReportSection } from "@/components/pipelines/evaluation-report-section";
 import { WizardShell } from "@/components/layout/wizard-shell";
 import { WorkflowGroup } from "@/components/layout/workflow-group";
+import { NamePromptDialog } from "@/components/ui/name-prompt-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   api,
+  API_BASE_URL,
   type EvaluationSummary,
   type ModelSummary,
   type SimulationSummary,
@@ -60,6 +64,7 @@ export default function AuditoriaPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmCleanup, setConfirmCleanup] = useState(false);
   const [confirmPurge, setConfirmPurge] = useState(false);
+  const [startDialogOpen, setStartDialogOpen] = useState(false);
 
   const lc = useArtifactLifecycle<EvaluationSummary, StartInput>({
     apiPath: "/evaluations",
@@ -193,8 +198,8 @@ export default function AuditoriaPage() {
 
   return (
     <WizardShell currentSlug="auditoria" canAdvance={false} outline={AUDITORIA_OUTLINE}>
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div>
+      <div className="space-y-6">
+        <div className="sticky top-0 z-20 -mx-8 -mt-6 border-b bg-background/95 px-8 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <h1 className="text-2xl font-semibold tracking-tight">Auditoría</h1>
           <p className="text-sm text-muted-foreground">
             Evalúa la utilidad y privacidad del dataset sintético según las
@@ -204,6 +209,17 @@ export default function AuditoriaPage() {
             </code>
             .
           </p>
+          {lc.activeId && lc.active && (
+            <div className="mt-3 flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Nombre:</span>
+              <EditableName
+                name={lc.active.evaluation_name || lc.active.evaluation_id}
+                existingNames={lc.list.map((x) => x.evaluation_name || x.evaluation_id)}
+                onSave={(name) => lc.rename(lc.active!.evaluation_id, name)}
+                size="sm"
+              />
+            </div>
+          )}
         </div>
 
         <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
@@ -214,42 +230,42 @@ export default function AuditoriaPage() {
           <div id="nueva-evaluacion" className="scroll-mt-24">
             <Card>
               <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-end">
-              <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1 space-y-1">
-                <Label htmlFor="sim-select">Nueva evaluación</Label>
-                {simulationsQuery.isLoading ? (
-                  <Skeleton className="h-9 w-full" />
-                ) : completedSims.length === 0 ? (
-                  <p className="text-sm text-destructive">
-                    No hay generaciones completadas. Vuelve al paso{" "}
-                    <b>Generación</b>.
-                  </p>
-                ) : (
-                  <select
-                    id="sim-select"
-                    value={selectedSimId}
-                    onChange={(e) => setSelectedSimId(e.target.value)}
-                    className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
-                  >
-                    {completedSims.map((s) => (
-                      <option key={s.simulation_id} value={s.simulation_id}>
-                        {s.simulation_name || s.simulation_id}
-                        {s.sample_size != null
-                          ? ` · ${s.sample_size.toLocaleString()} filas`
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            </CardContent>
+                <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <Label htmlFor="sim-select">Nueva evaluación</Label>
+                  {simulationsQuery.isLoading ? (
+                    <Skeleton className="h-9 w-full" />
+                  ) : completedSims.length === 0 ? (
+                    <p className="text-sm text-destructive">
+                      No hay generaciones completadas. Vuelve al paso{" "}
+                      <b>Generación</b>.
+                    </p>
+                  ) : (
+                    <select
+                      id="sim-select"
+                      value={selectedSimId}
+                      onChange={(e) => setSelectedSimId(e.target.value)}
+                      className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+                    >
+                      {completedSims.map((s) => (
+                        <option key={s.simulation_id} value={s.simulation_id}>
+                          {s.simulation_name || s.simulation_id}
+                          {s.sample_size != null
+                            ? ` · ${s.sample_size.toLocaleString()} filas`
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </CardContent>
             </Card>
           </div>
 
           <div id="configuracion-avanzada" className="scroll-mt-24">
-              <ConfigPanel configId="evaluation" contextId={selectedSimId} />
+            <ConfigPanel configId="evaluation" contextId={selectedSimId} />
           </div>
 
           <div id="ejecutar-evaluacion" className="scroll-mt-24">
@@ -261,7 +277,7 @@ export default function AuditoriaPage() {
                 <Button
                   type="button"
                   disabled={!selectedSimId || lc.isStarting || lc.isRunning}
-                  onClick={() => lc.start({ simulation_id: selectedSimId })}
+                  onClick={() => setStartDialogOpen(true)}
                 >
                   <Play className="mr-2 h-4 w-4" />
                   {lc.isStarting
@@ -278,72 +294,68 @@ export default function AuditoriaPage() {
         <WorkflowGroup id="resultados" label="Resultados" className="scroll-mt-24">
           <div id="evaluacion-actual" className="scroll-mt-24">
             <ActiveJobCard
-            id={lc.activeId}
-            title="Evaluación actual"
-            description="Estado de la última evaluación iniciada."
-            isLoading={lc.activeQuery.isLoading}
-            isError={lc.activeQuery.isError}
-            errorMessage="No se pudo cargar el estado de la evaluación."
-            active={lc.active}
-            activeName={lc.active?.evaluation_name || lc.active?.evaluation_id}
-            existingNames={lc.list.map((x) => x.evaluation_name || x.evaluation_id)}
-            onRename={
-              lc.active
-                ? (name) => lc.rename(lc.active!.evaluation_id, name)
-                : undefined
-            }
-            metadata={
-              lc.active && (
-                <>
-                  <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
-                    {lc.active.simulation_id && (
-                      <span>
-                        Generación:{" "}
-                        <span className="font-mono" title={lc.active.simulation_id}>
-                          {labelForSimId(lc.active.simulation_id)}
+              id={lc.activeId}
+              title="Evaluación actual"
+              description="Estado de la última evaluación iniciada."
+              isLoading={lc.activeQuery.isLoading}
+              isError={lc.activeQuery.isError}
+              errorMessage="No se pudo cargar el estado de la evaluación."
+              active={lc.active}
+              metadata={
+                lc.active && (
+                  <>
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                      {lc.active.simulation_id && (
+                        <span>
+                          Generación:{" "}
+                          <span className="font-mono" title={lc.active.simulation_id}>
+                            {labelForSimId(lc.active.simulation_id)}
+                          </span>
                         </span>
-                      </span>
-                    )}
-                    {lc.active.model_id && (
-                      <span>
-                        Modelo:{" "}
-                        <span className="font-mono" title={lc.active.model_id}>
-                          {labelForModelId(lc.active.model_id)}
+                      )}
+                      {lc.active.model_id && (
+                        <span>
+                          Modelo:{" "}
+                          <span className="font-mono" title={lc.active.model_id}>
+                            {labelForModelId(lc.active.model_id)}
+                          </span>
                         </span>
-                      </span>
-                    )}
-                  </div>
-                  {lc.active.metrics_evaluated &&
-                    lc.active.metrics_evaluated.length > 0 && (
-                      <div>
-                        <p className="mb-1 text-xs text-muted-foreground">Métricas:</p>
-                        <div className="flex flex-wrap gap-1">
-                          {lc.active.metrics_evaluated.map((m) => (
-                            <Badge key={m} variant="secondary">
-                              {m}
-                            </Badge>
-                          ))}
+                      )}
+                    </div>
+                    {lc.active.metrics_evaluated &&
+                      lc.active.metrics_evaluated.length > 0 && (
+                        <div>
+                          <p className="mb-1 text-xs text-muted-foreground">Métricas:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {lc.active.metrics_evaluated.map((m) => (
+                              <Badge key={m} variant="secondary">
+                                {m}
+                              </Badge>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      )}
+                    {lc.active.status === "completed" && lc.activeId && (
+                      <TimeProfilingPanel kind="evaluations" id={lc.activeId} />
                     )}
+                  </>
+                )
+              }
+              actions={
+                <>
+                  {lc.isRunning && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={lc.isCancelling}
+                      onClick={() => lc.activeId && lc.cancel(lc.activeId)}
+                    >
+                      Cancelar
+                    </Button>
+                  )}
                 </>
-              )
-            }
-            actions={
-              <>
-                {lc.isRunning && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={lc.isCancelling}
-                    onClick={() => lc.activeId && lc.cancel(lc.activeId)}
-                  >
-                    Cancelar
-                  </Button>
-                )}
-              </>
-            }
+              }
             />
           </div>
         </WorkflowGroup>
@@ -359,50 +371,91 @@ export default function AuditoriaPage() {
         <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
           <div id="evaluaciones" className="scroll-mt-24">
             <HistoryCard
-            title="Evaluaciones"
-            description="Catálogo completo de evaluaciones en el servidor. Haz click para cargar una evaluación pasada y ver su informe."
-            items={lc.list}
-            isLoading={lc.listQuery.isLoading}
-            isError={lc.listQuery.isError}
-            errorMessage="No se pudo cargar el catálogo de evaluaciones."
-            emptyMessage="Todavía no hay evaluaciones."
-            columns={columns}
-            actionsWidth="11%"
-            collapseLabel="evaluaciones"
-            onCleanup={() => setConfirmCleanup(true)}
-            onPurge={() => setConfirmPurge(true)}
-            isCleaning={lc.isCleaning}
-            isPurging={lc.isPurging}
-            activeId={lc.activeId}
-            getRowId={(e) => e.evaluation_id}
-            onSelect={(id) => lc.setActiveId(id)}
-            actionsCell={(e) =>
-              e.status === "in_progress" ? (
-                <button
-                  type="button"
-                  aria-label="Cancelar evaluación"
-                  disabled={lc.isCancelling}
-                  onClick={() => lc.cancel(e.evaluation_id)}
-                  className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  aria-label="Eliminar evaluación"
-                  disabled={lc.isDeleting}
-                  onClick={() => setConfirmDeleteId(e.evaluation_id)}
-                  className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              )
-            }
+              title="Evaluaciones"
+              description="Catálogo completo de evaluaciones en el servidor. Haz click para cargar una evaluación pasada y ver su informe."
+              items={lc.list}
+              isLoading={lc.listQuery.isLoading}
+              isError={lc.listQuery.isError}
+              errorMessage="No se pudo cargar el catálogo de evaluaciones."
+              emptyMessage="Todavía no hay evaluaciones."
+              columns={columns}
+              actionsWidth="11%"
+              onCleanup={() => setConfirmCleanup(true)}
+              onPurge={() => setConfirmPurge(true)}
+              isCleaning={lc.isCleaning}
+              isPurging={lc.isPurging}
+              activeId={lc.activeId}
+              getRowId={(e) => e.evaluation_id}
+              getTimestamp={(e) => e.timestamp}
+              getDuration={(e) => e.duration_seconds}
+              onSelect={(id) => lc.setActiveId(id)}
+              actionsCell={(e) =>
+                e.status === "in_progress" ? (
+                  <button
+                    type="button"
+                    aria-label="Cancelar evaluación"
+                    disabled={lc.isCancelling}
+                    onClick={() => lc.cancel(e.evaluation_id)}
+                    className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                  </button>
+                ) : (
+                  <>
+                    {e.status === "completed" && (
+                      <a
+                        href={`${API_BASE_URL}/evaluations/${e.evaluation_id}/report`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="Ver reporte en nueva pestaña"
+                        className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                    {e.status === "completed" && (
+                      <DownloadMenu
+                        ariaLabel="Descargar evaluación"
+                        options={[
+                          {
+                            label: "Informe HTML",
+                            href: `/evaluations/${e.evaluation_id}/download/report`,
+                          },
+                          {
+                            label: "Carpeta completa",
+                            href: `/evaluations/${e.evaluation_id}/download`,
+                          },
+                        ]}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      aria-label="Eliminar evaluación"
+                      disabled={lc.isDeleting}
+                      onClick={() => setConfirmDeleteId(e.evaluation_id)}
+                      className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                )
+              }
             />
           </div>
         </WorkflowGroup>
       </div>
+
+      <NamePromptDialog
+        open={startDialogOpen}
+        title="Iniciar evaluación"
+        description="Asigna un nombre funcional a esta evaluación para identificarla más fácilmente. Puedes dejarlo en blanco y editarlo después."
+        confirmLabel="Iniciar evaluación"
+        onConfirm={(name) => {
+          lc.start({ simulation_id: selectedSimId }, name || undefined);
+          setStartDialogOpen(false);
+        }}
+        onCancel={() => setStartDialogOpen(false)}
+      />
 
       <WizardConfirmDialogs
         texts={{

@@ -274,7 +274,9 @@ function RulesEditorBody({
   const [yamlMode, setYamlMode] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
-  const [adding, setAdding] = useState(false);
+  // The add-rule form is shown by default so the user can start defining a
+  // rule without an extra click. Saving collapses it back to a rule card.
+  const [adding, setAdding] = useState(true);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   const configQuery = useQuery({

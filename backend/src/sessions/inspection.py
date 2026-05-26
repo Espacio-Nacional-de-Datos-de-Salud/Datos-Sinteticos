@@ -106,14 +106,14 @@ class InspectionResult:
     encoding_types: dict
 
 
-def initialize_inspection_session() -> InspectionSession:
+def initialize_inspection_session(name: str | None = None) -> InspectionSession:
     """Create the output folder and the ``in_progress`` inspection card.
 
     Thin wrapper around :meth:`InspectionTracker.initialize_session` kept for
     backward compatibility with API endpoints that pre-create the session
     synchronously and pass it into a background task.
     """
-    return InspectionTracker.initialize_session()
+    return InspectionTracker.initialize_session(name=name)
 
 
 def run_inspection_flow(
@@ -123,6 +123,7 @@ def run_inspection_flow(
     enable_data_profiling: bool,
     csv_delimiter: str = ",",
     excluded_columns: dict[str, list[str]] | None = None,
+    composite_pks: dict[str, list[str]] | None = None,
     session: InspectionSession | None = None,
     cancel_event: threading.Event | None = None,
 ) -> InspectionResult | None:
@@ -144,6 +145,10 @@ def run_inspection_flow(
             listed here are removed from the autodetect metadata **and** from the
             cached processed parquet files after the inspection run, making them
             invisible to training and all downstream pipeline steps.
+        composite_pks: Optional mapping of ``table_name → [col, …]`` declaring
+            composite primary keys. For each listed table a single unique PK
+            column is synthesized by concatenating the named columns. Falls back
+            to heuristic detection if the columns are missing or non-unique.
         session: Pre-initialized session (folder + ``in_progress`` card already
             on disk). When ``None`` the function creates it itself. Callers that
             need the ``inspection_id`` before the flow starts (e.g. an async API
@@ -167,7 +172,7 @@ def run_inspection_flow(
                 advance_progress(tracker.card_path, phases, InspectionPhase.LOADING)
                 with profiler.phase(ProfilerPhase.LOAD_FILES):
                     raw_data = FileDataLoader().load(file_paths, sep=csv_delimiter)
-                preprocessor = DataPreprocessor(raw_data)
+                preprocessor = DataPreprocessor(raw_data, composite_pk_config=composite_pks)
 
                 rules, rejection_config = extract_rules_and_rejection_config(rules_config_path)
                 for rule in rules:
@@ -225,11 +230,16 @@ def run_inspection_flow(
                             preprocessing_result.data_profiles, tracker.output_directory
                         )
 
+                # Preserve the user-assigned name (set via PATCH /name after the
+                # session was created) instead of resetting it to the raw id.
+                existing_card = read_json(session.card_path)
+                inspection_name = existing_card.get("inspection_name") or session.inspection_id
+
                 tracker.finalize_card(
                     {
                         "inspection_id": session.inspection_id,
-                        "inspection_name": session.inspection_id,
-                        "step_name": session.inspection_id,
+                        "inspection_name": inspection_name,
+                        "step_name": inspection_name,
                         "timestamp": session.timestamp,
                         "tables": table_sizes,
                         "file_paths": list(file_paths),
@@ -238,6 +248,7 @@ def run_inspection_flow(
                         "source_rules_config_path": rules_config_path,
                         "enable_data_profiling": enable_data_profiling,
                         "csv_delimiter": csv_delimiter,
+                        "composite_pks": composite_pks or {},
                     }
                 )
 
@@ -249,7 +260,7 @@ def run_inspection_flow(
 
                 return InspectionResult(
                     inspection_id=session.inspection_id,
-                    inspection_name=session.inspection_id,
+                    inspection_name=inspection_name,
                     output_directory=tracker.output_directory,
                     tables=table_sizes,
                     relationships=relationships,

@@ -31,6 +31,7 @@ def run_evaluation(
     pipeline_id: str = "none",
     job_name: str | None = None,
     metadata_path: str | None = None,
+    training_parameters: dict | None = None,
 ) -> pd.DataFrame:
     """Load both datasets, evaluate them, and write all outputs.
 
@@ -70,6 +71,7 @@ def run_evaluation(
             pipeline_id=pipeline_id,
             job_name=job_name or "",
             evaluation_id=evaluation_id,
+            training_parameters=training_parameters,
         ) as tracker:
             runner = EvaluationRunner(eval_results_dir=eval_dir)
             with profiler.phase(ProfilerPhase.RUN_METRICS):

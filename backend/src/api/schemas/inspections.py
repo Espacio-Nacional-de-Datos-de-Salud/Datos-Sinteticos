@@ -16,11 +16,17 @@ class InspectionSummary(BaseModel):
     tables: dict[str, int] = {}
     file_paths: list[str] = []
     progress: JobProgress | None = None
+    duration_seconds: float | None = None
+    started_at_ms: int | None = None
 
 
 class InspectionCreateRequest(BaseModel):
     """Body of ``POST /inspections``: inputs required to launch an inspection run."""
 
+    name: str | None = Field(
+        default=None,
+        description="Optional human-readable name for this inspection run.",
+    )
     file_paths: list[str] = Field(
         ...,
         min_length=1,
@@ -45,6 +51,19 @@ class InspectionCreateRequest(BaseModel):
         description="Whether to run data profiling during preprocessing.",
     )
     csv_delimiter: str = Field(default=",", description="Delimiter used when parsing CSV files.")
+    composite_pks: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Optional per-table composite primary keys (table name → list of column "
+            "names). For each listed table the inspector synthesizes a single unique "
+            "PK column by concatenating the named columns, instead of relying on "
+            "heuristic single-column PK detection. Use for datasets whose natural "
+            "key spans several columns (e.g. patient_id + year). Falls back to "
+            "heuristics if the named columns are missing or do not form a unique key. "
+            "An empty list (``\"TABLE\": []``) requests a surrogate row-index key — "
+            "use it for event-style tables with no natural unique key."
+        ),
+    )
     excluded_columns: dict[str, list[str]] = Field(
         default_factory=dict,
         description=(
@@ -77,6 +96,9 @@ class DeletedInspection(BaseModel):
     """Confirmation returned after successfully deleting an inspection."""
 
     deleted_id: str
+    deleted_model_ids: list[str] = []
+    deleted_simulation_ids: list[str] = []
+    deleted_evaluation_ids: list[str] = []
 
 
 class ForeignKey(BaseModel):

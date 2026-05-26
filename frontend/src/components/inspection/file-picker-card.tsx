@@ -8,7 +8,6 @@ import { Database, Trash2, Upload } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
 import {
   Card,
   CardContent,
@@ -37,11 +36,8 @@ export function FilePickerCard({
   onSelectionChange,
   onClearUploadsFromSelection,
   allowServerFiles,
-  isStartDisabled,
-  isStarting,
   csvDelimiter,
   onCsvDelimiterChange,
-  onStart,
 }: {
   selected: Set<string>;
   onToggleSelected: (path: string) => void;
@@ -49,15 +45,11 @@ export function FilePickerCard({
   /** Called after delete-uploads succeeds so the parent can prune its set. */
   onClearUploadsFromSelection: () => void;
   allowServerFiles: boolean;
-  isStartDisabled: boolean;
-  isStarting: boolean;
   csvDelimiter: string;
   onCsvDelimiterChange: (v: string) => void;
-  onStart: (enableProfiling: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const [extFilter, setExtFilter] = useState<ExtFilter>("all");
-  const [enableProfiling, setEnableProfiling] = useState<boolean>(true);
   const [sourceFilter, setSourceFilter] = useState<"uploads" | "server">(
     "uploads",
   );
@@ -146,6 +138,24 @@ export function FilePickerCard({
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : "Error desconocido";
       toast.error(`No se pudieron borrar los uploads: ${msg}`);
+    },
+  });
+
+  const deleteOneUpload = useMutation({
+    mutationFn: async ({ filename, path }: { filename: string; path: string }) => {
+      await api.delete(`/files/uploads/${encodeURIComponent(filename)}`);
+      return path;
+    },
+    onSuccess: (path) => {
+      toast.success(`Borrado: ${path.split("/").pop()}`);
+      // Deselect the deleted file if it was selected
+      if (selected.has(path)) onToggleSelected(path);
+      queryClient.invalidateQueries({ queryKey: ["files"] });
+      queryClient.invalidateQueries({ queryKey: ["upload-stats"] });
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      toast.error(`No se pudo borrar el fichero: ${msg}`);
     },
   });
 
@@ -359,61 +369,49 @@ export function FilePickerCard({
               <ul className="divide-y">
                 {files.map((f) => {
                   const isSel = selected.has(f.path);
+                  const canDelete = isUpload(f);
                   return (
-                    <li key={f.path}>
-                      <button
-                        type="button"
-                        onClick={() => onToggleSelected(f.path)}
-                        className={
-                          "flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors " +
-                          (isSel ? "bg-primary/5" : "hover:bg-accent")
-                        }
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={isSel}
-                            readOnly
-                            className="h-4 w-4"
-                          />
-                          <span className="truncate font-medium">{f.name}</span>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                          <span>{formatSize(f.size_bytes)}</span>
-                          <Badge variant="secondary" className="uppercase">
-                            {f.extension}
-                          </Badge>
-                        </div>
-                      </button>
+                    <li key={f.path} className={isSel ? "bg-primary/5" : "hover:bg-accent"}>
+                      <div className="flex w-full items-center gap-1 pr-1">
+                        <button
+                          type="button"
+                          onClick={() => onToggleSelected(f.path)}
+                          className="flex flex-1 items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors"
+                        >
+                          <div className="flex min-w-0 items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={isSel}
+                              readOnly
+                              className="h-4 w-4"
+                            />
+                            <span className="truncate font-medium">{f.name}</span>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                            <span>{formatSize(f.size_bytes)}</span>
+                            <Badge variant="secondary" className="uppercase">
+                              {f.extension}
+                            </Badge>
+                          </div>
+                        </button>
+                        {canDelete && (
+                          <button
+                            type="button"
+                            aria-label={`Borrar ${f.name}`}
+                            disabled={deleteOneUpload.isPending}
+                            onClick={() => deleteOneUpload.mutate({ filename: f.name, path: f.path })}
+                            className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </li>
                   );
                 })}
               </ul>
             </div>
 
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={enableProfiling}
-                onChange={(e) => setEnableProfiling(e.target.checked)}
-              />
-              <span>Generar informes de profiling (ydata-profiling)</span>
-            </label>
-
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                className="flex-1"
-                disabled={isStartDisabled || isStarting}
-                onClick={() => onStart(enableProfiling)}
-              >
-                {isStarting
-                  ? "Iniciando…"
-                  : `Iniciar Inspección (${selected.size})`}
-              </Button>
-              <Tooltip content="Analiza los archivos seleccionados para detectar automáticamente tablas, relaciones y tipos de datos. El sistema identificará claves primarias, foráneas y otros patrones en tus datos." side="left" />
-            </div>
           </CardContent>
         </TabsContent>
 

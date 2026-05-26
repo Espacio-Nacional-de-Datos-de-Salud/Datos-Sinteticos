@@ -62,14 +62,23 @@ class DataPreprocessor:
             manager. Callers may add rules to it before invoking :meth:`run`.
     """
 
-    def __init__(self, data_dict: dict[str, pd.DataFrame]) -> None:
+    def __init__(
+        self,
+        data_dict: dict[str, pd.DataFrame],
+        composite_pk_config: dict[str, list[str]] | None = None,
+    ) -> None:
         """Initializes the preprocessor with a set of raw tables.
 
         Args:
             data_dict (dict[str, pd.DataFrame]): Dictionary of raw tables
                 {table_name: dataframe}.
+            composite_pk_config (dict[str, list[str]] | None): Optional mapping
+                ``{table_name: [col, ...]}`` declaring composite primary keys.
+                Forwarded to :class:`MetadataExtractor`; ignored when
+                ``user_defined_relationships`` is supplied to :meth:`run`.
         """
         self.raw_data_dict = data_dict
+        self.composite_pk_config = composite_pk_config or {}
         self.rule_manager = LogicalRuleManager()
 
     def run(
@@ -107,7 +116,9 @@ class DataPreprocessor:
         if user_defined_relationships is not None:
             relationships = user_defined_relationships
         else:
-            metadata_extractor = MetadataExtractor(cleaned_data)
+            metadata_extractor = MetadataExtractor(
+                cleaned_data, composite_pk_config=self.composite_pk_config
+            )
             relationships = {"pks": metadata_extractor.extract_primary_keys(), "fks": []}
             relationships["fks"] = metadata_extractor.extract_foreign_keys(relationships["pks"])
             relationships = assign_default_context_keys(relationships)

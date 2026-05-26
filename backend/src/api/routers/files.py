@@ -13,8 +13,10 @@ from backend.src.sessions.files import (
     UploadConflictError,
     UploadExtensionError,
     UploadNameError,
+    UploadNotFoundError,
     UploadSizeLimitError,
     delete_all_uploads,
+    delete_one_upload,
     get_upload_stats,
     list_data_files,
     preview_file,
@@ -112,6 +114,17 @@ def preview_files(req: FilePreviewRequest) -> list[FilePreview]:
         except FilePreviewError:
             continue
     return out
+
+
+@router.delete("/uploads/{filename}", response_model=str)
+def delete_uploaded_file(filename: str) -> str:
+    """Deletes a single file from ``backend/data/uploads/`` and returns its name."""
+    try:
+        return delete_one_upload(filename)
+    except UploadNameError:
+        raise HTTPException(status_code=400, detail=f"Invalid filename: {filename!r}.") from None
+    except UploadNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Upload not found: {filename!r}.") from None
 
 
 @router.delete("/uploads", response_model=list[str])

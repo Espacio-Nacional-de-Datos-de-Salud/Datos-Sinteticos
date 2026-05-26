@@ -62,9 +62,9 @@ class DataCleaner:
             if dropped_cols:
                 changes_log.append(f"Columns removed (100% empty): {', '.join(dropped_cols)}")
 
-            # 3. Standardize column names
+            # 3. Standardize column names (strip surrounding whitespace only; case is preserved)
             old_names = clean_df.columns.tolist()
-            clean_df.columns = clean_df.columns.str.strip().str.lower()
+            clean_df.columns = clean_df.columns.str.strip()
             new_names = clean_df.columns.tolist()
 
             renamed_cols = []

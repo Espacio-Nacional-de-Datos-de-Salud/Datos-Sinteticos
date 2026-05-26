@@ -19,11 +19,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { FileText, Play, Sparkles, Trash2, XCircle } from "lucide-react";
+import { ExternalLink, FileText, Play, Sparkles, Trash2, XCircle } from "lucide-react";
 
 import { ConfigPanel } from "@/components/config/config-drawer";
 import { EditableName } from "@/components/jobs/editable-name";
 import { ActiveJobCard } from "@/components/pipeline-step/active-job-card";
+import { TimeProfilingPanel } from "@/components/pipeline-step/time-profiling-panel";
+import { DownloadMenu } from "@/components/pipeline-step/download-menu";
 import { HistoryCard, type HistoryColumn } from "@/components/pipeline-step/history-card";
 import { useArtifactLifecycle } from "@/components/pipeline-step/use-artifact-lifecycle";
 import { useUpstreamSelection } from "@/components/pipeline-step/use-upstream-selection";
@@ -31,9 +33,10 @@ import { WizardConfirmDialogs } from "@/components/pipeline-step/wizard-confirm-
 import { RulesBanner } from "@/components/config/rules-banner";
 import { WizardShell } from "@/components/layout/wizard-shell";
 import { WorkflowGroup } from "@/components/layout/workflow-group";
+import { NamePromptDialog } from "@/components/ui/name-prompt-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -57,6 +60,7 @@ const ENTRENAMIENTO_OUTLINE = [
   { id: "ejecutar-entrenamiento", label: "Ejecutar entrenamiento", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
   { id: "entrenamiento-actual", label: "Entrenamiento actual", level: 2 },
+  { id: "informe-calidad", label: "Informe de calidad", level: 2 },
   { id: "historial", label: "Historial", level: 1 },
   { id: "modelos-entrenados", label: "Modelos entrenados", level: 2 },
 ] as const;
@@ -65,6 +69,7 @@ export default function EntrenamientoPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmCleanup, setConfirmCleanup] = useState(false);
   const [confirmPurge, setConfirmPurge] = useState(false);
+  const [startDialogOpen, setStartDialogOpen] = useState(false);
 
   const lc = useArtifactLifecycle<ModelSummary, StartInput>({
     apiPath: "/models",
@@ -96,6 +101,11 @@ export default function EntrenamientoPage() {
   });
   const completedInspections = (inspectionsQuery.data ?? []).filter(
     (i) => i.status === "completed",
+  );
+
+  const allInspections = inspectionsQuery.data ?? [];
+  const inspectionNameById = Object.fromEntries(
+    allInspections.map((i) => [i.inspection_id, i.inspection_name || i.inspection_id]),
   );
 
   const { selectedId: selectedInspectionId, setSelectedId: setSelectedInspectionId } =
@@ -146,13 +156,26 @@ export default function EntrenamientoPage() {
     },
     {
       key: "tables",
-      header: "Tablas",
+      header: "Tablas / Inspección",
       width: "26%",
-      render: (m) => (
-        <span className="block truncate font-mono text-xs" title={m.tables || ""}>
-          {m.tables || "—"}
-        </span>
-      ),
+      render: (m) => {
+        const inspName = m.inspection_id ? (inspectionNameById[m.inspection_id] ?? m.inspection_id) : null;
+        return (
+          <div className="space-y-0.5 min-w-0">
+            <span className="block truncate font-mono text-xs" title={m.tables || ""}>
+              {m.tables || "—"}
+            </span>
+            {inspName && (
+              <span
+                className="block truncate text-[10px] text-muted-foreground"
+                title={inspName}
+              >
+                {inspName}
+              </span>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "rows",
@@ -180,8 +203,8 @@ export default function EntrenamientoPage() {
 
   return (
     <WizardShell currentSlug="entrenamiento" canAdvance={lc.hasCompleted} outline={ENTRENAMIENTO_OUTLINE}>
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div>
+      <div className="space-y-6">
+        <div className="sticky top-0 z-20 -mx-8 -mt-6 border-b bg-background/95 px-8 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <h1 className="text-2xl font-semibold tracking-tight">Entrenamiento</h1>
           <p className="text-sm text-muted-foreground">
             Lanza un entrenamiento a partir de una inspección completada.
@@ -189,6 +212,17 @@ export default function EntrenamientoPage() {
             catálogo de abajo y estará disponible en el paso de{" "}
             <b>Generación</b>.
           </p>
+          {lc.activeId && lc.active && (
+            <div className="mt-3 flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Nombre:</span>
+              <EditableName
+                name={lc.active.model_name || lc.active.model_id}
+                existingNames={lc.list.map((x) => x.model_name || x.model_id)}
+                onSave={(name) => lc.rename(lc.active!.model_id, name)}
+                size="sm"
+              />
+            </div>
+          )}
         </div>
 
         <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
@@ -199,46 +233,46 @@ export default function EntrenamientoPage() {
           <div id="nuevo-entrenamiento" className="scroll-mt-24">
             <Card>
               <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-end">
-              <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="inspection-select">Nuevo entrenamiento</Label>
-                  <Tooltip content="Selecciona la inspección completada sobre la que quieres entrenar el modelo. El modelo aprenderá los patrones de los datos y las reglas de preprocesamiento que definas." />
+                <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
+                  <Sparkles className="h-5 w-5" />
                 </div>
-                {inspectionsQuery.isLoading ? (
-                  <Skeleton className="h-9 w-full" />
-                ) : completedInspections.length === 0 ? (
-                  <p className="text-sm text-destructive">
-                    No hay inspecciones completadas. Vuelve al paso{" "}
-                    <b>Inspección</b>.
-                  </p>
-                ) : (
-                  <select
-                    id="inspection-select"
-                    value={selectedInspectionId}
-                    onChange={(e) => setSelectedInspectionId(e.target.value)}
-                    className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
-                  >
-                    {completedInspections.map((i) => {
-                      const tableSummary = Object.keys(i.tables ?? {}).join(", ");
-                      return (
-                        <option key={i.inspection_id} value={i.inspection_id}>
-                          {i.inspection_name || i.inspection_id}
-                          {tableSummary ? ` · ${tableSummary}` : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                )}
-              </div>
-            </CardContent>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="inspection-select">Nuevo entrenamiento</Label>
+                    <Tooltip content="Selecciona la inspección completada sobre la que quieres entrenar el modelo. El modelo aprenderá los patrones de los datos y las reglas de preprocesamiento que definas." />
+                  </div>
+                  {inspectionsQuery.isLoading ? (
+                    <Skeleton className="h-9 w-full" />
+                  ) : completedInspections.length === 0 ? (
+                    <p className="text-sm text-destructive">
+                      No hay inspecciones completadas. Vuelve al paso{" "}
+                      <b>Inspección</b>.
+                    </p>
+                  ) : (
+                    <select
+                      id="inspection-select"
+                      value={selectedInspectionId}
+                      onChange={(e) => setSelectedInspectionId(e.target.value)}
+                      className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+                    >
+                      {completedInspections.map((i) => {
+                        const tableSummary = Object.keys(i.tables ?? {}).join(", ");
+                        return (
+                          <option key={i.inspection_id} value={i.inspection_id}>
+                            {i.inspection_name || i.inspection_id}
+                            {tableSummary ? ` · ${tableSummary}` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+                </div>
+              </CardContent>
             </Card>
           </div>
 
           <div id="configuracion-modelo" className="scroll-mt-24">
-              <ConfigPanel configId="mostly_ai" />
+            <ConfigPanel configId="mostly_ai" />
           </div>
 
           <div id="ejecutar-entrenamiento" className="scroll-mt-24">
@@ -253,7 +287,7 @@ export default function EntrenamientoPage() {
                 <Button
                   type="button"
                   disabled={!selectedInspectionId || lc.isStarting || lc.isRunning}
-                  onClick={() => lc.start({ inspection_id: selectedInspectionId })}
+                  onClick={() => setStartDialogOpen(true)}
                 >
                   <Play className="mr-2 h-4 w-4" />
                   {lc.isStarting
@@ -270,131 +304,180 @@ export default function EntrenamientoPage() {
         <WorkflowGroup id="resultados" label="Resultados" className="scroll-mt-24">
           <div id="entrenamiento-actual" className="scroll-mt-24">
             <ActiveJobCard
-            id={lc.activeId}
-            title="Entrenamiento actual"
-            description="Estado del último entrenamiento iniciado desde esta sesión."
-            isLoading={lc.activeQuery.isLoading}
-            isError={lc.activeQuery.isError}
-            errorMessage="No se pudo cargar el estado del modelo."
-            active={lc.active}
-            activeName={lc.active?.model_name || lc.active?.model_id}
-            existingNames={lc.list.map((x) => x.model_name || x.model_id)}
-            onRename={
-              lc.active
-                ? (name) => lc.rename(lc.active!.model_id, name)
-                : undefined
-            }
-            metadata={
-              lc.active && (
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
-                  {lc.active.tables && (
-                    <span>
-                      Tablas:{" "}
-                      <span className="font-mono">{lc.active.tables}</span>
-                    </span>
+              id={lc.activeId}
+              title="Entrenamiento actual"
+              description="Estado del último entrenamiento iniciado desde esta sesión."
+              isLoading={lc.activeQuery.isLoading}
+              isError={lc.activeQuery.isError}
+              errorMessage="No se pudo cargar el estado del modelo."
+              active={lc.active}
+              metadata={
+                lc.active && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                      {lc.active.tables && (
+                        <span>
+                          Tablas:{" "}
+                          <span className="font-mono">{lc.active.tables}</span>
+                        </span>
+                      )}
+                      {lc.active.train_size != null && (
+                        <span className="tabular-nums">
+                          Filas: {lc.active.train_size.toLocaleString()}
+                        </span>
+                      )}
+                      {lc.active.accuracy != null && (
+                        <span className="tabular-nums">
+                          Precisión: {(lc.active.accuracy * 100).toFixed(2)}%
+                        </span>
+                      )}
+                    </div>
+                    {lc.active.status === "completed" && lc.activeId && (
+                      <TimeProfilingPanel kind="models" id={lc.activeId} />
+                    )}
+                  </div>
+                )
+              }
+              actions={
+                <>
+                  {lc.isRunning && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={lc.isCancelling}
+                      onClick={() => lc.activeId && lc.cancel(lc.activeId)}
+                    >
+                      Cancelar entrenamiento
+                    </Button>
                   )}
-                  {lc.active.train_size != null && (
-                    <span className="tabular-nums">
-                      Filas: {lc.active.train_size.toLocaleString()}
-                    </span>
-                  )}
-                  {lc.active.accuracy != null && (
-                    <span className="tabular-nums">
-                      Precisión: {(lc.active.accuracy * 100).toFixed(2)}%
-                    </span>
-                  )}
-                </div>
-              )
-            }
-            actions={
-              <>
-                {lc.isRunning && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={lc.isCancelling}
-                    onClick={() => lc.activeId && lc.cancel(lc.activeId)}
-                  >
-                    Cancelar entrenamiento
-                  </Button>
-                )}
-                {lc.active?.status === "completed" && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => lc.active && openReport(lc.active)}
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    Ver informe de calidad
-                  </Button>
-                )}
-              </>
-            }
+
+                </>
+              }
             />
           </div>
+
+          {lc.active?.status === "completed" && lc.active?.qa_report_filename && lc.activeId && (
+            <div id="informe-calidad" className="scroll-mt-24">
+              <Card>
+                <CardHeader className="flex flex-row items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="text-base">Informe de calidad del modelo</CardTitle>
+                    <CardDescription>
+                      Reporte generado automáticamente con las métricas de fidelidad y privacidad.
+                    </CardDescription>
+                  </div>
+                  <a
+                    href={`${API_BASE_URL}/models/${lc.activeId}/reports/${lc.active.qa_report_filename}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button variant="outline" size="sm" type="button">
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Abrir en pestaña nueva
+                    </Button>
+                  </a>
+                </CardHeader>
+                <CardContent>
+                  <iframe
+                    title="Informe de calidad"
+                    src={`${API_BASE_URL}/models/${lc.activeId}/reports/${lc.active.qa_report_filename}`}
+                    className="h-[70vh] w-full rounded-md border bg-white"
+                    sandbox="allow-scripts allow-same-origin allow-popups"
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </WorkflowGroup>
 
         <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
           <div id="modelos-entrenados" className="scroll-mt-24">
             <HistoryCard
-            title="Modelos entrenados"
-            description="Catálogo completo de modelos disponibles en el servidor. Haz click para cargar un modelo pasado y ver su estado."
-            items={lc.list}
-            isLoading={lc.listQuery.isLoading}
-            isError={lc.listQuery.isError}
-            errorMessage="No se pudo cargar el catálogo de modelos."
-            emptyMessage="Todavía no hay modelos entrenados."
-            columns={columns}
-            actionsWidth="13%"
-            collapseLabel="modelos entrenados"
-            onCleanup={() => setConfirmCleanup(true)}
-            onPurge={() => setConfirmPurge(true)}
-            isCleaning={lc.isCleaning}
-            isPurging={lc.isPurging}
-            activeId={lc.activeId}
-            getRowId={(m) => m.model_id}
-            onSelect={(id) => lc.setActiveId(id)}
-            actionsCell={(m) => (
-              <>
-                {m.status === "completed" && (
-                  <button
-                    type="button"
-                    aria-label="Ver informe"
-                    onClick={() => openReport(m)}
-                    className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                  >
-                    <FileText className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                {m.status === "in_progress" ? (
-                  <button
-                    type="button"
-                    aria-label="Cancelar modelo"
-                    disabled={lc.isCancelling}
-                    onClick={() => lc.cancel(m.model_id)}
-                    className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                  >
-                    <XCircle className="h-3.5 w-3.5" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    aria-label="Eliminar modelo"
-                    disabled={lc.isDeleting}
-                    onClick={() => setConfirmDeleteId(m.model_id)}
-                    className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </>
-            )}
+              title="Modelos entrenados"
+              description="Catálogo completo de modelos disponibles en el servidor. Haz click para cargar un modelo pasado y ver su estado."
+              items={lc.list}
+              isLoading={lc.listQuery.isLoading}
+              isError={lc.listQuery.isError}
+              errorMessage="No se pudo cargar el catálogo de modelos."
+              emptyMessage="Todavía no hay modelos entrenados."
+              columns={columns}
+              actionsWidth="13%"
+              onCleanup={() => setConfirmCleanup(true)}
+              onPurge={() => setConfirmPurge(true)}
+              isCleaning={lc.isCleaning}
+              isPurging={lc.isPurging}
+              activeId={lc.activeId}
+              getRowId={(m) => m.model_id}
+              getTimestamp={(m) => m.timestamp}
+              getDuration={(m) => m.duration_seconds}
+              onSelect={(id) => lc.setActiveId(id)}
+              actionsCell={(m) => (
+                <>
+                  {m.status === "completed" && (
+                    <button
+                      type="button"
+                      aria-label="Ver informe"
+                      onClick={() => openReport(m)}
+                      className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {m.status === "completed" && (
+                    <DownloadMenu
+                      ariaLabel="Descargar modelo"
+                      options={[
+                        {
+                          label: "Modelo (generador)",
+                          href: `/models/${m.model_id}/download/generator`,
+                        },
+                        {
+                          label: "Carpeta completa",
+                          href: `/models/${m.model_id}/download`,
+                        },
+                      ]}
+                    />
+                  )}
+                  {m.status === "in_progress" ? (
+                    <button
+                      type="button"
+                      aria-label="Cancelar modelo"
+                      disabled={lc.isCancelling}
+                      onClick={() => lc.cancel(m.model_id)}
+                      className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label="Eliminar modelo"
+                      disabled={lc.isDeleting}
+                      onClick={() => setConfirmDeleteId(m.model_id)}
+                      className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </>
+              )}
             />
           </div>
         </WorkflowGroup>
       </div>
+
+      <NamePromptDialog
+        open={startDialogOpen}
+        title="Iniciar entrenamiento"
+        description="Asigna un nombre funcional a este modelo para identificarlo más fácilmente. Puedes dejarlo en blanco y editarlo después."
+        confirmLabel="Iniciar entrenamiento"
+        onConfirm={(name) => {
+          lc.start({ inspection_id: selectedInspectionId }, name || undefined);
+          setStartDialogOpen(false);
+        }}
+        onCancel={() => setStartDialogOpen(false)}
+      />
 
       <WizardConfirmDialogs
         texts={{
@@ -423,6 +506,10 @@ export default function EntrenamientoPage() {
         confirmPurge={confirmPurge}
         setConfirmPurge={setConfirmPurge}
         onPurge={lc.purge}
+        deleteConflict={lc.deleteConflict}
+        onDeleteConflictCascade={() => lc.resolveDeleteConflict("cascade")}
+        onDeleteConflictForce={() => lc.resolveDeleteConflict("force")}
+        onDeleteConflictDismiss={lc.dismissDeleteConflict}
       />
     </WizardShell>
   );

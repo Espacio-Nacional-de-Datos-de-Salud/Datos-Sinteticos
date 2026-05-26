@@ -1,9 +1,97 @@
 """Pydantic schemas for simulation-related API responses."""
 
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field, model_validator
+
 from backend.src.api.schemas.jobs import JobProgress
 from backend.src.config.general import SYNTHETIC_DATA_FILE_FORMATS
 from backend.src.domain.id_validation import MODEL_ID_PATTERN
-from pydantic import BaseModel, Field
+
+
+class FixedCondition(BaseModel):
+    """Force a column to a single constant value on every generated row."""
+
+    mode: Literal["fixed"] = "fixed"
+    column: str = Field(..., min_length=1)
+    value: str | float | int
+
+
+class CategoricalCondition(BaseModel):
+    """Force a column to follow target proportions over categorical values.
+
+    ``weights`` are relative — they need not sum to 100; the server normalizes
+    them and allocates rows proportionally.
+    """
+
+    mode: Literal["categorical"] = "categorical"
+    column: str = Field(..., min_length=1)
+    weights: dict[str, float] = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def _check_weights(self):
+        if any(w < 0 for w in self.weights.values()):
+            raise ValueError("Category weights must be non-negative.")
+        if sum(self.weights.values()) <= 0:
+            raise ValueError("Category weights must sum to a positive number.")
+        return self
+
+
+class NumericCondition(BaseModel):
+    """Synthesize a numeric column with a parameterized generator.
+
+    ``uniform`` draws values evenly in ``[min, max]``. ``normal`` draws from a
+    Gaussian with the given ``mean``/``std``, clamped to ``[min, max]``.
+    """
+
+    mode: Literal["numeric"] = "numeric"
+    column: str = Field(..., min_length=1)
+    generator: Literal["uniform", "normal"] = "uniform"
+    min: float
+    max: float
+    mean: float | None = None
+    std: float | None = None
+    integer: bool = False
+
+    @model_validator(mode="after")
+    def _check_bounds(self):
+        if self.max < self.min:
+            raise ValueError("`max` must be greater than or equal to `min`.")
+        if self.generator == "normal":
+            if self.mean is None or self.std is None:
+                raise ValueError("`mean` and `std` are required for the normal generator.")
+            if self.std < 0:
+                raise ValueError("`std` must be non-negative.")
+        return self
+
+
+class DateRangeCondition(BaseModel):
+    """Synthesize a datetime column with values drawn uniformly between dates.
+
+    ``start`` and ``end`` are ISO date/datetime strings. Setting them equal
+    pins the column to a single date.
+    """
+
+    mode: Literal["daterange"] = "daterange"
+    column: str = Field(..., min_length=1)
+    start: str = Field(..., min_length=1)
+    end: str = Field(..., min_length=1)
+
+
+Condition = Annotated[
+    FixedCondition | CategoricalCondition | NumericCondition | DateRangeCondition,
+    Field(discriminator="mode"),
+]
+
+
+class ConditionalConfig(BaseModel):
+    """Conditional-generation spec: per-column constraints applied to one table."""
+
+    table: str | None = Field(
+        default=None,
+        description="Target subject table. Defaults to the first subject table when omitted.",
+    )
+    conditions: list[Condition] = Field(default_factory=list)
 
 
 class SimulationSummary(BaseModel):
@@ -19,6 +107,8 @@ class SimulationSummary(BaseModel):
     training_table_sizes: dict[str, int] = {}
     model_accuracy: float | None = None
     progress: JobProgress | None = None
+    duration_seconds: float | None = None
+    started_at_ms: int | None = None
 
 
 class RenameRequest(BaseModel):
@@ -30,6 +120,10 @@ class RenameRequest(BaseModel):
 class SimulationCreateRequest(BaseModel):
     """Body of ``POST /simulations``: inputs required to launch a simulation run."""
 
+    name: str | None = Field(
+        default=None,
+        description="Optional human-readable name for this generation run.",
+    )
     model_id: str = Field(
         ...,
         description="ID of the trained model to simulate from.",
@@ -53,6 +147,14 @@ class SimulationCreateRequest(BaseModel):
             "for context children from their parent, so entries targeting "
             "children are accepted but ignored with a server-side warning. "
             "Falls back to `sample_size` for subject tables not listed here."
+        ),
+    )
+    conditional: ConditionalConfig | None = Field(
+        default=None,
+        description=(
+            "Conditional-generation spec. Builds a `sample_seed` table that fixes "
+            "or steers selected columns (constant value, target proportions, or a "
+            "numeric generator) so generation is conditioned on them."
         ),
     )
 
@@ -84,6 +186,7 @@ class DeletedSimulation(BaseModel):
     """Confirmation returned after successfully deleting a simulation."""
 
     deleted_id: str
+    deleted_evaluation_ids: list[str] = []
 
 
 class CleanupResult(BaseModel):

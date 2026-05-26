@@ -6,7 +6,7 @@
 // Cleanup/purge buttons and the collapse toggle live in the card header and
 // are uniform across kinds.
 
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { CollapseToggle } from "@/components/ui/collapse-toggle";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -27,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatDuration, formatJobDate } from "@/lib/utils";
 
 export type HistoryColumn<T> = {
   key: string;
@@ -52,10 +52,11 @@ export function HistoryCard<T>({
   onPurge,
   isCleaning,
   isPurging,
-  collapseLabel,
   onSelect,
   activeId,
   getRowId,
+  getTimestamp,
+  getDuration,
 }: {
   title: string;
   description: string;
@@ -72,15 +73,16 @@ export function HistoryCard<T>({
   onPurge: () => void;
   isCleaning: boolean;
   isPurging: boolean;
-  /** Plural noun for the collapse toggle's aria-label, e.g. "generaciones". */
-  collapseLabel: string;
   /** When provided, rows become clickable and load that run as active. */
   onSelect?: (id: string) => void;
   activeId?: string | null;
   /** Required when onSelect is provided. Returns the row's id. */
   getRowId?: (item: T) => string;
+  /** Returns the row's YYYYMMDD_HHMMSS timestamp for the "Fecha" column. */
+  getTimestamp?: (item: T) => string | undefined;
+  /** Returns the row's elapsed time in seconds for the "Tiempo" column. */
+  getDuration?: (item: T) => number | null | undefined;
 }) {
-  const [open, setOpen] = useState(false);
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between space-y-0">
@@ -109,15 +111,9 @@ export function HistoryCard<T>({
             <Trash2 className="mr-2 h-3.5 w-3.5" />
             Limpiar todas las sesiones
           </Button>
-          <CollapseToggle
-            open={open}
-            onToggle={() => setOpen((v) => !v)}
-            ariaLabel={open ? `Contraer ${collapseLabel}` : `Expandir ${collapseLabel}`}
-          />
         </div>
       </CardHeader>
-      {open && (
-        <CardContent>
+      <CardContent>
           {isLoading && <Skeleton className="h-24 w-full" />}
           {isError && <p className="text-sm text-destructive">{errorMessage}</p>}
           {!isLoading && !isError && items.length === 0 && (
@@ -138,6 +134,12 @@ export function HistoryCard<T>({
                       {col.header}
                     </TableHead>
                   ))}
+                  {getDuration && (
+                    <TableHead style={{ width: "9%" }} className="text-right">Tiempo</TableHead>
+                  )}
+                  {getTimestamp && (
+                    <TableHead style={{ width: "16%" }}>Fecha</TableHead>
+                  )}
                   <TableHead style={{ width: actionsWidth }} />
                 </TableRow>
               </TableHeader>
@@ -165,6 +167,16 @@ export function HistoryCard<T>({
                           {col.render(item)}
                         </TableCell>
                       ))}
+                      {getDuration && (
+                        <TableCell className="whitespace-nowrap text-right tabular-nums text-xs text-muted-foreground">
+                          {formatDuration(getDuration(item))}
+                        </TableCell>
+                      )}
+                      {getTimestamp && (
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {formatJobDate(getTimestamp(item))}
+                        </TableCell>
+                      )}
                       <TableCell
                         className="text-right"
                         onClick={(e) => e.stopPropagation()}
@@ -180,7 +192,6 @@ export function HistoryCard<T>({
             </Table>
           )}
         </CardContent>
-      )}
     </Card>
   );
 }

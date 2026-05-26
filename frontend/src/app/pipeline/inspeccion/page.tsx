@@ -21,22 +21,29 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { BookOpen } from "lucide-react";
 
 import { RulesPanel } from "@/components/config/rules-editor";
 import { DatasetPreviewCard } from "@/components/dataset/dataset-preview-card";
 import { DetectedTablesCard } from "@/components/inspection/detected-tables-card";
 import { FilePickerCard } from "@/components/inspection/file-picker-card";
 import { HistoryCard } from "@/components/inspection/history-card";
-import { InspectionStatusCard } from "@/components/inspection/inspection-status-card";
+import { TimeProfilingPanel } from "@/components/pipeline-step/time-profiling-panel";
+import { InspectionBanner } from "@/components/inspection/inspection-banner";
 import { RelationshipsCard } from "@/components/inspection/relationships-card";
 import { SelectionPreviewCard } from "@/components/inspection/selection-preview-card";
 import { TypesCard } from "@/components/inspection/types-card";
 import { useInspeccionPage } from "@/components/inspection/use-inspeccion-page";
 import { WizardShell } from "@/components/layout/wizard-shell";
 import { WorkflowGroup } from "@/components/layout/workflow-group";
+import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Tooltip } from "@/components/ui/tooltip";
+import { NamePromptDialog } from "@/components/ui/name-prompt-dialog";
+import { DeleteConflictDialog } from "@/components/pipeline-step/delete-conflict-dialog";
+import { INSPECCION_INSTRUCTIONS } from "@/components/inspection/instructions-content";
 import { api, type FilePreview } from "@/lib/api";
 import { ALLOW_SERVER_FILES as ALLOW_SERVER_FILES_FLAG } from "@/lib/features";
 import { useIsDev } from "@/lib/mode";
@@ -44,8 +51,8 @@ import { useIsDev } from "@/lib/mode";
 const INSPECCION_OUTLINE = [
   { id: "preparacion", label: "Preparación", level: 1 },
   { id: "seleccion-ficheros", label: "Selección de ficheros", level: 2 },
-  { id: "inspeccion-actual", label: "Inspección actual", level: 2 },
-  { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
+  { id: "reglas-negocio", label: "Reglas de negocio", level: 1 },
+  { id: "reglas-preprocesamiento", label: "Reglas de negocio", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
   { id: "tablas-detectadas", label: "Tablas detectadas", level: 2 },
   { id: "relaciones-detectadas", label: "Relaciones detectadas", level: 2 },
@@ -63,10 +70,86 @@ export default function InspeccionPage() {
   // toggles them per-table from the preview card, hence parent ownership.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [csvDelimiter, setCsvDelimiter] = useState(",");
+  // Profiling toggle for the launch — moved out of the file picker so the
+  // "Iniciar inspección" action can sit below the selection preview.
+  const [enableProfiling, setEnableProfiling] = useState(true);
   const [excludedColumns, setExcludedColumns] = useState<Record<string, Set<string>>>({});
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmCleanup, setConfirmCleanup] = useState(false);
   const [confirmPurge, setConfirmPurge] = useState(false);
+  // When true, the name dialog is open; the launch proceeds once the user
+  // confirms a name.
+  const [startDialog, setStartDialog] = useState(false);
+
+  // Instructions manual state.
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
+  // Page banner height — the manual's sticky "Resumen" block is sized to
+  // match it so the two banners are the same height.
+  const bannerRef = useRef<HTMLDivElement | null>(null);
+  const [bannerHeight, setBannerHeight] = useState<number | undefined>();
+  useLayoutEffect(() => {
+    const el = bannerRef.current;
+    if (!el) return;
+    // Round to whole pixels — a fractional height feeds the panel's overview
+    // block and would jitter, retriggering measurement endlessly.
+    const update = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      setBannerHeight((prev) => (prev === h ? prev : h));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Open/collapsed state per page section — shared between the WorkflowGroups
+  // and the help panel so the two collapse in sync.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    preparacion: true,
+    "reglas-negocio": true,
+    resultados: true,
+    historial: false,
+  });
+  // When a section opens, scroll the page to it — same UX as the main page
+  // section toggles. Runs after the section has expanded in the DOM.
+  const scrollToSection = useCallback((id: string) => {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        document
+          .getElementById(id)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }),
+    );
+  }, []);
+  const toggleSection = useCallback(
+    (id: string) =>
+      setOpenSections((p) => {
+        const next = !(p[id] ?? true);
+        if (next) scrollToSection(id);
+        return { ...p, [id]: next };
+      }),
+    [scrollToSection],
+  );
+  const setSectionOpen = useCallback(
+    (id: string, open: boolean) => {
+      if (open) scrollToSection(id);
+      setOpenSections((p) => ({ ...p, [id]: open }));
+    },
+    [scrollToSection],
+  );
+  // Space the manual asks the page to reserve, keyed by id: the overview
+  // spacer height ("resumen") and the per-section deficit when a help block
+  // is taller than its page section.
+  const [helpReserve, setHelpReserve] = useState<Record<string, number>>({});
+  const handleHelpMeasure = useCallback(
+    (reserve: Record<string, number>) => setHelpReserve(reserve),
+    [],
+  );
+  // When a help block is taller than its section, add the extra space as a
+  // bottom margin — blank background between sections, not inside the box.
+  const helpGap = (id: string): React.CSSProperties | undefined =>
+    instructionsOpen && (openSections[id] ?? true) && helpReserve[id]
+      ? { marginBottom: helpReserve[id] + 16 }
+      : undefined;
 
   // Server-files browsing is a dev-only convenience: in production the user
   // can only pick files they uploaded themselves. The legacy NEXT_PUBLIC_*
@@ -115,8 +198,10 @@ export default function InspeccionPage() {
     });
   };
 
-  const handleStart = (enableProfiling: boolean) => {
-    // Convert excluded-columns sets to plain string arrays for the API.
+  // The file picker's start button opens the name dialog; the actual launch
+  // happens once the user confirms (with an optional functional name).
+  const confirmStart = (name: string) => {
+    if (!startDialog) return;
     const excluded: Record<string, string[]> = {};
     for (const [table, cols] of Object.entries(excludedColumns)) {
       if (cols.size > 0) excluded[table] = Array.from(cols);
@@ -126,77 +211,150 @@ export default function InspeccionPage() {
       enableProfiling,
       csvDelimiter,
       excludedColumns: excluded,
+      name: name || undefined,
     });
     // Clear column exclusions after launch so the next selection starts fresh.
     setExcludedColumns({});
+    setStartDialog(false);
   };
 
   return (
-    <WizardShell currentSlug="inspeccion" canAdvance={insp.isCompleted} outline={INSPECCION_OUTLINE}>
-      <div className="mx-auto max-w-5xl space-y-6">
+    <WizardShell
+      currentSlug="inspeccion"
+      canAdvance={insp.isCompleted}
+      outline={INSPECCION_OUTLINE}
+      instructions={INSPECCION_INSTRUCTIONS}
+      instructionsOpen={instructionsOpen}
+      instructionsSections={openSections}
+      onInstructionsToggleSection={toggleSection}
+      onInstructionsClose={() => setInstructionsOpen(false)}
+      onInstructionsMeasure={handleHelpMeasure}
+      instructionsBannerHeight={bannerHeight}
+    >
+      <InspectionBanner
+        rootRef={bannerRef}
+        inspectionId={insp.inspectionId}
+        inspection={insp.inspectionQuery.data}
+        isLoading={insp.inspectionQuery.isLoading}
+        isError={insp.inspectionQuery.isError}
+        existingNames={(insp.inspectionsQuery.data ?? []).map(
+          (x) => x.inspection_name || x.inspection_id,
+        )}
+        onRename={insp.renameInspection}
+        actions={
+          instructionsOpen ? null : (
+            <button
+              type="button"
+              onClick={() => setInstructionsOpen(true)}
+              aria-label="Abrir manual de instrucciones"
+              className="flex items-center gap-2 rounded-lg bg-[#FFDB00] px-4 py-2.5 text-sm font-bold text-[#00215C] shadow-md transition-colors hover:bg-[#f0cf00]"
+            >
+              <BookOpen className="h-5 w-5" />
+              Manual de instrucciones
+            </button>
+          )
+        }
+      />
+      <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Inspección</h1>
           <p className="text-sm text-muted-foreground">
-            Selecciona los ficheros ya disponibles en el servidor para
-            autodetectar tablas, claves y tipos.
+            La inspección es el primer paso para generar datos sintéticos:
+            analiza los ficheros de origen para entender su estructura antes de
+            entrenar ningún modelo.
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Selecciona los ficheros ya disponibles en el servidor o sube los
+            tuyos. Al iniciar la inspección, el sistema detecta automáticamente
+            las <span className="font-medium text-foreground">tablas</span> que
+            contienen, las{" "}
+            <span className="font-medium text-foreground">
+              claves primarias y foráneas
+            </span>{" "}
+            que las relacionan y el{" "}
+            <span className="font-medium text-foreground">
+              tipo de cada columna
+            </span>
+            . Después podrás revisar y corregir todo lo detectado, definir
+            reglas de negocio y consultar los datos preprocesados que recibirá
+            el modelo.
           </p>
         </div>
 
-        <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
-          <div id="seleccion-ficheros" className="scroll-mt-24">
-            <div
-              className={
-                selected.size > 0
-                  ? "grid gap-4 lg:grid-cols-2 lg:items-start"
-                  : ""
-              }
-            >
+        <WorkflowGroup
+          id="preparacion"
+          label="Preparación"
+          open={openSections.preparacion ?? true}
+          onOpenChange={(o) => setSectionOpen("preparacion", o)}
+          className="scroll-mt-24"
+          style={helpGap("preparacion")}
+        >
+          <div id="seleccion-ficheros" className="scroll-mt-24 space-y-4">
             <FilePickerCard
               selected={selected}
               onToggleSelected={toggleSelected}
               onSelectionChange={setSelected}
               onClearUploadsFromSelection={clearUploadsFromSelection}
               allowServerFiles={allowServerFiles}
-              isStartDisabled={selected.size === 0}
-              isStarting={insp.isStarting}
               csvDelimiter={csvDelimiter}
               onCsvDelimiterChange={setCsvDelimiter}
-              onStart={handleStart}
             />
 
-            {selected.size > 0 && (
-              <SelectionPreviewCard
-                previews={selectedPreviewQuery.data ?? []}
-                isLoading={selectedPreviewQuery.isLoading}
-                isError={selectedPreviewQuery.isError}
-                csvDelimiter={csvDelimiter}
-                excludedColumns={excludedColumns}
-                onToggleColumn={(table, col) => {
-                  setExcludedColumns((prev) => {
-                    const next = { ...prev };
-                    const set = new Set(next[table] ?? []);
-                    if (set.has(col)) set.delete(col);
-                    else set.add(col);
-                    next[table] = set;
-                    return next;
-                  });
-                }}
-              />
-            )}
-            </div>
+            <SelectionPreviewCard
+              previews={selected.size > 0 ? (selectedPreviewQuery.data ?? []) : []}
+              hasSelection={selected.size > 0}
+              isLoading={selected.size > 0 && selectedPreviewQuery.isLoading}
+              isError={selected.size > 0 && selectedPreviewQuery.isError}
+              csvDelimiter={csvDelimiter}
+              excludedColumns={excludedColumns}
+              onToggleColumn={(table, col) => {
+                setExcludedColumns((prev) => {
+                  const next = { ...prev };
+                  const set = new Set(next[table] ?? []);
+                  if (set.has(col)) set.delete(col);
+                  else set.add(col);
+                  next[table] = set;
+                  return next;
+                });
+              }}
+              startAction={
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={enableProfiling}
+                      onChange={(e) => setEnableProfiling(e.target.checked)}
+                    />
+                    <span>Generar informes de profiling</span>
+                  </label>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={selected.size === 0 || insp.isStarting}
+                      onClick={() => setStartDialog(true)}
+                    >
+                      {insp.isStarting
+                        ? "Iniciando…"
+                        : `Iniciar Inspección (${selected.size})`}
+                    </Button>
+                    <Tooltip content="Analiza los archivos seleccionados para detectar automáticamente tablas, relaciones y tipos de datos. El sistema identificará claves primarias, foráneas y otros patrones en tus datos." side="right" />
+                  </div>
+                </div>
+              }
+            />
           </div>
+        </WorkflowGroup>
 
-          {insp.inspectionId && (
-            <div id="inspeccion-actual" className="scroll-mt-24">
-              <InspectionStatusCard
-              inspectionId={insp.inspectionId}
-              inspection={insp.inspectionQuery.data}
-              isLoading={insp.inspectionQuery.isLoading}
-              isError={insp.inspectionQuery.isError}
-              />
-            </div>
-          )}
-
+        <WorkflowGroup
+          id="reglas-negocio"
+          label="Reglas de negocio"
+          open={openSections["reglas-negocio"] ?? true}
+          onOpenChange={(o) => setSectionOpen("reglas-negocio", o)}
+          className="scroll-mt-24"
+          style={helpGap("reglas-negocio")}
+        >
           <div id="reglas-preprocesamiento" className="scroll-mt-24">
             <RulesPanel
             autodetect={insp.autodetectQuery.data ?? null}
@@ -205,16 +363,20 @@ export default function InspeccionPage() {
           </div>
         </WorkflowGroup>
 
-        <WorkflowGroup id="resultados" label="Resultados" className="scroll-mt-24">
+        <WorkflowGroup
+          id="resultados"
+          label="Resultados"
+          open={openSections.resultados ?? true}
+          onOpenChange={(o) => setSectionOpen("resultados", o)}
+          className="scroll-mt-24"
+          style={helpGap("resultados")}
+        >
           <div id="tablas-detectadas" className="scroll-mt-24">
             <DetectedTablesCard
             inspectionId={insp.inspectionId}
             inspection={insp.inspectionQuery.data}
             isLoading={insp.inspectionQuery.isLoading}
             isError={insp.inspectionQuery.isError}
-            inspections={insp.inspectionsQuery.data ?? []}
-            onRename={insp.renameInspection}
-            onReset={insp.resetActive}
             />
           </div>
 
@@ -240,14 +402,28 @@ export default function InspeccionPage() {
               </div>
               {insp.inspectionId && (
                 <div id="datos-preprocesados" className="scroll-mt-24">
-                  <PreprocessedDataCard inspectionId={insp.inspectionId} />
+                  <WorkflowGroup label="Datos preprocesados" defaultOpen={false}>
+                    <PreprocessedDataCard inspectionId={insp.inspectionId} />
+                  </WorkflowGroup>
+                </div>
+              )}
+              {insp.inspectionId && (
+                <div id="tiempos-inspeccion" className="scroll-mt-24">
+                  <TimeProfilingPanel kind="inspections" id={insp.inspectionId} />
                 </div>
               )}
             </>
           )}
         </WorkflowGroup>
 
-        <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
+        <WorkflowGroup
+          id="historial"
+          label="Historial"
+          open={openSections.historial ?? false}
+          onOpenChange={(o) => setSectionOpen("historial", o)}
+          className="scroll-mt-24"
+          style={helpGap("historial")}
+        >
           <div id="inspecciones-previas" className="scroll-mt-24">
             <HistoryCard
             inspections={insp.inspectionsQuery.data ?? []}
@@ -268,6 +444,14 @@ export default function InspeccionPage() {
           </div>
         </WorkflowGroup>
 
+        <NamePromptDialog
+          open={startDialog}
+          title="Iniciar inspección"
+          description="Asigna un nombre funcional a esta inspección para identificarla más fácilmente. Puedes dejarlo en blanco y editarlo después."
+          confirmLabel="Iniciar inspección"
+          onConfirm={confirmStart}
+          onCancel={() => setStartDialog(false)}
+        />
         <ConfirmDialog
           open={confirmDelete !== null}
           title="¿Eliminar inspección?"
@@ -300,6 +484,13 @@ export default function InspeccionPage() {
             setConfirmCleanup(false);
           }}
           onCancel={() => setConfirmCleanup(false)}
+        />
+        <DeleteConflictDialog
+          open={insp.deleteConflict != null}
+          message={insp.deleteConflict?.message ?? ""}
+          onCascade={() => insp.resolveDeleteConflict("cascade")}
+          onForce={() => insp.resolveDeleteConflict("force")}
+          onCancel={insp.dismissDeleteConflict}
         />
       </div>
     </WizardShell>

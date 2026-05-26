@@ -13,7 +13,11 @@ import yaml from "js-yaml";
 import {
   EMPTY_CONDITIONAL_CONFIG,
   buildConditionalPayload,
+  emptyCondition,
+  type Condition,
+  type ConditionMode,
   type ConditionalConfig,
+  type NumericGenerator,
 } from "@/components/generation/conditional-config";
 import {
   EMPTY_JOB,
@@ -39,25 +43,64 @@ function numToStr(v: unknown): string {
   return typeof v === "number" ? String(v) : "";
 }
 
+function parseCondition(raw: unknown): Condition | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const column = typeof r.column === "string" ? r.column : "";
+  if (!column) return null;
+  const mode = r.mode as ConditionMode;
+  const condition = { ...emptyCondition(), column };
+
+  if (mode === "fixed") {
+    return { ...condition, mode: "fixed", value: r.value != null ? String(r.value) : "" };
+  }
+  if (mode === "categorical") {
+    const weights = r.weights as Record<string, unknown> | undefined;
+    return {
+      ...condition,
+      mode: "categorical",
+      weights:
+        weights && Object.keys(weights).length > 0
+          ? Object.entries(weights).map(([value, weight]) => ({
+            value,
+            weight: String(weight),
+          }))
+          : [{ value: "", weight: "" }],
+    };
+  }
+  if (mode === "numeric") {
+    return {
+      ...condition,
+      mode: "numeric",
+      generator: (r.generator === "normal" ? "normal" : "uniform") as NumericGenerator,
+      min: numToStr(r.min),
+      max: numToStr(r.max),
+      mean: numToStr(r.mean),
+      std: numToStr(r.std),
+      integer: r.integer === true,
+    };
+  }
+  if (mode === "daterange") {
+    return {
+      ...condition,
+      mode: "daterange",
+      start: typeof r.start === "string" ? r.start : "",
+      end: typeof r.end === "string" ? r.end : "",
+    };
+  }
+  return null;
+}
+
 export function parseConditionalConfig(raw: unknown): ConditionalConfig {
   if (!raw || typeof raw !== "object") return { ...EMPTY_CONDITIONAL_CONFIG };
   const payload = raw as Record<string, unknown>;
-  const seed = payload.seed as Record<string, unknown> | undefined;
-  const distribution = payload.distribution as Record<string, unknown> | undefined;
+  const rawConditions = Array.isArray(payload.conditions) ? payload.conditions : [];
 
   return {
     table: typeof payload.table === "string" ? payload.table : "",
-    seeds: seed
-      ? Object.entries(seed).map(([column, value]) => ({ column, value: String(value) }))
-      : [],
-    distributionField:
-      typeof payload.distribution_field === "string" ? payload.distribution_field : "",
-    distribution: distribution
-      ? Object.entries(distribution).map(([value, weight]) => ({
-        value,
-        weight: String(weight),
-      }))
-      : [],
+    conditions: rawConditions
+      .map(parseCondition)
+      .filter((c): c is Condition => c !== null),
   };
 }
 

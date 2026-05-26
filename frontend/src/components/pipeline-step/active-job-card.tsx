@@ -9,7 +9,6 @@
 
 import type { ReactNode } from "react";
 
-import { EditableName } from "@/components/jobs/editable-name";
 import { JobProgressPanel } from "@/components/jobs/job-progress";
 import {
   Card,
@@ -24,7 +23,7 @@ import type { JobProgress } from "@/lib/api";
 type ProgressLike = {
   status: string;
   progress?: JobProgress | null;
-  timestamp?: string;
+  started_at_ms?: number | null;
 };
 
 export function ActiveJobCard({
@@ -35,9 +34,6 @@ export function ActiveJobCard({
   isError,
   errorMessage,
   active,
-  activeName,
-  existingNames,
-  onRename,
   metadata,
   actions,
 }: {
@@ -49,12 +45,6 @@ export function ActiveJobCard({
   errorMessage: string;
   /** The active artifact, when loaded. Drives the progress panel and slots. */
   active: ProgressLike | undefined;
-  /** Display name shown in the EditableName field, when `active` is loaded. */
-  activeName?: string;
-  /** Existing names of all items, fed to EditableName to enforce uniqueness. */
-  existingNames?: string[];
-  /** Saves a new name for the active artifact. */
-  onRename?: (name: string) => Promise<void>;
   /** Kind-specific metadata row (tables, rows, model, etc.). */
   metadata?: ReactNode;
   /** Kind-specific action buttons (cancel, download, …). */
@@ -71,13 +61,6 @@ export function ActiveJobCard({
             id: {id}
           </span>
         </CardDescription>
-        {active && activeName && existingNames && onRename && (
-          <EditableName
-            name={activeName}
-            existingNames={existingNames}
-            onSave={onRename}
-          />
-        )}
       </CardHeader>
       <CardContent className="space-y-3">
         {isLoading && <Skeleton className="h-20 w-full" />}
@@ -87,7 +70,7 @@ export function ActiveJobCard({
             <JobProgressPanel
               status={active.status}
               progress={active.progress ?? null}
-              timestamp={active.timestamp}
+              startedAtMs={active.started_at_ms ?? null}
             />
             {metadata}
             {actions && <div className="flex flex-wrap gap-2">{actions}</div>}

@@ -44,9 +44,11 @@ SENSITIVE_COLUMNS: list[str] | None = _METRICS.get("sensitive_columns")
 
 CONFIDENCE_INTERVAL_LEVEL: float = _METRICS.get("confidence_interval_level", 0.95)
 NUM_BOOTSTRAP_SAMPLES: int = _METRICS.get("num_bootstrap_samples", 1000)
-AVERAGE_COMPLEMENTARY_TVD_N_BINS: int = _METRICS.get("average_complementary_tvd_n_bins", 10)
+TVD_N_BINS: int = _METRICS.get("tvd_n_bins", 10)
 
 TSTR_TARGET_COLUMN: str = _TSTR.get("target_column", "expire_flag")
 TSTR_TASK_TYPE: str = _TSTR.get("task_type", "classification")
+
+UTILITY_TESTS_CONFIG: dict = _METRICS.get("utility_tests", {})
 
 STATISTICS: list[dict] = _EVAL.get("statistics", [])

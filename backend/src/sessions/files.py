@@ -53,6 +53,28 @@ def get_upload_stats() -> dict:
     return {"used_bytes": used, "limit_bytes": UPLOAD_SIZE_LIMIT_BYTES}
 
 
+class UploadNotFoundError(Exception):
+    """Raised when the requested upload file does not exist."""
+
+
+def delete_one_upload(filename: str) -> str:
+    """Deletes a single file from the uploads directory.
+
+    Rejects path-traversal attempts and missing files.
+
+    Returns:
+        str: The name of the deleted file.
+    """
+    safe = Path(filename).name
+    if safe != filename or not filename:
+        raise UploadNameError(filename)
+    target = UPLOADS_DIR / safe
+    if not target.is_file():
+        raise UploadNotFoundError(filename)
+    target.unlink()
+    return safe
+
+
 def delete_all_uploads() -> list[str]:
     """Deletes every file under ``backend/data/uploads/``.
 

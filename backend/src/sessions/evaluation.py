@@ -1,6 +1,7 @@
 """Evaluation flow service for the synthetic data tool."""
 
 import os
+import json
 import threading
 from dataclasses import dataclass
 
@@ -39,6 +40,7 @@ def initialize_evaluation_session(
     model_id: str,
     pipeline_id: str = "none",
     job_name: str | None = None,
+    name: str | None = None,
 ) -> EvaluationSession:
     """Create the output folder and the ``in_progress`` eval card.
 
@@ -65,7 +67,7 @@ def initialize_evaluation_session(
         card_path,
         {
             "evaluation_id": evaluation_id,
-            "evaluation_name": evaluation_id,
+            "evaluation_name": name.strip() if name and name.strip() else evaluation_id,
             "status": "in_progress",
             "simulation_id": simulation_id,
             "model_id": model_id,
@@ -92,6 +94,7 @@ def run_evaluation_flow_from_simulation(
     session: EvaluationSession | None = None,
     real_data: list[str] | None = None,
     cancel_event: threading.Event | None = None,
+    training_parameters: dict | None = None,
 ) -> str | None:
     """Run evaluation for a completed simulation, deriving all inputs automatically.
 
@@ -146,6 +149,9 @@ def run_evaluation_flow_from_simulation(
             model_id=inputs.model_id,
             simulation_id=inputs.simulation_id,
             evaluation_id=evaluation_id,
+            pipeline_id=pipeline_id,
+            job_name=job_name,
+            training_parameters=training_parameters,
         )
     else:
         succeeded = _run_inprocess(
@@ -158,6 +164,7 @@ def run_evaluation_flow_from_simulation(
             evaluation_id=evaluation_id,
             pipeline_id=pipeline_id,
             job_name=job_name,
+            training_parameters=training_parameters,
         )
     return evaluation_id if succeeded else None
 
@@ -170,6 +177,9 @@ def _run_subprocess(
     model_id: str | None,
     simulation_id: str,
     evaluation_id: str,
+    pipeline_id: str = "none",
+    job_name: str | None = None,
+    training_parameters: dict | None = None,
 ) -> bool:
     """Run evaluation in a separate subprocess.
 
@@ -201,6 +211,15 @@ def _run_subprocess(
         "--evaluation-id",
         evaluation_id,
     ]
+    if pipeline_id:
+        cmd.extend(["--pipeline-id", pipeline_id])
+
+    if job_name:
+        cmd.extend(["--job-name", job_name])
+
+    if training_parameters:
+        cmd.extend(["--training-parameters", json.dumps(training_parameters)])
+
     if model_id:
         cmd += ["--model-id", model_id]
 
@@ -258,6 +277,7 @@ def _run_inprocess(
     evaluation_id: str,
     pipeline_id: str,
     job_name: str | None,
+    training_parameters: dict | None = None,
 ) -> bool:
     """Run evaluation in the current process.
 
@@ -286,6 +306,7 @@ def _run_inprocess(
             evaluation_id=evaluation_id,
             pipeline_id=pipeline_id,
             job_name=job_name,
+            training_parameters=training_parameters,
         )
         return True
     except Exception as error:

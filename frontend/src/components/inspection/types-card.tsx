@@ -11,7 +11,7 @@ import {
 import { CollapseToggle } from "@/components/ui/collapse-toggle";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ENCODING_TYPES, type Autodetect } from "@/lib/api";
+import { ENCODING_TYPES, ENCODING_TYPE_LABELS, type Autodetect } from "@/lib/api";
 import { ColumnExclusionHint } from "./column-exclusion-hint";
 import { typeBadgeClass, type AutodetectQuery } from "./utils";
 
@@ -98,7 +98,7 @@ export function TypesCard({
                       >
                         {ENCODING_TYPES.map((t) => (
                           <option key={t} value={t}>
-                            {t.replace("TABULAR_", "")}
+                            {ENCODING_TYPE_LABELS[t] ?? t}
                           </option>
                         ))}
                       </select>

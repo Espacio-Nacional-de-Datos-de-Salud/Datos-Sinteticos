@@ -3,6 +3,7 @@
 import argparse
 import os
 import sys
+import json
 
 from backend.src.config.execution import get_execution_config
 from backend.src.infrastructure.errors import (
@@ -30,11 +31,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--evaluation-id", default=None)
     parser.add_argument("--pipeline-id", default="none")
     parser.add_argument("--job-name", default=None)
-    parser.add_argument(
-        "--simulation-dir",
-        default=None,
-        help="Simulation root directory (for synthcity environment setup).",
-    )
+    parser.add_argument("--simulation-dir", default=None, help="Simulation root directory (for synthcity environment setup).")
+    parser.add_argument("--training-parameters", default=None, help="JSON string with training parameters used to generate the synthetic data.")
     return parser
 
 
@@ -43,6 +41,8 @@ def _run_with_explicit_paths(args: argparse.Namespace) -> None:
     if args.simulation_dir:
         setup_synthcity_environment(args.simulation_dir)
     os.makedirs(args.eval_dir, exist_ok=True)
+
+    training_parameters = json.loads(args.training_parameters) if args.training_parameters else None
 
     run_evaluation(
         real_data_files_path=args.real_data,
@@ -53,6 +53,7 @@ def _run_with_explicit_paths(args: argparse.Namespace) -> None:
         evaluation_id=args.evaluation_id,
         pipeline_id=args.pipeline_id,
         job_name=args.job_name,
+        training_parameters=training_parameters
     )
 
 

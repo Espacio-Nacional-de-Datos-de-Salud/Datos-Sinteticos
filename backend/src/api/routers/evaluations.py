@@ -4,7 +4,10 @@ import json
 import os
 from typing import Literal
 
-from backend.src.api.schemas import CancelResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+
+from backend.src.api.schemas import CancelResponse, TimeProfilingReport, load_time_profiling_report
 from backend.src.api.schemas.evaluations import (
     CleanupResult,
     DeletedEvaluation,
@@ -14,8 +17,10 @@ from backend.src.api.schemas.evaluations import (
     RenameRequest,
 )
 from backend.src.config.general import EVAL_CARD_FILENAME, EVALUATIONS_DIR
+from backend.src.domain.id_validation import EvaluationId
 from backend.src.infrastructure.cancellation import register as register_cancel
 from backend.src.infrastructure.cancellation import request_cancel
+from backend.src.infrastructure.errors import EvaluationNotFoundError
 from backend.src.runs.card_io import update_card_status
 from backend.src.runs.catalog.downloads import build_evaluation_bundle, build_zip_stream
 from backend.src.runs.catalog.evaluations import (
@@ -34,14 +39,10 @@ from backend.src.runs.catalog.evaluations import (
     rename_evaluation as rename_evaluation_catalog,
 )
 from backend.src.runs.catalog.simulations import resolve_simulation_inputs
-from backend.src.infrastructure.errors import EvaluationNotFoundError
-from backend.src.domain.id_validation import EvaluationId
 from backend.src.sessions.evaluation import (
     initialize_evaluation_session,
     run_evaluation_flow_from_simulation,
 )
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
-from fastapi.responses import HTMLResponse, StreamingResponse
 
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
@@ -75,6 +76,7 @@ def create_evaluation(
     session = initialize_evaluation_session(
         simulation_id=inputs.simulation_id,
         model_id=inputs.model_id,
+        name=request.name,
     )
     cancel_event = register_cancel(session.evaluation_id)
 
@@ -165,6 +167,21 @@ def get_evaluation(evaluation_id: EvaluationId) -> dict:
     raise HTTPException(status_code=404, detail=f"Evaluation '{evaluation_id}' not found.")
 
 
+@router.get("/{evaluation_id}/time-profiling", response_model=TimeProfilingReport)
+def get_evaluation_time_profiling(evaluation_id: EvaluationId) -> TimeProfilingReport:
+    """Returns the structured per-phase timing breakdown of an evaluation run."""
+    folder = os.path.join(EVALUATIONS_DIR, evaluation_id)
+    if not os.path.isdir(folder):
+        raise HTTPException(status_code=404, detail=f"Evaluation '{evaluation_id}' not found.")
+    report = load_time_profiling_report(folder)
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No time profiling report for evaluation '{evaluation_id}'.",
+        )
+    return report
+
+
 @router.delete("/{evaluation_id}", response_model=DeletedEvaluation)
 def delete_evaluation(evaluation_id: EvaluationId) -> DeletedEvaluation:
     """Deletes an evaluation run and all its stored artifacts."""
@@ -189,6 +206,26 @@ def download_evaluation_folder(evaluation_id: EvaluationId) -> StreamingResponse
         build_zip_stream(bundle),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{bundle.archive_name}"'},
+    )
+
+
+@router.get(
+    "/{evaluation_id}/download/report",
+    response_class=FileResponse,
+    responses={200: {"content": {"text/html": {}}}},
+)
+def download_evaluation_report(evaluation_id: EvaluationId) -> FileResponse:
+    """Downloads the HTML evaluation report as an attachment."""
+    report_path = os.path.join(EVALUATIONS_DIR, evaluation_id, "synthetic_eval_report.html")
+    if not os.path.exists(report_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"HTML report for evaluation '{evaluation_id}' not found.",
+        )
+    return FileResponse(
+        report_path,
+        media_type="text/html",
+        filename=f"{evaluation_id}_report.html",
     )
 
 

@@ -6,6 +6,8 @@
 // this component just wires the matching props into three dialogs.
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { DeleteConflictDialog } from "@/components/pipeline-step/delete-conflict-dialog";
+import type { DeleteConflictState } from "@/components/pipeline-step/use-artifact-lifecycle";
 
 export type WizardConfirmTexts = {
   delete: {
@@ -36,6 +38,10 @@ export function WizardConfirmDialogs({
   confirmPurge,
   setConfirmPurge,
   onPurge,
+  deleteConflict,
+  onDeleteConflictCascade,
+  onDeleteConflictForce,
+  onDeleteConflictDismiss,
 }: {
   texts: WizardConfirmTexts;
   confirmDeleteId: string | null;
@@ -47,6 +53,11 @@ export function WizardConfirmDialogs({
   confirmPurge: boolean;
   setConfirmPurge: (open: boolean) => void;
   onPurge: () => void;
+  /** Conflict state from useArtifactLifecycle; null hides the conflict dialog. */
+  deleteConflict?: DeleteConflictState | null;
+  onDeleteConflictCascade?: () => void;
+  onDeleteConflictForce?: () => void;
+  onDeleteConflictDismiss?: () => void;
 }) {
   return (
     <>
@@ -82,6 +93,13 @@ export function WizardConfirmDialogs({
           setConfirmPurge(false);
         }}
         onCancel={() => setConfirmPurge(false)}
+      />
+      <DeleteConflictDialog
+        open={deleteConflict != null}
+        message={deleteConflict?.message ?? ""}
+        onCascade={() => onDeleteConflictCascade?.()}
+        onForce={() => onDeleteConflictForce?.()}
+        onCancel={() => onDeleteConflictDismiss?.()}
       />
     </>
   );

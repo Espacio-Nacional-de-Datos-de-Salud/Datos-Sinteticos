@@ -5,55 +5,23 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { JobProgress } from "@/lib/api";
 import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 
-// Parses the YYYYMMDD_HHMMSS timestamp the backend stamps on jobs (now in UTC).
-function parseJobTimestamp(ts: string | undefined | null): Date | null {
-  if (!ts) return null;
-  const m = /^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/.exec(ts);
-  if (!m) return null;
-  const [, y, mo, d, h, mi, s] = m;
-  // Backend now sends UTC timestamps, so use Date.UTC to create a proper Date
-  const timestamp = Date.UTC(
-    Number(y),
-    Number(mo) - 1,  // Month is 0-indexed in JS
-    Number(d),
-    Number(h),
-    Number(mi),
-    Number(s),
-  );
-  const parsed = new Date(timestamp);
-
-  // Sanity check: if parsed date is in the future, it's likely malformed
-  if (parsed.getTime() > Date.now()) {
-    console.warn("[JobProgressPanel] Parsed timestamp is in the future:", ts, parsed);
-    return null;
-  }
-  return parsed;
-}
-
-function formatElapsed(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}m ${s.toString().padStart(2, "0")}s`;
-}
+// Single source of truth for the in-progress elapsed counter:
+// `started_at_ms` is computed backend-side by parsing the run folder name
+// (always UTC, set once at run creation, never rewritten). We tick Date.now()
+// against it. No string parsing, no timezone heuristics, no sanity-check
+// fallbacks — if the field is missing the timer simply isn't shown.
 
 export function JobProgressPanel({
   status,
   progress,
-  timestamp,
-  timestamp_ms,
+  startedAtMs,
 }: {
   status: string;
   progress: JobProgress | null | undefined;
-  timestamp?: string;
-  timestamp_ms?: number;
+  startedAtMs?: number | null;
 }) {
-  // Prefer milliseconds timestamp (timezone-agnostic) over string timestamp
-  const startedAt = timestamp_ms
-    ? new Date(timestamp_ms)
-    : parseJobTimestamp(timestamp);
   const isRunning = status === "in_progress";
 
   const [now, setNow] = useState(() => Date.now());
@@ -63,14 +31,8 @@ export function JobProgressPanel({
     return () => window.clearInterval(id);
   }, [isRunning]);
 
-  const elapsedSeconds = startedAt
-    ? Math.max(0, Math.floor((now - startedAt.getTime()) / 1000))
-    : null;
-
-  // Sanity check: if elapsed time is unreasonable (> 24 hours), likely a timezone/parsing issue
-  const displayedSeconds = elapsedSeconds && elapsedSeconds > 86400
-    ? null
-    : elapsedSeconds;
+  const elapsedSeconds =
+    startedAtMs != null ? Math.max(0, Math.floor((now - startedAtMs) / 1000)) : null;
 
   // Backend semantics: `step` = phases COMPLETED. The phase currently running
   // is therefore phase (step+1). A run never persists step==total because the
@@ -90,9 +52,9 @@ export function JobProgressPanel({
         >
           {translateStatus(status)}
         </Badge>
-        {displayedSeconds != null && isRunning && (
+        {isRunning && elapsedSeconds != null && (
           <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-            {formatElapsed(displayedSeconds)}
+            {formatDuration(elapsedSeconds)}
           </span>
         )}
       </div>

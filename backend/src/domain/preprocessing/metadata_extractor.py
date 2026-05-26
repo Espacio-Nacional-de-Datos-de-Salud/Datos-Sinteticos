@@ -33,14 +33,88 @@ class MetadataExtractor:
         >>> encoding_types = extractor.extract_encoding_types(relationships['pks'])
     """
 
-    def __init__(self, data: dict[str, pd.DataFrame]) -> None:
+    #: Separator used when concatenating columns into a synthesized
+    #: composite primary key. Chosen to be unlikely to appear in real values.
+    COMPOSITE_PK_SEP = "::"
+
+    def __init__(
+        self,
+        data: dict[str, pd.DataFrame],
+        composite_pk_config: dict[str, list[str]] | None = None,
+    ) -> None:
         """Initializes the metadata extractor with a set of tables.
 
         Args:
             data (dict[str, pd.DataFrame]): Dictionary with raw tables
                 {table_name: dataframe}.
+            composite_pk_config (dict[str, list[str]] | None): Optional mapping
+                of ``{table_name: [col, ...]}``. For each listed table the
+                extractor synthesizes a single primary-key column by joining
+                the named columns, instead of relying on heuristic detection.
+                Use this for datasets whose natural key spans several columns
+                (e.g. patient_id + year). An **empty list** requests a
+                surrogate row-index key — use it for event-style tables that
+                have no natural unique key at all.
         """
         self.data = data
+        self.composite_pk_config = composite_pk_config or {}
+
+    #: Name of the surrogate row-index PK column synthesized when a table is
+    #: configured with an empty composite-key list.
+    SURROGATE_PK_COL = "synthetic_pk_idx"
+
+    def _synthesize_surrogate_pk(self, name: str, df: pd.DataFrame) -> str:
+        """Add a 0..N-1 row-index PK column to ``df`` in-place and return its name."""
+        df[self.SURROGATE_PK_COL] = range(len(df))
+        logger.info(
+            "Table '%s': surrogate PK synthesized -> '%s' (%d rows)",
+            name, self.SURROGATE_PK_COL, len(df),
+        )
+        return self.SURROGATE_PK_COL
+
+    def _synthesize_composite_pk(self, name: str, df: pd.DataFrame, columns: list[str]) -> str | None:
+        """Build a single PK column for ``name`` by concatenating ``columns``.
+
+        Adds the new column to the table in-place and returns its name, or
+        ``None`` if the configuration is invalid (missing columns) or the
+        resulting key is not unique.
+
+        Column matching is case-insensitive: the data cleaner preserves the
+        source casing of headers, so a config written as ``patient_id`` still
+        resolves a ``PATIENT_ID`` column.
+        """
+        lookup = {str(c).lower(): c for c in df.columns}
+        resolved: list[str] = []
+        missing: list[str] = []
+        for c in columns:
+            actual = lookup.get(str(c).lower())
+            if actual is None:
+                missing.append(c)
+            else:
+                resolved.append(actual)
+        if missing:
+            logger.error(
+                "Composite PK for table '%s' references missing columns %s "
+                "(available: %s); falling back to heuristic detection.",
+                name, missing, list(df.columns),
+            )
+            return None
+
+        pk_col = self.COMPOSITE_PK_SEP.join(resolved)
+        synthesized = (
+            df[resolved].astype(str).agg(self.COMPOSITE_PK_SEP.join, axis=1)
+        )
+        if not synthesized.is_unique:
+            dup = int(synthesized.duplicated().sum())
+            logger.error(
+                "Composite PK %s for table '%s' is not unique (%d duplicate rows); "
+                "falling back to heuristic detection.", resolved, name, dup
+            )
+            return None
+
+        df[pk_col] = synthesized
+        logger.info("Table '%s': composite PK synthesized -> '%s'", name, pk_col)
+        return pk_col
 
     def extract_primary_keys(self) -> dict[str, str]:
         """Identifies primary keys in each table using heuristics.
@@ -57,6 +131,21 @@ class MetadataExtractor:
         pks = {}
         for name, df in self.data.items():
             pk = None
+
+            # 0. Config-driven: explicit composite primary key.
+            if name in self.composite_pk_config:
+                cfg_cols = self.composite_pk_config[name]
+                if not cfg_cols:
+                    # Empty list -> surrogate row-index key (table has no
+                    # natural unique key).
+                    pks[name] = self._synthesize_surrogate_pk(name, df)
+                    continue
+                pk = self._synthesize_composite_pk(name, df, cfg_cols)
+                if pk:
+                    pks[name] = pk
+                    continue
+                # fall through to heuristics if synthesis failed
+
             # 1. Heuristic: Name matching
             candidates = [
                 c for c in df.columns if c.lower() in ["idx", "id", f"{name}_id", f"{name[:-1]}_id"]

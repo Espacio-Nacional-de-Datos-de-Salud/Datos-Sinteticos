@@ -28,6 +28,8 @@ import {
 import { TableSampleSizesEditor } from "@/components/generation/table-sample-sizes-editor";
 import { EditableName } from "@/components/jobs/editable-name";
 import { ActiveJobCard } from "@/components/pipeline-step/active-job-card";
+import { TimeProfilingPanel } from "@/components/pipeline-step/time-profiling-panel";
+import { DownloadMenu } from "@/components/pipeline-step/download-menu";
 import { HistoryCard, type HistoryColumn } from "@/components/pipeline-step/history-card";
 import { useArtifactLifecycle } from "@/components/pipeline-step/use-artifact-lifecycle";
 import { useUpstreamSelection } from "@/components/pipeline-step/use-upstream-selection";
@@ -35,6 +37,7 @@ import { WizardConfirmDialogs } from "@/components/pipeline-step/wizard-confirm-
 import { RulesBanner } from "@/components/config/rules-banner";
 import { WizardShell } from "@/components/layout/wizard-shell";
 import { WorkflowGroup } from "@/components/layout/workflow-group";
+import { NamePromptDialog } from "@/components/ui/name-prompt-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -83,6 +86,7 @@ export default function GeneracionPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmCleanup, setConfirmCleanup] = useState(false);
   const [confirmPurge, setConfirmPurge] = useState(false);
+  const [startDialogOpen, setStartDialogOpen] = useState(false);
 
   const lc = useArtifactLifecycle<SimulationSummary, StartInput>({
     apiPath: "/simulations",
@@ -206,12 +210,23 @@ export default function GeneracionPage() {
 
   return (
     <WizardShell currentSlug="generacion" canAdvance={lc.hasCompleted} outline={GENERACION_OUTLINE}>
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div>
+      <div className="space-y-6">
+        <div className="sticky top-0 z-20 -mx-8 -mt-6 border-b bg-background/95 px-8 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <h1 className="text-2xl font-semibold tracking-tight">Generación</h1>
           <p className="text-sm text-muted-foreground">
             Genera datos sintéticos a partir de un modelo entrenado.
           </p>
+          {lc.activeId && lc.active && (
+            <div className="mt-3 flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Nombre:</span>
+              <EditableName
+                name={lc.active.simulation_name || lc.active.simulation_id}
+                existingNames={lc.list.map((x) => x.simulation_name || x.simulation_id)}
+                onSave={(name) => lc.rename(lc.active!.simulation_id, name)}
+                size="sm"
+              />
+            </div>
+          )}
         </div>
 
         <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
@@ -305,15 +320,7 @@ export default function GeneracionPage() {
                 <Button
                   type="button"
                   disabled={!selectedModelId || lc.isStarting || lc.isRunning}
-                  onClick={() =>
-                    lc.start({
-                      model_id: selectedModelId,
-                      sampleSize,
-                      tableSampleSizes,
-                      syntheticDataFileFormat,
-                      conditional: conditionalConfig,
-                    })
-                  }
+                  onClick={() => setStartDialogOpen(true)}
                 >
                   <Play className="mr-2 h-4 w-4" />
                   {lc.isStarting
@@ -337,28 +344,26 @@ export default function GeneracionPage() {
             isError={lc.activeQuery.isError}
             errorMessage="No se pudo cargar el estado de la generación."
             active={lc.active}
-            activeName={lc.active?.simulation_name || lc.active?.simulation_id}
-            existingNames={lc.list.map((x) => x.simulation_name || x.simulation_id)}
-            onRename={
-              lc.active
-                ? (name) => lc.rename(lc.active!.simulation_id, name)
-                : undefined
-            }
             metadata={
               lc.active && (
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
-                  {lc.active.model_id && (
-                    <span>
-                      Modelo:{" "}
-                      <span className="font-mono" title={lc.active.model_id}>
-                        {labelForModelId(lc.active.model_id)}
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                    {lc.active.model_id && (
+                      <span>
+                        Modelo:{" "}
+                        <span className="font-mono" title={lc.active.model_id}>
+                          {labelForModelId(lc.active.model_id)}
+                        </span>
                       </span>
-                    </span>
-                  )}
-                  {lc.active.sample_size != null && (
-                    <span className="tabular-nums">
-                      Filas: {lc.active.sample_size.toLocaleString()}
-                    </span>
+                    )}
+                    {lc.active.sample_size != null && (
+                      <span className="tabular-nums">
+                        Filas: {lc.active.sample_size.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                  {lc.active.status === "completed" && lc.activeId && (
+                    <TimeProfilingPanel kind="simulations" id={lc.activeId} />
                   )}
                 </div>
               )
@@ -410,13 +415,14 @@ export default function GeneracionPage() {
             emptyMessage="Todavía no hay generaciones."
             columns={columns}
             actionsWidth="12%"
-            collapseLabel="generaciones"
             onCleanup={() => setConfirmCleanup(true)}
             onPurge={() => setConfirmPurge(true)}
             isCleaning={lc.isCleaning}
             isPurging={lc.isPurging}
             activeId={lc.activeId}
             getRowId={(s) => s.simulation_id}
+            getTimestamp={(s) => s.timestamp}
+            getDuration={(s) => s.duration_seconds}
             onSelect={(id) => lc.setActiveId(id)}
             actionsCell={(s) =>
               s.status === "in_progress" ? (
@@ -430,21 +436,59 @@ export default function GeneracionPage() {
                   <XCircle className="h-3.5 w-3.5" />
                 </button>
               ) : (
-                <button
-                  type="button"
-                  aria-label="Eliminar generación"
-                  disabled={lc.isDeleting}
-                  onClick={() => setConfirmDeleteId(s.simulation_id)}
-                  className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                <>
+                  {s.status === "completed" && (
+                    <DownloadMenu
+                      ariaLabel="Descargar generación"
+                      options={[
+                        {
+                          label: "Dataset sintético",
+                          href: `/simulations/${s.simulation_id}/download/synthetic-dataset`,
+                        },
+                        {
+                          label: "Carpeta completa",
+                          href: `/simulations/${s.simulation_id}/download`,
+                        },
+                      ]}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    aria-label="Eliminar generación"
+                    disabled={lc.isDeleting}
+                    onClick={() => setConfirmDeleteId(s.simulation_id)}
+                    className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </>
               )
             }
             />
           </div>
         </WorkflowGroup>
       </div>
+
+      <NamePromptDialog
+        open={startDialogOpen}
+        title="Iniciar generación"
+        description="Asigna un nombre funcional a esta generación para identificarla más fácilmente. Puedes dejarlo en blanco y editarlo después."
+        confirmLabel="Iniciar generación"
+        onConfirm={(name) => {
+          lc.start(
+            {
+              model_id: selectedModelId,
+              sampleSize,
+              tableSampleSizes,
+              syntheticDataFileFormat,
+              conditional: conditionalConfig,
+            },
+            name || undefined,
+          );
+          setStartDialogOpen(false);
+        }}
+        onCancel={() => setStartDialogOpen(false)}
+      />
 
       <WizardConfirmDialogs
         texts={{
@@ -473,6 +517,10 @@ export default function GeneracionPage() {
         confirmPurge={confirmPurge}
         setConfirmPurge={setConfirmPurge}
         onPurge={lc.purge}
+        deleteConflict={lc.deleteConflict}
+        onDeleteConflictCascade={() => lc.resolveDeleteConflict("cascade")}
+        onDeleteConflictForce={() => lc.resolveDeleteConflict("force")}
+        onDeleteConflictDismiss={lc.dismissDeleteConflict}
       />
     </WizardShell>
   );

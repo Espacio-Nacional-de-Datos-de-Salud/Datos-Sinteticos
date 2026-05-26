@@ -2,14 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { Plus, Settings, Trash2, X } from "lucide-react";
+import { Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 import {
   api,
+  type ColumnKind,
   type FilePreview,
+  getModelColumnTypes,
   getModelColumnValues,
   getModelColumns,
   type ModelColumns,
+  type ModelColumnTypes,
 } from "@/lib/api";
+import { Autocomplete } from "@/components/ui/autocomplete";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,43 +27,118 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SELECT_CLASS } from "@/lib/ui";
 
-export type SeedEntry = { column: string; value: string };
-export type DistributionEntry = { value: string; weight: string };
+// A "condition" constrains one column of the table being generated. The modes
+// mirror the backend conditional-generation API:
+//   fixed       — every row gets the same value
+//   categorical — values follow target proportions
+//   numeric     — values are drawn from a range (uniform) or bell curve (normal)
+//   daterange   — datetime values drawn uniformly between two dates
+export type ConditionMode = "fixed" | "categorical" | "numeric" | "daterange";
+export type NumericGenerator = "uniform" | "normal";
+export type WeightEntry = { value: string; weight: string };
+
+export type Condition = {
+  column: string;
+  mode: ConditionMode;
+  // fixed
+  value: string;
+  // categorical
+  weights: WeightEntry[];
+  // numeric
+  generator: NumericGenerator;
+  min: string;
+  max: string;
+  mean: string;
+  std: string;
+  integer: boolean;
+  // daterange
+  start: string;
+  end: string;
+};
 
 export type ConditionalConfig = {
   table: string;
-  seeds: SeedEntry[];
-  distributionField: string;
-  distribution: DistributionEntry[];
+  conditions: Condition[];
 };
+
+export function emptyCondition(): Condition {
+  return {
+    column: "",
+    mode: "fixed",
+    value: "",
+    weights: [{ value: "", weight: "" }],
+    generator: "uniform",
+    min: "",
+    max: "",
+    mean: "",
+    std: "",
+    integer: false,
+    start: "",
+    end: "",
+  };
+}
 
 export const EMPTY_CONDITIONAL_CONFIG: ConditionalConfig = {
   table: "",
-  seeds: [],
-  distributionField: "",
-  distribution: [],
+  conditions: [],
 };
 
-export function isConditionalConfigActive(cfg: ConditionalConfig): boolean {
-  const hasSeeds = cfg.seeds.some(
-    (s) => s.column.trim() !== "" && s.value.trim() !== "",
-  );
-  const hasDistribution =
-    cfg.distributionField.trim() !== "" &&
-    cfg.distribution.some(
-      (d) => d.value.trim() !== "" && d.weight.trim() !== "",
+const MODE_LABEL: Record<ConditionMode, string> = {
+  fixed: "Valor fijo",
+  categorical: "Proporciones",
+  numeric: "Rango numérico",
+  daterange: "Rango de fechas",
+};
+
+// Which constraint modes make sense for each column kind. `unknown` (no
+// encoding metadata yet) permits everything so the UI never blocks the user.
+const ALLOWED_MODES: Record<ColumnKind | "unknown", ConditionMode[]> = {
+  numeric: ["fixed", "categorical", "numeric"],
+  datetime: ["fixed", "categorical", "daterange"],
+  categorical: ["fixed", "categorical"],
+  unknown: ["fixed", "categorical", "numeric", "daterange"],
+};
+
+function isConditionUsable(c: Condition): boolean {
+  if (!c.column.trim()) return false;
+  if (c.mode === "fixed") return c.value.trim() !== "";
+  if (c.mode === "categorical") {
+    return c.weights.some(
+      (w) => w.value.trim() !== "" && w.weight.trim() !== "",
     );
-  return hasSeeds || hasDistribution;
+  }
+  if (c.mode === "daterange") return c.start.trim() !== "" && c.end.trim() !== "";
+  // numeric
+  return c.min.trim() !== "" && c.max.trim() !== "";
 }
 
-type DrawerProps = {
-  open: boolean;
-  modelId: string;
-  pendingFilePaths?: string[];
-  config: ConditionalConfig;
-  onChange: (next: ConditionalConfig) => void;
-  onClose: () => void;
-};
+export function isConditionalConfigActive(cfg: ConditionalConfig): boolean {
+  return cfg.conditions.some(isConditionUsable);
+}
+
+/** Min/max of a column's values, read as numbers; null if any value isn't numeric. */
+function numericRange(values: string[]): { min: number; max: number } | null {
+  if (values.length === 0) return null;
+  const nums: number[] = [];
+  for (const v of values) {
+    const n = Number(v);
+    if (v.trim() === "" || !Number.isFinite(n)) return null;
+    nums.push(n);
+  }
+  return { min: Math.min(...nums), max: Math.max(...nums) };
+}
+
+/** Earliest/latest of a column's values parsed as dates (YYYY-MM-DD); null if unparseable. */
+function dateRange(values: string[]): { min: string; max: string } | null {
+  const times: number[] = [];
+  for (const v of values) {
+    const t = Date.parse(v);
+    if (Number.isFinite(t)) times.push(t);
+  }
+  if (times.length === 0) return null;
+  const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
+  return { min: iso(Math.min(...times)), max: iso(Math.max(...times)) };
+}
 
 type BodyProps = {
   active: boolean;
@@ -67,6 +146,7 @@ type BodyProps = {
   pendingFilePaths?: string[];
   config: ConditionalConfig;
   onChange: (next: ConditionalConfig) => void;
+  onSave?: () => void;
 };
 
 type PanelProps = {
@@ -78,17 +158,25 @@ type PanelProps = {
   defaultOpen?: boolean;
 };
 
+
 function ConditionalConfigBody({
   active,
   modelId,
   pendingFilePaths,
   config,
   onChange,
+  onSave,
 }: BodyProps) {
   const columnsQuery = useQuery({
     queryKey: ["model-columns", modelId],
     enabled: active && !!modelId,
     queryFn: () => getModelColumns(modelId),
+  });
+
+  const typesQuery = useQuery({
+    queryKey: ["model-column-types", modelId],
+    enabled: active && !!modelId,
+    queryFn: () => getModelColumnTypes(modelId),
   });
 
   const pendingKey = useMemo(
@@ -125,23 +213,20 @@ function ConditionalConfigBody({
           const raw = row[columnIdx];
           if (typeof raw === "string" && raw.trim() !== "") values.add(raw);
         }
-        tableMap[column] = Array.from(values).slice(0, 20);
+        tableMap[column] = Array.from(values).slice(0, 50);
       });
     }
     return map;
   }, [previewQuery.data]);
 
   const columnsByTable: ModelColumns = useMemo(() => {
-    if (Object.keys(columnsQuery.data ?? {}).length > 0) return columnsQuery.data ?? {};
+    if (Object.keys(columnsQuery.data ?? {}).length > 0)
+      return columnsQuery.data ?? {};
     return previewColumnsByTable;
   }, [columnsQuery.data, previewColumnsByTable]);
-  const tableNames = useMemo(
-    () => Object.keys(columnsByTable),
-    [columnsByTable],
-  );
+  const tableNames = useMemo(() => Object.keys(columnsByTable), [columnsByTable]);
   const activeTable = config.table || tableNames[0] || "";
 
-  // Default to the first table once columns load.
   useEffect(() => {
     if (!active) return;
     if (!config.table && tableNames.length > 0) {
@@ -150,13 +235,19 @@ function ConditionalConfigBody({
   }, [active, config, tableNames, onChange]);
 
   const tableColumns = activeTable ? columnsByTable[activeTable] ?? [] : [];
-  // Columns referenced in seeds + distribution drive the value-dropdown queries.
+
+  const typesByColumn: Record<string, ColumnKind> = useMemo(() => {
+    const all: ModelColumnTypes = typesQuery.data ?? {};
+    return all[activeTable] ?? {};
+  }, [typesQuery.data, activeTable]);
+  const kindOf = (column: string): ColumnKind | "unknown" =>
+    typesByColumn[column] ?? "unknown";
+
   const valueQueryColumns = useMemo(() => {
     const cols = new Set<string>();
-    for (const s of config.seeds) if (s.column) cols.add(s.column);
-    if (config.distributionField) cols.add(config.distributionField);
+    for (const c of config.conditions) if (c.column) cols.add(c.column);
     return Array.from(cols);
-  }, [config.seeds, config.distributionField]);
+  }, [config.conditions]);
 
   const valueQueries = useQueries({
     queries: valueQueryColumns.map((column) => ({
@@ -177,443 +268,423 @@ function ConditionalConfigBody({
     return map;
   }, [activeTable, previewValuesByTable, valueQueryColumns, valueQueries]);
 
+  const usedColumns = new Set(
+    config.conditions.map((c) => c.column).filter(Boolean),
+  );
+
   const setTable = (table: string) =>
+    onChange({ ...config, table, conditions: [] });
+
+  const updateCondition = (idx: number, patch: Partial<Condition>) =>
     onChange({
       ...config,
-      table,
-      seeds: config.seeds.map((s) => ({ ...s, column: "", value: "" })),
-      distributionField: "",
-      distribution: [],
+      conditions: config.conditions.map((c, i) =>
+        i === idx ? { ...c, ...patch } : c,
+      ),
     });
 
-  const updateSeed = (idx: number, patch: Partial<SeedEntry>) => {
-    const seeds = config.seeds.map((s, i) =>
-      i === idx ? { ...s, ...patch } : s,
-    );
-    onChange({ ...config, seeds });
+  const addCondition = () =>
+    onChange({ ...config, conditions: [...config.conditions, emptyCondition()] });
+
+  const removeCondition = (idx: number) =>
+    onChange({
+      ...config,
+      conditions: config.conditions.filter((_, i) => i !== idx),
+    });
+
+  const restoreAll = () => onChange({ ...config, conditions: [] });
+
+  // Picking a column resets mode-specific state and, when possible, prefills a
+  // sensible range from the column's observed values.
+  const pickColumn = (idx: number, column: string) => {
+    const values = valuesByColumn[column] ?? [];
+    const kind = kindOf(column);
+    const allowed = ALLOWED_MODES[kind];
+    const numeric = numericRange(values);
+    const dates = dateRange(values);
+    const base = emptyCondition();
+    updateCondition(idx, {
+      ...base,
+      column,
+      mode: allowed.includes(config.conditions[idx]?.mode ?? "fixed")
+        ? config.conditions[idx].mode
+        : "fixed",
+      min: numeric ? String(numeric.min) : "",
+      max: numeric ? String(numeric.max) : "",
+      start: dates ? dates.min : "",
+      end: dates ? dates.max : "",
+    });
   };
-  const addSeed = () =>
-    onChange({ ...config, seeds: [...config.seeds, { column: "", value: "" }] });
-  const removeSeed = (idx: number) =>
-    onChange({ ...config, seeds: config.seeds.filter((_, i) => i !== idx) });
 
-  const updateDist = (idx: number, patch: Partial<DistributionEntry>) => {
-    const distribution = config.distribution.map((d, i) =>
-      i === idx ? { ...d, ...patch } : d,
-    );
-    onChange({ ...config, distribution });
-  };
-  const addDist = () =>
-    onChange({
-      ...config,
-      distribution: [...config.distribution, { value: "", weight: "" }],
-    });
-  const removeDist = (idx: number) =>
-    onChange({
-      ...config,
-      distribution: config.distribution.filter((_, i) => i !== idx),
-    });
-
-  const clearAll = () => onChange({ ...EMPTY_CONDITIONAL_CONFIG, table: activeTable });
-
-  // A column already used as a seed shouldn't be reusable for another seed
-  // or as the distribution field — same with the distribution column itself.
-  const usedSeedColumns = new Set(
-    config.seeds.map((s) => s.column).filter(Boolean),
-  );
-
-  const renderColumnSelect = (
-    id: string,
-    value: string,
-    onSelect: (column: string) => void,
-    excludeColumns: Set<string>,
-  ) => (
-    <select
-      id={id}
-      value={value}
-      onChange={(e) => onSelect(e.target.value)}
-      className={SELECT_CLASS}
-      disabled={tableColumns.length === 0}
-    >
-      <option value="">Selecciona columna…</option>
-      {tableColumns.map((column) => (
-        <option
-          key={column}
-          value={column}
-          disabled={excludeColumns.has(column) && column !== value}
-        >
-          {column}
-        </option>
-      ))}
-    </select>
-  );
-
-  const renderValueSelect = (
-    id: string,
+  // Single field for picking a value: a styled suggestion popup for regular
+  // columns (pick one or type freely), a calendar for datetime columns.
+  const renderValueField = (
     column: string,
     value: string,
     onSelect: (next: string) => void,
   ) => {
-    const options = column ? valuesByColumn[column] ?? [] : [];
-    const idx = column ? valueQueryColumns.indexOf(column) : -1;
-    const isLoading = idx >= 0 && valueQueries[idx]?.isLoading;
-    const hasOption = !value || options.includes(value);
-    return (
-      <div className="flex flex-col gap-1">
-        <select
-          id={id}
-          value={hasOption ? value : ""}
+    if (kindOf(column) === "datetime") {
+      return (
+        <Input
+          type="date"
+          value={value}
           onChange={(e) => onSelect(e.target.value)}
-          className={SELECT_CLASS}
-          disabled={!column || isLoading}
-        >
-          <option value="">
-            {!column
-              ? "Elige columna primero"
-              : isLoading
-                ? "Cargando valores…"
-                : options.length === 0
-                  ? "Sin valores"
-                  : "Selecciona valor…"}
-          </option>
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
+          disabled={!column}
+          className="h-8 text-xs"
+        />
+      );
+    }
+    return (
+      <Autocomplete
+        value={value}
+        onValueChange={onSelect}
+        options={column ? valuesByColumn[column] ?? [] : []}
+        disabled={!column}
+        placeholder={column ? "Elige o escribe un valor" : "Elige columna primero"}
+      />
+    );
+  };
+
+  const renderConditionDetail = (c: Condition, idx: number) => {
+    if (c.mode === "fixed") {
+      return (
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">
+            Todas las filas tendrán este valor
+          </Label>
+          {renderValueField(c.column, c.value, (value) =>
+            updateCondition(idx, { value }),
+          )}
+        </div>
+      );
+    }
+
+    if (c.mode === "categorical") {
+      const total = c.weights.reduce((sum, w) => {
+        const n = Number(w.weight);
+        return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+      }, 0);
+      const updateWeight = (wIdx: number, patch: Partial<WeightEntry>) =>
+        updateCondition(idx, {
+          weights: c.weights.map((w, i) =>
+            i === wIdx ? { ...w, ...patch } : w,
+          ),
+        });
+      return (
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground">
+            Reparte las filas entre estos valores (los pesos se normalizan solos)
+          </Label>
+          {c.weights.map((w, wIdx) => {
+            const pct =
+              total > 0 && Number(w.weight) > 0
+                ? Math.round((Number(w.weight) / total) * 100)
+                : null;
+            return (
+              <div
+                key={wIdx}
+                className="grid grid-cols-[1fr_4.5rem_2.5rem_auto] items-center gap-2"
+              >
+                {renderValueField(c.column, w.value, (value) =>
+                  updateWeight(wIdx, { value }),
+                )}
+                <Input
+                  type="number"
+                  min={0}
+                  value={w.weight}
+                  onChange={(e) => updateWeight(wIdx, { weight: e.target.value })}
+                  placeholder="peso"
+                  className="h-8 text-xs"
+                />
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {pct != null ? `${pct}%` : "—"}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Quitar valor"
+                  onClick={() =>
+                    updateCondition(idx, {
+                      weights: c.weights.filter((_, i) => i !== wIdx),
+                    })
+                  }
+                  disabled={c.weights.length <= 1}
+                  className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              updateCondition(idx, {
+                weights: [...c.weights, { value: "", weight: "" }],
+              })
+            }
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Añadir valor
+          </Button>
+        </div>
+      );
+    }
+
+    if (c.mode === "daterange") {
+      return (
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground">
+            Genera fechas dentro de este intervalo
+          </Label>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-[11px]">Desde</Label>
+              <Input
+                type="date"
+                value={c.start}
+                onChange={(e) => updateCondition(idx, { start: e.target.value })}
+                className="h-8 text-xs"
+              />
+            </div>
+            <div>
+              <Label className="text-[11px]">Hasta</Label>
+              <Input
+                type="date"
+                value={c.end}
+                onChange={(e) => updateCondition(idx, { end: e.target.value })}
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // numeric
+    return (
+      <div className="space-y-2">
+        <Label className="text-xs text-muted-foreground">
+          Genera valores numéricos dentro de un rango
+        </Label>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label className="text-[11px]">Mínimo</Label>
+            <Input
+              type="number"
+              value={c.min}
+              onChange={(e) => updateCondition(idx, { min: e.target.value })}
+              placeholder="p.ej. 18"
+              className="h-8 text-xs"
+            />
+          </div>
+          <div>
+            <Label className="text-[11px]">Máximo</Label>
+            <Input
+              type="number"
+              value={c.max}
+              onChange={(e) => updateCondition(idx, { max: e.target.value })}
+              placeholder="p.ej. 80"
+              className="h-8 text-xs"
+            />
+          </div>
+        </div>
+        <div>
+          <Label className="text-[11px]">¿Cómo se reparten los valores?</Label>
+          <select
+            value={c.generator}
+            onChange={(e) =>
+              updateCondition(idx, {
+                generator: e.target.value as NumericGenerator,
+              })
+            }
+            className={SELECT_CLASS}
+          >
+            <option value="uniform">Uniforme — todos por igual en el rango</option>
+            <option value="normal">
+              Normal — concentrados alrededor de una media
             </option>
-          ))}
-        </select>
-        {column && !hasOption && (
-          <p className="text-[10px] text-muted-foreground">
-            Valor actual «{value}» no está entre los más frecuentes; se usará tal
-            cual.
-          </p>
+          </select>
+        </div>
+        {c.generator === "normal" && (
+          <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/40 p-2">
+            <div>
+              <Label className="text-[11px]">Media</Label>
+              <Input
+                type="number"
+                value={c.mean}
+                onChange={(e) => updateCondition(idx, { mean: e.target.value })}
+                placeholder="p.ej. 40"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div>
+              <Label className="text-[11px]">Desviación típica</Label>
+              <Input
+                type="number"
+                min={0}
+                value={c.std}
+                onChange={(e) => updateCondition(idx, { std: e.target.value })}
+                placeholder="p.ej. 12"
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
         )}
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={c.integer}
+            onChange={(e) => updateCondition(idx, { integer: e.target.checked })}
+            className="h-3.5 w-3.5"
+          />
+          Solo números enteros
+        </label>
       </div>
     );
   };
 
+  const noSchema = !modelId && (pendingFilePaths?.length ?? 0) === 0;
+  const loadingSchema =
+    (!!modelId && columnsQuery.isLoading) ||
+    (!modelId && previewQuery.isLoading);
+
   return (
-    <>
-      <div className="flex-1 space-y-6 overflow-y-auto p-4">
-          {!modelId && (pendingFilePaths?.length ?? 0) === 0 && (
-            <p className="text-sm text-destructive">
-              Selecciona un modelo existente o añade un paso de entrenamiento con archivos.
-            </p>
-          )}
+    <div className="flex flex-col">
+      <div className="space-y-4 p-4">
+        {noSchema && (
+          <p className="text-sm text-destructive">
+            Selecciona un modelo entrenado para poder condicionar la generación.
+          </p>
+        )}
+        {loadingSchema && (
+          <p className="text-sm text-muted-foreground">Cargando columnas…</p>
+        )}
 
-          {!modelId && (pendingFilePaths?.length ?? 0) > 0 && (
-            <p className="text-sm text-muted-foreground">
-              Usando el esquema detectado en los archivos del paso de entrenamiento de este job.
-              Hasta que exista un modelo sólo se pueden sugerir columnas y algunos valores de ejemplo.
-            </p>
-          )}
+        {tableNames.length > 1 && (
+          <div className="space-y-1">
+            <Label className="text-xs">Tabla</Label>
+            <select
+              value={activeTable}
+              onChange={(e) => setTable(e.target.value)}
+              className={SELECT_CLASS}
+            >
+              {tableNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
-          {modelId && columnsQuery.isLoading && (
-            <p className="text-sm text-muted-foreground">
-              Cargando columnas del modelo…
-            </p>
-          )}
+        {config.conditions.length === 0 && tableNames.length > 0 && (
+          <p className="text-sm text-muted-foreground">
+            Sin condiciones: la generación es libre. Añade una para fijar el
+            valor de una columna o controlar su distribución.
+          </p>
+        )}
 
-          {!modelId && previewQuery.isLoading && (
-            <p className="text-sm text-muted-foreground">
-              Detectando tablas y columnas desde los archivos del job…
-            </p>
-          )}
-
-          {modelId && columnsQuery.isError && (
-            <p className="text-sm text-destructive">
-              No se pudieron cargar las columnas del modelo.
-            </p>
-          )}
-
-          {!modelId && previewQuery.isError && (
-            <p className="text-sm text-destructive">
-              No se pudo detectar el esquema de los archivos de entrenamiento.
-            </p>
-          )}
-
-          {tableNames.length > 0 && (
-            <>
-              {tableNames.length > 1 && (
-                <section className="space-y-2">
-                  <Label className="text-xs" htmlFor="cond-table">
-                    Tabla
-                  </Label>
+        <div className="space-y-3">
+          {config.conditions.map((c, idx) => {
+            const exclude = new Set(usedColumns);
+            exclude.delete(c.column);
+            const allowed = ALLOWED_MODES[kindOf(c.column)];
+            return (
+              <div key={idx} className="space-y-3 rounded-lg border bg-card p-3">
+                <div className="flex items-center gap-2">
                   <select
-                    id="cond-table"
-                    value={activeTable}
-                    onChange={(e) => setTable(e.target.value)}
+                    value={c.column}
+                    onChange={(e) => pickColumn(idx, e.target.value)}
                     className={SELECT_CLASS}
+                    disabled={tableColumns.length === 0}
                   >
-                    {tableNames.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
+                    <option value="">Elige una columna…</option>
+                    {tableColumns.map((column) => (
+                      <option
+                        key={column}
+                        value={column}
+                        disabled={exclude.has(column)}
+                      >
+                        {column}
                       </option>
                     ))}
                   </select>
-                </section>
-              )}
-
-              <section className="space-y-3">
-                <div>
-                  <h3 className="text-sm font-semibold">Valores fijos (seed)</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Cada fila generada tendrá estas columnas con el valor
-                    indicado.
-                  </p>
-                </div>
-                <div className="space-y-3 rounded-md border p-3">
-                  {config.seeds.length === 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      Sin valores fijos. Añade uno para empezar.
-                    </p>
-                  )}
-                  {config.seeds.map((seed, idx) => {
-                    const exclude = new Set(usedSeedColumns);
-                    exclude.delete(seed.column);
-                    if (config.distributionField) {
-                      exclude.add(config.distributionField);
-                    }
-                    return (
-                      <div
-                        key={idx}
-                        className="grid grid-cols-[1fr_1fr_auto] items-end gap-2"
-                      >
-                        <div>
-                          <Label className="text-xs" htmlFor={`seed-col-${idx}`}>
-                            Columna
-                          </Label>
-                          {renderColumnSelect(
-                            `seed-col-${idx}`,
-                            seed.column,
-                            (column) =>
-                              updateSeed(idx, { column, value: "" }),
-                            exclude,
-                          )}
-                        </div>
-                        <div>
-                          <Label className="text-xs" htmlFor={`seed-val-${idx}`}>
-                            Valor
-                          </Label>
-                          {renderValueSelect(
-                            `seed-val-${idx}`,
-                            seed.column,
-                            seed.value,
-                            (value) => updateSeed(idx, { value }),
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          aria-label="Eliminar fila"
-                          onClick={() => removeSeed(idx)}
-                          className="rounded p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                  <Button
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={addSeed}
-                    disabled={tableColumns.length === 0}
+                    aria-label="Eliminar condición"
+                    onClick={() => removeCondition(idx)}
+                    className="shrink-0 rounded p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   >
-                    <Plus className="mr-2 h-3.5 w-3.5" />
-                    Añadir valor fijo
-                  </Button>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
-              </section>
 
-              <section className="space-y-3">
-                <div>
-                  <h3 className="text-sm font-semibold">
-                    Distribución sobre una columna
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Opcional. Reparte las filas según pesos sobre los valores
-                    indicados.
-                  </p>
-                </div>
-                <div className="space-y-3 rounded-md border p-3">
-                  <div>
-                    <Label className="text-xs" htmlFor="dist-field">
-                      Columna a distribuir
-                    </Label>
-                    <select
-                      id="dist-field"
-                      value={config.distributionField}
-                      onChange={(e) =>
-                        onChange({
-                          ...config,
-                          distributionField: e.target.value,
-                          distribution: [],
-                        })
-                      }
-                      className={SELECT_CLASS}
-                      disabled={tableColumns.length === 0}
-                    >
-                      <option value="">— ninguna —</option>
-                      {tableColumns.map((column) => (
-                        <option
-                          key={column}
-                          value={column}
-                          disabled={
-                            usedSeedColumns.has(column) &&
-                            column !== config.distributionField
-                          }
-                        >
-                          {column}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      Esta columna no debe aparecer en los valores fijos.
-                    </p>
-                  </div>
-
-                  {config.distributionField && (
-                    <>
-                      {config.distribution.length === 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          Sin pesos. Añade categorías y sus proporciones.
-                        </p>
-                      )}
-                      {config.distribution.map((entry, idx) => (
-                        <div
-                          key={idx}
-                          className="grid grid-cols-[1fr_1fr_auto] items-end gap-2"
-                        >
-                          <div>
-                            <Label className="text-xs" htmlFor={`dist-val-${idx}`}>
-                              Valor
-                            </Label>
-                            {renderValueSelect(
-                              `dist-val-${idx}`,
-                              config.distributionField,
-                              entry.value,
-                              (value) => updateDist(idx, { value }),
-                            )}
-                          </div>
-                          <div>
-                            <Label className="text-xs" htmlFor={`dist-w-${idx}`}>
-                              Peso (%)
-                            </Label>
-                            <Input
-                              id={`dist-w-${idx}`}
-                              type="number"
-                              min={0}
-                              value={entry.weight}
-                              onChange={(e) =>
-                                updateDist(idx, { weight: e.target.value })
-                              }
-                              placeholder="p.ej. 50"
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            aria-label="Eliminar fila"
-                            onClick={() => removeDist(idx)}
-                            className="rounded p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                      <Button
+                {c.column && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {allowed.map((mode) => (
+                      <button
+                        key={mode}
                         type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addDist}
+                        onClick={() => updateCondition(idx, { mode })}
+                        className={
+                          "rounded-full border px-3 py-1 text-xs transition-colors " +
+                          (c.mode === mode
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-input text-muted-foreground hover:bg-accent")
+                        }
                       >
-                        <Plus className="mr-2 h-3.5 w-3.5" />
-                        Añadir categoría
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </section>
-            </>
-          )}
+                        {MODE_LABEL[mode]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {c.column && renderConditionDetail(c, idx)}
+              </div>
+            );
+          })}
         </div>
+
+        {tableNames.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addCondition}
+            disabled={tableColumns.length === 0}
+          >
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            Añadir condición
+          </Button>
+        )}
+      </div>
 
       <footer className="flex items-center justify-between gap-2 border-t p-4">
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
-          onClick={clearAll}
-          disabled={!isConditionalConfigActive(config)}
+          onClick={restoreAll}
+          disabled={config.conditions.length === 0}
         >
-          Limpiar todo
+          <RotateCcw className="mr-2 h-3.5 w-3.5" />
+          Restaurar
         </Button>
+        {onSave && (
+          <Button type="button" size="sm" onClick={onSave}>
+            Guardar
+          </Button>
+        )}
       </footer>
-    </>
+    </div>
   );
 }
 
-export function ConditionalGenerationDrawer({
-  open,
-  modelId,
-  pendingFilePaths,
-  config,
-  onChange,
-  onClose,
-}: DrawerProps) {
-  if (!open) return null;
-  return (
-    <>
-      <div
-        className="fixed inset-0 z-40 bg-black/50"
-        onClick={onClose}
-        aria-hidden
-      />
-      <aside
-        role="dialog"
-        aria-label="Configurar generación condicional"
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col border-l bg-background shadow-xl"
-      >
-        <header className="flex items-start justify-between gap-4 border-b p-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Settings className="h-4 w-4" />
-              <span>Generación condicional</span>
-            </div>
-            <h2 className="mt-1 text-lg font-semibold">
-              Fija atributos o distribuciones para la simulación
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Genera muestras condicionadas a valores concretos (semilla) o a
-              una distribución sobre una columna categórica. Déjalo vacío para
-              una generación libre.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Cerrar"
-            className="rounded p-1 text-muted-foreground hover:bg-accent"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </header>
-        <ConditionalConfigBody
-          active={open}
-          modelId={modelId}
-          pendingFilePaths={pendingFilePaths}
-          config={config}
-          onChange={onChange}
-        />
-        <footer className="flex justify-end gap-2 border-t p-4">
-          <Button type="button" size="sm" onClick={onClose}>
-            Hecho
-          </Button>
-        </footer>
-      </aside>
-    </>
-  );
-}
+const HEADER_TITLE = "Condicionar la generación";
+const HEADER_HINT =
+  "Fija el valor de una columna o controla su distribución. Si lo dejas vacío, la generación es libre.";
 
 export function ConditionalConfigPanel({
   modelId,
@@ -624,46 +695,38 @@ export function ConditionalConfigPanel({
   defaultOpen = false,
 }: PanelProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const active = isConditionalConfigActive(config);
   return (
     <Card className={className}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Settings className="h-3.5 w-3.5" />
-            <span>Generación condicional</span>
-            {isConditionalConfigActive(config) && (
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            <span>Opcional</span>
+            {active && (
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
                 activa
               </span>
             )}
           </div>
-          <CardTitle className="text-base">
-            Fija atributos o distribuciones para la simulación
-          </CardTitle>
-          <CardDescription>
-            Genera muestras condicionadas a valores concretos (semilla) o a
-            una distribución sobre una columna categórica. Déjalo vacío para
-            una generación libre.
-          </CardDescription>
+          <CardTitle className="text-base">{HEADER_TITLE}</CardTitle>
+          <CardDescription>{HEADER_HINT}</CardDescription>
         </div>
         <CollapseToggle
           open={open}
           onToggle={() => setOpen((v) => !v)}
-          ariaLabel={
-            open
-              ? "Contraer generación condicional"
-              : "Expandir generación condicional"
-          }
+          ariaLabel={open ? "Contraer" : "Expandir"}
         />
       </CardHeader>
       {open && (
-        <CardContent className="flex flex-col p-0">
+        <CardContent className="p-0">
           <ConditionalConfigBody
             active
             modelId={modelId}
             pendingFilePaths={pendingFilePaths}
             config={config}
             onChange={onChange}
+            onSave={() => setOpen(false)}
           />
         </CardContent>
       )}
@@ -671,33 +734,83 @@ export function ConditionalConfigPanel({
   );
 }
 
+type ConditionPayload =
+  | { column: string; mode: "fixed"; value: string | number }
+  | { column: string; mode: "categorical"; weights: Record<string, number> }
+  | {
+      column: string;
+      mode: "numeric";
+      generator: NumericGenerator;
+      min: number;
+      max: number;
+      integer: boolean;
+      mean?: number;
+      std?: number;
+    }
+  | { column: string; mode: "daterange"; start: string; end: string };
+
+/** Convert the editor config into the `conditional` payload the API expects. */
 export function buildConditionalPayload(
   cfg: ConditionalConfig,
 ): Record<string, unknown> | null {
   if (!isConditionalConfigActive(cfg)) return null;
 
-  const seed: Record<string, string | number> = {};
-  for (const { column, value } of cfg.seeds) {
-    const col = column.trim();
-    const val = value.trim();
-    if (!col || !val) continue;
-    const asNumber = Number(val);
-    seed[col] = val !== "" && Number.isFinite(asNumber) ? asNumber : val;
+  const conditions: ConditionPayload[] = [];
+  for (const c of cfg.conditions) {
+    if (!isConditionUsable(c)) continue;
+    const column = c.column.trim();
+
+    if (c.mode === "fixed") {
+      const raw = c.value.trim();
+      const asNumber = Number(raw);
+      conditions.push({
+        column,
+        mode: "fixed",
+        value: raw !== "" && Number.isFinite(asNumber) ? asNumber : raw,
+      });
+    } else if (c.mode === "categorical") {
+      const weights: Record<string, number> = {};
+      for (const w of c.weights) {
+        const value = w.value.trim();
+        const weight = Number(w.weight);
+        if (!value || !Number.isFinite(weight) || weight <= 0) continue;
+        weights[value] = weight;
+      }
+      if (Object.keys(weights).length > 0) {
+        conditions.push({ column, mode: "categorical", weights });
+      }
+    } else if (c.mode === "daterange") {
+      conditions.push({
+        column,
+        mode: "daterange",
+        start: c.start.trim(),
+        end: c.end.trim(),
+      });
+    } else {
+      const min = Number(c.min);
+      const max = Number(c.max);
+      if (!Number.isFinite(min) || !Number.isFinite(max)) continue;
+      const payload: ConditionPayload = {
+        column,
+        mode: "numeric",
+        generator: c.generator,
+        min,
+        max,
+        integer: c.integer,
+      };
+      if (c.generator === "normal") {
+        const mean = Number(c.mean);
+        const std = Number(c.std);
+        if (!Number.isFinite(mean) || !Number.isFinite(std)) continue;
+        payload.mean = mean;
+        payload.std = std;
+      }
+      conditions.push(payload);
+    }
   }
 
-  const payload: Record<string, unknown> = { seed };
+  if (conditions.length === 0) return null;
+  const payload: Record<string, unknown> = { conditions };
   if (cfg.table) payload.table = cfg.table;
-  const field = cfg.distributionField.trim();
-  const dist: Record<string, number> = {};
-  for (const { value, weight } of cfg.distribution) {
-    const v = value.trim();
-    const w = Number(weight);
-    if (!v || !Number.isFinite(w)) continue;
-    dist[v] = w;
-  }
-  if (field && Object.keys(dist).length > 0) {
-    payload.distribution_field = field;
-    payload.distribution = dist;
-  }
   return payload;
 }

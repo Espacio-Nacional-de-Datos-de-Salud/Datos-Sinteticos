@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
 from backend.src.config.general import (
     MOSTLYAI_DIR,
     SIM_CARD_FILENAME,
@@ -17,6 +18,7 @@ from backend.src.config.general import (
     normalize_synthetic_data_file_format,
     refresh_run_timestamp,
 )
+from backend.src.domain.conditional_seed import attach_sample_seeds
 from backend.src.domain.general_sanity_checks import run_general_sanity_checks
 from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
 from backend.src.domain.preprocessing.metadata_extractor import MetadataExtractor
@@ -140,6 +142,7 @@ def _generate_with_rejection_sampling(
     sample_size: int,
     cancel_event: threading.Event | None = None,
     progress_copy_dest: str | None = None,
+    conditional: dict | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, Any], str]:
     config = _resolve_rejection_sampling_config(rule_manager)
     max_attempts = config["max_attempts"]
@@ -182,8 +185,9 @@ def _generate_with_rejection_sampling(
         batch_size = max(1, int(max_remaining * overgenerate_factor))
 
         simulation_config = create_simulation_config(metadata, batch_size)
+        runtime_config = attach_sample_seeds(simulation_config, conditional, metadata)
         raw_synthetic_results, last_sd_id = engine.simulate(
-            generator, simulation_config, cancel_event=cancel_event,
+            generator, runtime_config, cancel_event=cancel_event,
             progress_copy_dest=progress_copy_dest,
         )
         synthetic_results = rule_manager.apply_all_post(raw_synthetic_results)
@@ -246,6 +250,7 @@ class SimulationSession:
 def initialize_simulation_session(
     model_id: str,
     synthetic_data_file_format: str | None = None,
+    name: str | None = None,
 ) -> SimulationSession:
     """Create the output folder and the ``in_progress`` sim card.
 
@@ -273,7 +278,7 @@ def initialize_simulation_session(
         card_path,
         {
             "simulation_id": simulation_id,
-            "simulation_name": simulation_id,
+            "simulation_name": name.strip() if name and name.strip() else simulation_id,
             "status": "in_progress",
             "model_id": model_id,
             "timestamp": timestamp,
@@ -374,6 +379,7 @@ def run_simulation_flow(
     session: SimulationSession | None = None,
     cancel_event: threading.Event | None = None,
     table_sample_sizes: dict[str, int] | None = None,
+    conditional: dict | None = None,
 ) -> str | None:
     """Execute the core simulation workflow entirely isolated from callers.
 
@@ -398,6 +404,9 @@ def run_simulation_flow(
             overrides. Only entries targeting subject tables take effect;
             entries for context children are ignored with a warning (Mostly
             AI has no native way to set their size — they always cascade).
+        conditional (dict | None, optional): Conditional-generation spec. When
+            present, a ``sample_seed`` table is built for the target subject
+            table so generation is conditioned on the constrained columns.
         job_name (str | None, optional): Explicit nomenclature for job logging.
 
     Returns:
@@ -446,6 +455,16 @@ def run_simulation_flow(
             sim_tracker.save_sim_config(simulation_config)
             sim_tracker.save_sim_card(sample_size=sample_size)
 
+            # The seed DataFrame is non-serializable, so it is injected into a
+            # runtime-only copy of the config *after* the JSON config is saved.
+            runtime_config = attach_sample_seeds(simulation_config, conditional, metadata)
+            if conditional and conditional.get("conditions"):
+                write_json(
+                    os.path.join(sim_tracker.output_directory, "conditional_config.json"),
+                    conditional,
+                    indent=4,
+                )
+
             raw_rejection_rules = (
                 rule_manager.get_rejection_rules()
                 if hasattr(rule_manager, "get_rejection_rules")
@@ -468,6 +487,7 @@ def run_simulation_flow(
                         sample_size=sample_size,
                         cancel_event=cancel_event,
                         progress_copy_dest=job_progress_dest,
+                        conditional=conditional,
                     )
                     rejection_stats["sample_size"] = sample_size
                     sim_tracker.save_rejection_sampling_report(rejection_stats)
@@ -477,7 +497,7 @@ def run_simulation_flow(
                             "Rejection sampling requested but sample_size is None; falling back to single-pass simulation."
                         )
                     raw_synthetic_results, _ = engine.simulate(
-                        generator, simulation_config, cancel_event=cancel_event,
+                        generator, runtime_config, cancel_event=cancel_event,
                         progress_copy_dest=job_progress_dest,
                     )
                     if session:
@@ -540,6 +560,7 @@ def run_simulation_flow_from_model(
     session: SimulationSession | None = None,
     cancel_event: threading.Event | None = None,
     table_sample_sizes: dict[str, int] | None = None,
+    conditional: dict | None = None,
 ) -> str | None:
     """Load a trained generator by model ID and run the simulation flow.
 
@@ -559,6 +580,7 @@ def run_simulation_flow_from_model(
         table_sample_sizes: Per-table row-count overrides for subject tables.
             Context-child entries are ignored (Mostly AI cascades their counts
             from the parent).
+        conditional: Conditional-generation spec (see ``run_simulation_flow``).
 
     Returns:
         The ``simulation_id`` if successful, ``None`` on failure.
@@ -588,6 +610,7 @@ def run_simulation_flow_from_model(
             session=session,
             cancel_event=cancel_event,
             table_sample_sizes=table_sample_sizes,
+            conditional=conditional,
         )
     except Exception as error:
         logger.error("Simulation-from-model flow failed: %s", error, exc_info=True)

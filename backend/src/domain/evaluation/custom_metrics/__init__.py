@@ -1,36 +1,70 @@
 """Custom evaluation metrics used by the project evaluation engines.
 
-Each metric class lives in its own module under this package. The custom
-metrics runner imports them through this ``__init__`` to keep the call
-site concise and preserve the import path ``from src.evaluation.metrics import X``.
+The exports are lazy so importing one metric does not load every optional
+privacy/statistics dependency in this package.
 """
 
-from backend.src.domain.evaluation.custom_metrics.average_complementary_tvd import (
-    AverageComplementaryTVD,
-)
-from backend.src.domain.evaluation.custom_metrics.base import MetricEvaluator
-from backend.src.domain.evaluation.custom_metrics.confidence_interval_overlap import (
-    ConfidenceIntervalOverlap,
-)
-from backend.src.domain.evaluation.custom_metrics.correlation_matrix_distance import (
-    CorrelationMatrixDistance,
-)
-from backend.src.domain.evaluation.custom_metrics.dcr import DCR
-from backend.src.domain.evaluation.custom_metrics.k_anonymity import KAnonymity
-
-try:
-    from backend.src.domain.evaluation.custom_metrics.l_diversity_pycanon import LDiversityPyCanon
-except Exception:
-    LDiversityPyCanon = None
-from backend.src.domain.evaluation.custom_metrics.nndr import NNDR
+from __future__ import annotations
 
 __all__ = [
-    "AverageComplementaryTVD",
     "ConfidenceIntervalOverlap",
     "CorrelationMatrixDistance",
     "DCR",
+    "DistributionComparisonReport",
     "KAnonymity",
     "LDiversityPyCanon",
     "MetricEvaluator",
     "NNDR",
+    "UtilityTests",
 ]
+
+
+def __getattr__(name: str):
+    if name == "ConfidenceIntervalOverlap":
+        from backend.src.domain.evaluation.custom_metrics.confidence_interval_overlap import (
+            ConfidenceIntervalOverlap,
+        )
+
+        return ConfidenceIntervalOverlap
+    if name == "CorrelationMatrixDistance":
+        from backend.src.domain.evaluation.custom_metrics.correlation_matrix_distance import (
+            CorrelationMatrixDistance,
+        )
+
+        return CorrelationMatrixDistance
+    if name == "DCR":
+        from backend.src.domain.evaluation.custom_metrics.dcr import DCR
+
+        return DCR
+    if name == "DistributionComparisonReport":
+        from backend.src.domain.evaluation.custom_metrics.distribution_comparison_report import (
+            DistributionComparisonReport,
+        )
+
+        return DistributionComparisonReport
+    if name == "KAnonymity":
+        from backend.src.domain.evaluation.custom_metrics.k_anonymity import KAnonymity
+
+        return KAnonymity
+    if name == "LDiversityPyCanon":
+        try:
+            from backend.src.domain.evaluation.custom_metrics.l_diversity_pycanon import (
+                LDiversityPyCanon,
+            )
+        except Exception:
+            return None
+        return LDiversityPyCanon
+    if name == "MetricEvaluator":
+        from backend.src.domain.evaluation.custom_metrics.base import MetricEvaluator
+
+        return MetricEvaluator
+    if name == "NNDR":
+        from backend.src.domain.evaluation.custom_metrics.nndr import NNDR
+
+        return NNDR
+    if name == "UtilityTests":
+        from backend.src.domain.evaluation.custom_metrics.utility_tests import UtilityTests
+
+        return UtilityTests
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

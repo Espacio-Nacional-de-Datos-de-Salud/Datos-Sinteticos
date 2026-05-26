@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,48 @@ import numpy as np
 import pandas as pd
 
 
+def _json_sanitize(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _json_sanitize(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_sanitize(v) for v in value]
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+    if isinstance(value, np.floating):
+        f = float(value)
+        return None if math.isnan(f) or math.isinf(f) else f
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
+    return value
+
+
 DATE_COLUMNS = {"dob", "admittime", "dischtime"}
+
+
+def _load_time_report_text(evaluation_dir: Path) -> str:
+    """Read the JSON time-profiling report and render it as the legacy text table.
+
+    The HTML evaluation report embeds this string as plain text inside a <pre>-style
+    block. Keeping the text format here means the template needs no changes.
+    """
+    from backend.src.infrastructure.time_profiling import Profiler
+
+    json_path = evaluation_dir / "time_profiling_report.json"
+    if not json_path.exists():
+        return ""
+    try:
+        with json_path.open("r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not payload.get("phases"):
+        note = payload.get("note") or "Sin fases registradas."
+        return f"{payload.get('header', 'Timing breakdown')}:\n  {note}"
+    return Profiler._format_text(payload)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -16,6 +58,85 @@ def load_json(path: Path) -> dict[str, Any]:
         return {}
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _deep_get(mapping: dict[str, Any], path: list[str], default: Any = None) -> Any:
+    current: Any = mapping
+    for key in path:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key)
+    return default
+
+
+def _find_simulation_dir(evaluation_dir: Path, simulation_id: str | None) -> Path | None:
+    if not simulation_id:
+        return None
+
+    outputs_dir = evaluation_dir.parent.parent
+    simulation_dir = outputs_dir / "simulations" / simulation_id
+    if simulation_dir.exists():
+        return simulation_dir
+
+    return None
+
+
+def _extract_training_parameters(evaluation_dir: Path, eval_card: dict[str, Any]) -> dict[str, Any]:
+    """Best-effort extraction of the training parameters used by Mostly AI."""
+
+    direct = eval_card.get("training_parameters")
+    if isinstance(direct, dict) and direct:
+        return {
+            "model_size": direct.get("model_size"),
+            "epsilon": direct.get("epsilon"),
+            "flexible_generation": direct.get("flexible_generation"),
+            "raw_model": direct.get("raw_model"),
+        }
+
+    candidates: list[dict[str, Any]] = [eval_card]
+
+    simulation_dir = _find_simulation_dir(evaluation_dir, eval_card.get("simulation_id"))
+    if simulation_dir:
+        for filename in [
+            "simulation_card.json",
+            "sim_metadata.json",
+            "job_progress.json",
+            "metadata.json",
+        ]:
+            candidates.append(load_json(simulation_dir / filename))
+
+    model_settings: dict[str, Any] = {}
+
+    for candidate in candidates:
+        possible = (
+            _deep_get(candidate, ["mostly_ai", "model_settings"])
+            or _deep_get(candidate, ["config", "mostly_ai", "model_settings"])
+            or _deep_get(candidate, ["model_settings"])
+            or _deep_get(candidate, ["training", "model_settings"])
+            or _deep_get(candidate, ["training_parameters", "model_settings"])
+        )
+
+        if isinstance(possible, dict):
+            model_settings.update(possible)
+
+    differential_privacy = model_settings.get("differential_privacy") or {}
+
+    model_name = model_settings.get("model")
+    if isinstance(model_name, str) and "/" in model_name:
+        model_size = model_name.split("/")[-1]
+    else:
+        model_size = model_name
+
+    epsilon = (
+        differential_privacy.get("max_epsilon") if isinstance(differential_privacy, dict) else None
+    )
+
+    return {
+        "model_size": model_size,
+        "epsilon": epsilon,
+        "flexible_generation": model_settings.get("enable_flexible_generation"),
+        "raw_model": model_name,
+    }
 
 
 def safe_mean(values: list[float | None]) -> float | None:
@@ -115,9 +236,7 @@ def build_scores(
     if privacy_penalty is None:
         privacy_penalty = privacy_penalty_score(privacy["k_anonymity"])
     privacy_score = (
-        max(0.0, privacy_base_score - privacy_penalty)
-        if privacy_base_score is not None
-        else None
+        max(0.0, privacy_base_score - privacy_penalty) if privacy_base_score is not None else None
     )
 
     utility_real_score = safe_mean(
@@ -141,7 +260,6 @@ def build_scores(
         [
             fidelity_score,
             privacy_score,
-            utility_relative_score,
         ]
     )
 
@@ -162,13 +280,16 @@ def build_scores(
 
 def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
     eval_card = load_json(evaluation_dir / "eval_card.json")
-    tvd_detail = load_json(evaluation_dir / "average_complementary_tvd_report.json")
     cio_detail = load_json(evaluation_dir / "confidence_interval_overlap_report.json")
     cmd_detail = load_json(evaluation_dir / "correlation_matrix_distance_report.json")
     k_detail = load_json(evaluation_dir / "k_anonymity_report.json")
+    distribution_detail = load_json(evaluation_dir / "1_tvd_report.json")
+    utility_tests_detail = load_json(evaluation_dir / "utility_tests_report.json")
 
     eval_report = pd.read_csv(evaluation_dir / "eval_report.csv")
     metrics = dict(zip(eval_report["metric"], eval_report["mean"]))
+
+    training_parameters = _extract_training_parameters(evaluation_dir, eval_card)
 
     metadata = {
         "evaluation_id": eval_card.get("evaluation_id"),
@@ -179,13 +300,14 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
         "pipeline_id": eval_card.get("pipeline_id"),
         "job_name": eval_card.get("job_name"),
         "timestamp": eval_card.get("timestamp"),
+        "training_parameters": training_parameters,
     }
 
     summary = {
         "fidelity": {
             "jsd": metrics.get("stats.jensenshannon_dist.marginal"),
             "inv_kl": metrics.get("stats.inv_kl_divergence.marginal"),
-            "inv_tvd": metrics.get("average_complementary_tvd"),
+            "inv_tvd": metrics.get("1_tvd.univariate"),
             "cmd": metrics.get("correlation_matrix_distance"),
             "cio": metrics.get("confidence_interval_overlap"),
         },
@@ -203,12 +325,14 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
             "mlp_gt": metrics.get("performance.mlp.gt"),
             "mlp_syn_id": metrics.get("performance.mlp.syn_id"),
             "mlp_syn_ood": metrics.get("performance.mlp.syn_ood"),
+            "utility_tests_score": metrics.get("utility_tests"),
         },
     }
 
+    univariate_tvd = distribution_detail.get("scores", {}).get("univariate", {})
     tvd_by_column = [
         {"column": column, "complementary_tvd": value}
-        for column, value in sorted(tvd_detail.items(), key=lambda x: x[1])
+        for column, value in sorted(univariate_tvd.items(), key=lambda x: x[1])
     ]
 
     cio_by_statistic = []
@@ -322,8 +446,7 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
         ),
     )
 
-    time_report_path = evaluation_dir / "time_profiling_report.txt"
-    time_report = time_report_path.read_text(encoding="utf-8") if time_report_path.exists() else ""
+    time_report = _load_time_report_text(evaluation_dir)
 
     report_data = {
         "metadata": metadata,
@@ -337,6 +460,11 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
                 "tvd_by_column": tvd_by_column,
                 "cio_by_statistic": cio_by_statistic,
                 "cmd": cmd,
+                "distribution_comparison": distribution_detail,
+                "correlation_matrices": distribution_detail.get("correlations", {}),
+                "correlation_difference_matrix": distribution_detail.get("correlations", {}).get(
+                    "absolute_difference"
+                ),
             },
             "privacy": {
                 "k_anonymity_problem_subsets": k_anonymity_problem_subsets,
@@ -345,6 +473,10 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
             },
             "utility": {
                 "metrics": summary["utility"],
+                "utility_tests": utility_tests_detail,
+                "utility_tests_summary": utility_tests_detail.get("summary", {}),
+                "utility_tests_rows": utility_tests_detail.get("tests", []),
+                "utility_tests_config": utility_tests_detail.get("config", {}),
             },
             "logs": {
                 "time_report": time_report,
@@ -356,27 +488,27 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
 
 
 def generate_report_data_json(evaluation_dir: Path) -> Path:
-    report_data = build_report_data(evaluation_dir)
+    report_data = _json_sanitize(build_report_data(evaluation_dir))
     output_path = evaluation_dir / "report_data.json"
 
     with output_path.open("w", encoding="utf-8") as f:
-        json.dump(report_data, f, indent=2, ensure_ascii=False)
+        json.dump(report_data, f, indent=2, ensure_ascii=False, allow_nan=False)
 
     return output_path
 
 
 def generate_report_artifacts(evaluation_dir: Path) -> dict[str, Path]:
-    report_data = build_report_data(evaluation_dir)
+    report_data = _json_sanitize(build_report_data(evaluation_dir))
 
     report_data_path = evaluation_dir / "report_data.json"
     with report_data_path.open("w", encoding="utf-8") as f:
-        json.dump(report_data, f, indent=2, ensure_ascii=False)
+        json.dump(report_data, f, indent=2, ensure_ascii=False, allow_nan=False)
 
     template_path = Path(__file__).parent / "templates" / "synthetic_eval_report_template.html"
 
     html_template = template_path.read_text(encoding="utf-8")
 
-    embedded_json = json.dumps(report_data, ensure_ascii=False, indent=2).replace(
+    embedded_json = json.dumps(report_data, ensure_ascii=False, indent=2, allow_nan=False).replace(
         "</script>", "<\\/script>"
     )
 

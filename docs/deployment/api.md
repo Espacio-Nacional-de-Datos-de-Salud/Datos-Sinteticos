@@ -58,7 +58,8 @@ Verifies that the API process is running and reachable. Returns `{"status": "ok"
 
 ### Inspections (`/inspections`)
 *   **GET `/`**: Lists all inspection sessions (including `in_progress`).
-*   **POST `/`**: Launches an inspection asynchronously. Body: `file_paths`, optional `mostly_config_path`, `rules_config_path`, `enable_data_profiling`, `csv_delimiter`. Returns `202` with `inspection_id`.
+*   **POST `/`**: Launches an inspection asynchronously. Body: `file_paths`, optional `mostly_config_path`, `rules_config_path`, `enable_data_profiling`, `csv_delimiter`, `excluded_columns`, `composite_pks`. Returns `202` with `inspection_id`.
+    *   `composite_pks`: per-table composite primary keys, `{table_name: [col, ...]}`. For each listed table a single unique PK column is synthesized by concatenating the named columns (separator `::`) — use it for datasets whose natural key spans several columns (e.g. `patient_id` + `year`). Falls back to heuristic single-column detection if the named columns are missing or do not form a unique key.
 *   **GET `/{id}`**: Returns details for a specific inspection.
 *   **GET `/{id}/download`**: Downloads the inspection folder as a zip.
 *   **DELETE `/{id}`**: Permanently deletes an inspection and all its artifacts.

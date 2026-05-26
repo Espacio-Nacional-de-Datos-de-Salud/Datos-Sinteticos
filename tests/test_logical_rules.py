@@ -311,6 +311,564 @@ def test_semantic_proportional_rule_round_trips_scores_and_flags_invalid_pairs(
     assert failures.loc[1, "error_type"] == "SEMANTIC_INCONSISTENCY"
 
 
+def test_semantic_proportional_rule_round_trips_with_composite_keys(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule.add_group_key("age_bucket")
+
+    original = pd.DataFrame(
+        {
+            "sex": ["F", "F", "M", "M"],
+            "age_bucket": ["adult", "adult", "adult", "senior"],
+            "diagnosis": ["flu", "flu", "flu", "cancer"],
+        }
+    )
+
+    preprocessed = rule.apply_pre(original)
+    assert "diagnosis" not in preprocessed.columns
+    assert "diagnosis_score" in preprocessed.columns
+
+    reconstructed = rule.apply_post(preprocessed)
+    assert reconstructed["diagnosis"].tolist() == original["diagnosis"].tolist()
+
+
+def test_semantic_proportional_rule_composite_keys_flags_invalid_pairs(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule.add_group_key("age_bucket")
+
+    original = pd.DataFrame(
+        {
+            "sex": ["F", "F", "M", "M"],
+            "age_bucket": ["adult", "adult", "adult", "senior"],
+            "diagnosis": ["flu", "flu", "flu", "cancer"],
+        }
+    )
+    rule.apply_pre(original)
+
+    failures = rule.sanity_check(
+        pd.DataFrame(
+            {
+                "sex": ["F", "M"],
+                "age_bucket": ["adult", "adult"],
+                "diagnosis": ["flu", "cancer"],
+            }
+        )
+    )
+
+    assert failures.index.tolist() == [1]
+    assert failures.loc[1, "error_type"] == "SEMANTIC_INCONSISTENCY"
+
+def test_semantic_proportional_rule_composite_keys_flags_unseen_pairs(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule.add_group_key("age_bucket")
+
+    original = pd.DataFrame(
+        {
+            "sex": ["F", "F", "M", "M"],
+            "age_bucket": ["adult", "adult", "adult", "senior"],
+            "diagnosis": ["flu", "flu", "flu", "cancer"],
+        }
+    )
+    rule.apply_pre(original)
+
+    failures = rule.sanity_check(
+        pd.DataFrame(
+            {
+                "sex": ["F", "M"],
+                "age_bucket": ["adult", "adult"],
+                "diagnosis": ["flu", "X"],
+            }
+        )
+    )
+
+    assert failures.index.tolist() == [1]
+    assert failures.loc[1, "error_type"] == "SEMANTIC_INCONSISTENCY"
+
+
+def test_semantic_add_group_key_seeds_origin_col() -> None:
+    rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+
+    rule.add_group_key("age_bucket")
+
+    assert rule.group_cols == ["sex", "age_bucket"]
+
+def test_single_origin_semantic_proportional_rule_flags_invalid_pairs(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule.apply_pre(
+        pd.DataFrame(
+            {
+                "sex": ["F", "F", "M", "M"],
+                "diagnosis": ["flu", "flu", "flu", "cancer"],
+            }
+        )
+    )
+
+    failures = rule.sanity_check(
+        pd.DataFrame(
+            {
+                "sex": ["F", "M"],
+                "diagnosis": ["cancer", "cancer"],
+            }
+        )
+    )
+    assert failures.index.tolist() == [0]
+
+def test_single_origin_semantic_proportional_rule_sets_None_for_unseen_origin(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    pre_df = rule.apply_pre(
+        pd.DataFrame(
+            {
+                "sex": ["F", "F"],
+                "diagnosis": ["flu", "flu"],
+            }
+        )
+    )
+
+    result = rule.apply_post(
+        pre_df.assign(sex=["F", "X"])
+    )
+
+    assert result["diagnosis"].tolist() == ["flu", None]
+    failures = rule.sanity_check(
+        result
+    )
+    assert failures.empty
+
+
+def test_composite_origin_semantic_proportional_rule_sets_None_for_unseen_group(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule.add_group_key("age_bucket")
+
+    pre_df = rule.apply_pre(
+        pd.DataFrame(
+            {
+                "sex": ["F", "F"],
+                "age_bucket": ["adult", "adult"],
+                "diagnosis": ["flu", "flu"],
+            }
+        )
+    )
+
+    result = rule.apply_post(
+        pre_df.assign(sex=["F", "F"], age_bucket=["adult", "senior"])
+    )
+
+    assert result["diagnosis"].tolist() == ["flu", None]
+    failures = rule.sanity_check(result)
+    assert failures.empty
+
+
+def test_semantic_concatenation_on_origin_side() -> None:
+    data = {
+        "patients": pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "birth_date": ["1980-01-01", "1990-01-01"],
+                "diagnosis": ["flu", "cancer"],
+            }
+        )
+    }
+    manager = LogicalRuleManager()
+
+    rule_age = DateToAgeRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="birth_date",
+        aux_col="age",
+        reference_date="2020-01-01",
+    )
+    rule_bucket = NumericBucketRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="age_bucket",
+        bins=[0, 65, 120],
+        labels=["adult", "senior"],
+    )
+    rule_diagnosis = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="age_bucket",
+        target_col="diagnosis",
+    )
+    
+    manager.add_rule(rule_diagnosis)
+    manager.add_rule(rule_bucket)
+    assert rule_diagnosis.interaction_type == InteractionType.CONCATENATED
+    assert rule_bucket.interaction_type == InteractionType.CONCATENATED
+    manager.add_rule(rule_age)
+    assert rule_age.interaction_type == InteractionType.CONCATENATED
+
+    preprocessed = manager.apply_all_pre(data, relationships={})
+
+    assert "age_bucket" in preprocessed["patients"].columns
+    assert "diagnosis" not in preprocessed["patients"].columns
+    assert "diagnosis_score" in preprocessed["patients"].columns
+
+    reconstructed = manager.apply_all_post(preprocessed)
+    assert reconstructed["patients"]["diagnosis"].tolist() == ["flu", "cancer"]
+
+
+def test_semantic_concatenation_on_target_side_with_semantic_rule() -> None:
+    data = {
+        "patients": pd.DataFrame(
+            {
+                "sex": ["F", "M"],
+                "diagnosis": ["flu", "cancer"],
+                "risk_band": ["low", "high"],
+                "some_other_col": ["hello", "goodbye"],
+            }
+        )
+    }
+    manager = LogicalRuleManager()
+
+    rule_diagnosis = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule_risk_band = SemanticRankingConsistencyRule(
+        table_target="patients",
+        origin_col="diagnosis",
+        target_col="risk_band",
+    )
+    rule_second_same_origin = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="diagnosis",
+        target_col="some_other_col",
+    )
+
+    manager.add_rule(rule_second_same_origin)
+    manager.add_rule(rule_risk_band)
+    manager.add_rule(rule_diagnosis)
+
+    preprocessed = manager.apply_all_pre(data, relationships={})
+
+    assert "diagnosis" not in preprocessed["patients"].columns
+    assert "risk_band" not in preprocessed["patients"].columns
+    assert "diagnosis_score" in preprocessed["patients"].columns
+    assert "risk_band_score" in preprocessed["patients"].columns
+    assert "some_other_col_score" in preprocessed["patients"].columns
+
+    reconstructed = manager.apply_all_post(preprocessed)
+    assert reconstructed["patients"]["diagnosis"].tolist() == ["flu", "cancer"]
+    assert reconstructed["patients"]["risk_band"].tolist() == ["low", "high"]
+
+def test_concat_semantic_rule_fails_target_doesnt_exist() -> None:
+    data = {
+        "patients": pd.DataFrame(
+            {
+                "sex": ["F", "M"],
+                "diagnosis": ["flu", "cancer"],
+                "risk_band": ["low", "high"],
+            }
+        )
+    }
+    manager = LogicalRuleManager()
+
+    rule_diagnosis = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule_risk_band = SemanticRankingConsistencyRule(
+        table_target="patients",
+        origin_col="diagnosis",
+        target_col="risk_band",
+    )
+    rule_second_same_origin = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="diagnosis",
+        target_col="some_other_col",
+    )
+
+    manager.add_rule(rule_diagnosis)
+    manager.add_rule(rule_risk_band)
+    manager.add_rule(rule_second_same_origin)
+
+    manager.apply_all_pre(data, relationships={})
+    assert rule_second_same_origin not in manager.rules
+
+def test_isolated_semantic_rule_fails_target_doesnt_exist() -> None:
+    data = {
+        "patients": pd.DataFrame(
+            {
+                "sex": ["F", "M"],
+                "diagnosis": ["flu", "cancer"],
+                "risk_band": ["low", "high"],
+            }
+        )
+    }
+    manager = LogicalRuleManager()
+
+    rule_diagnosis = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule_second_same_origin = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="risk_band",
+        target_col="some_other_col",
+    )
+
+    manager.add_rule(rule_diagnosis)
+    manager.add_rule(rule_second_same_origin)
+
+    manager.apply_all_pre(data, relationships={})
+    assert rule_second_same_origin not in manager.rules
+
+
+def test_isolated_rule_removed_when_origin_column_missing() -> None:
+    data = {
+        "patients": pd.DataFrame(
+            {
+                "diagnosis": ["flu"],
+                "age": [30],
+            }
+        )
+    }
+    manager = LogicalRuleManager()
+
+    rule_missing_origin = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="missing_origin",
+        target_col="diagnosis",
+    )
+
+    manager.add_rule(rule_missing_origin)
+
+    manager.apply_all_pre(data, relationships={})
+    assert rule_missing_origin not in manager.rules
+
+
+def test_isolated_rule_removed_when_target_column_missing() -> None:
+    data = {
+        "patients": pd.DataFrame(
+            {
+                "age": [30],
+            }
+        )
+    }
+    manager = LogicalRuleManager()
+
+    rule_missing_target = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        target_col="missing_target",
+    )
+
+    manager.add_rule(rule_missing_target)
+
+    manager.apply_all_pre(data, relationships={})
+    assert rule_missing_target not in manager.rules
+
+
+def test_concat_rule_removed_when_target_column_missing() -> None:
+    data = {
+        "patients": pd.DataFrame(
+            {
+                "age": [30],
+            }
+        )
+    }
+    manager = LogicalRuleManager()
+
+    rule_create_bucket = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="age_bucket",
+        target_col="missing_target",
+    )
+    rule_use_bucket = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age_bucket",
+        aux_col="is_adult",
+    )
+
+    manager.add_rule(rule_create_bucket)
+    manager.add_rule(rule_use_bucket)
+
+    assert rule_create_bucket.interaction_type == InteractionType.CONCATENATED
+    assert rule_use_bucket.interaction_type == InteractionType.CONCATENATED
+
+    manager.apply_all_pre(data, relationships={})
+    assert rule_create_bucket not in manager.rules
+
+
+def test_concat_rule_removed_when_origin_column_missing() -> None:
+    data = {
+        "patients": pd.DataFrame(
+            {
+                "age": [30],
+            }
+        )
+    }
+    manager = LogicalRuleManager()
+
+    rule_create_bucket = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age",
+        aux_col="age_bucket",
+        target_col="missing_target",
+    )
+    rule_use_bucket = _DummyRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age_bucket",
+        aux_col="is_adult",
+    )
+
+    manager.add_rule(rule_create_bucket)
+    manager.add_rule(rule_use_bucket)
+
+    manager.apply_all_pre(data, relationships={})
+    assert rule_use_bucket not in manager.rules
+
+def test_single_origin_semantic_proportional_rule_flags_unseen_target_values(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule.apply_pre(
+        pd.DataFrame(
+            {
+                "sex": ["F", "F", "M", "M"],
+                "diagnosis": ["flu", "flu", "flu", "cancer"],
+            }
+        )
+    )
+
+    failures = rule.sanity_check(
+        pd.DataFrame(
+            {
+                "sex": ["F", "M"],
+                "diagnosis": ["X", "cancer"],
+            }
+        )
+    )
+    assert failures.index.tolist() == [0]
+
+def test_semantic_proportional_rule_ignores_unseen_group_keys(
+    monkeypatch,
+) -> None:
+    ### DONT KNOW AB THIS ONE
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule.add_group_key("age_bucket")
+
+    rule.apply_pre(
+        pd.DataFrame(
+            {
+                "sex": ["F", "F"],
+                "age_bucket": ["adult", "adult"],
+                "diagnosis": ["flu", "flu"],
+            }
+        )
+    )
+
+    failures = rule.sanity_check(
+        pd.DataFrame(
+            {
+                "sex": ["F"],
+                "age_bucket": ["senior"],
+                "diagnosis": ["cancer"],
+            }
+        )
+    )
+
+    assert failures.empty
+
+def test_semantic_proportional_rule_skips_when_group_column_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    rule.add_group_key("age_bucket")
+
+    rule.apply_pre(
+        pd.DataFrame(
+            {
+                "sex": ["F", "F"],
+                "age_bucket": ["adult", "adult"],
+                "diagnosis": ["flu", "flu"],
+            }
+        )
+    )
+
+    failures = rule.sanity_check(
+        pd.DataFrame(
+            {
+                "sex": ["F"],
+                "diagnosis": ["flu"],
+            }
+        )
+    )
+
+    assert failures.empty
+
+
 def test_rules_sanity_checks_reports_skipped_pass_and_fail_rows() -> None:
     passing_rule = NumericInequalityRule(
         table_target="measurements",
@@ -491,6 +1049,28 @@ def test_detect_rule_interactions_raises_when_existing_numeric_rule_is_concatena
 
     with pytest.raises(RuleSuperimpositionError):
         manager._detect_rule_interactions(new_rule)
+
+
+def test_detect_rule_interactions_merges_semantic_group_keys() -> None:
+    manager = LogicalRuleManager(rules=[])
+
+    existing_rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="sex",
+        target_col="diagnosis",
+    )
+    new_rule = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="age_bucket",
+        target_col="diagnosis",
+    )
+
+    assert manager.add_rule(existing_rule) is True
+    assert manager.add_rule(new_rule) is True
+
+    assert len(manager.rules) == 1
+    assert manager.rules[0] is existing_rule
+    assert set(existing_rule.group_cols) == {"sex", "age_bucket"}
 
 
 def test_detect_rule_interactions_no_op() -> None:

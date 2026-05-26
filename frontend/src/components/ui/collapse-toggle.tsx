@@ -24,14 +24,31 @@ export function CollapseToggle({
   hideLabel = "Ocultar",
   ariaLabel,
 }: Props) {
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const willOpen = !open;
+    // Capture the card before the toggle re-renders the subtree.
+    const card = event.currentTarget.closest<HTMLElement>('[data-slot="card"]');
+    onToggle();
+    if (willOpen && card) {
+      // Match the breathing room used by the page's larger sections.
+      card.style.scrollMarginTop = "6rem";
+      // Wait for the expanded content to render before scrolling.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          card.scrollIntoView({ behavior: "smooth", block: "start" });
+        }),
+      );
+    }
+  };
+
   return (
     <Button
       type="button"
       size="sm"
-      variant="ghost"
+      variant="outline"
       aria-expanded={open}
       aria-label={ariaLabel}
-      onClick={onToggle}
+      onClick={handleClick}
     >
       {open ? (
         <ChevronDown className="h-4 w-4" />

@@ -4,7 +4,10 @@ import json
 import os
 from typing import Literal
 
-from backend.src.api.schemas import CancelResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Path, Query, status
+from fastapi.responses import FileResponse, StreamingResponse
+
+from backend.src.api.schemas import CancelResponse, TimeProfilingReport, load_time_profiling_report
 from backend.src.api.schemas.models import (
     CleanupResult,
     DeletedModel,
@@ -14,8 +17,13 @@ from backend.src.api.schemas.models import (
     TrainingJob,
 )
 from backend.src.config.general import MODEL_CARD_FILENAME, MODELS_DIR
+from backend.src.domain.id_validation import ModelId
 from backend.src.infrastructure.cancellation import register as register_cancel
 from backend.src.infrastructure.cancellation import request_cancel
+from backend.src.infrastructure.errors import (
+    GeneratorEssentialsIncompleteError,
+    ModelNotFoundError,
+)
 from backend.src.runs.card_io import update_card_status
 from backend.src.runs.catalog.downloads import (
     build_full_model_bundle,
@@ -30,6 +38,7 @@ from backend.src.runs.catalog.models import (
 )
 from backend.src.runs.catalog.models import (
     list_available_models,
+    list_model_column_types,
     list_model_column_values,
     list_model_columns,
 )
@@ -39,19 +48,12 @@ from backend.src.runs.catalog.models import (
 from backend.src.runs.catalog.models import (
     rename_model as rename_model_catalog,
 )
-from backend.src.infrastructure.errors import (
-    GeneratorEssentialsIncompleteError,
-    ModelNotFoundError,
-)
-from backend.src.domain.id_validation import ModelId
 from backend.src.sessions.configs import resolve_config_path
 from backend.src.sessions.training import (
     initialize_training_session,
     run_training_flow,
     run_training_flow_from_inspection,
 )
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Path, Query, status
-from fastapi.responses import FileResponse, StreamingResponse
 
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
@@ -94,7 +96,7 @@ def create_training(
             detail="Provide either 'file_paths' or 'inspection_id', not both.",
         )
 
-    session = initialize_training_session()
+    session = initialize_training_session(name=request.name)
     cancel_event = register_cancel(session.model_id)
 
     if request.inspection_id is not None:
@@ -209,13 +211,39 @@ def get_model(model_id: ModelId) -> dict:
     raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found.")
 
 
+@router.get("/{model_id}/time-profiling", response_model=TimeProfilingReport)
+def get_model_time_profiling(model_id: ModelId) -> TimeProfilingReport:
+    """Returns the structured per-phase timing breakdown of a training run."""
+    folder = os.path.join(MODELS_DIR, model_id)
+    if not os.path.isdir(folder):
+        raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found.")
+    report = load_time_profiling_report(folder)
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No time profiling report for model '{model_id}'.",
+        )
+    return report
+
+
 @router.delete("/{model_id}", response_model=DeletedModel)
-def delete_model(model_id: ModelId) -> DeletedModel:
+def delete_model(
+    model_id: ModelId,
+    mode: Literal["safe", "force", "cascade"] = Query(
+        default="safe",
+        description=(
+            "**safe** — refuse (409) when linked simulations exist. "
+            "**force** — delete the model only, leaving its simulations orphaned. "
+            "**cascade** — delete the model, its simulations, and their evaluations."
+        ),
+    ),
+) -> DeletedModel:
     """Deletes a trained model and all its stored artifacts.
 
-    Returns 409 if the model has linked simulations — delete those first.
+    With ``mode=safe`` (default), returns 409 if the model has linked
+    simulations. Use ``mode=force`` or ``mode=cascade`` to delete anyway.
     """
-    outcome = delete_model_catalog(model_id)
+    outcome = delete_model_catalog(model_id, mode=mode)
     if outcome.status == "not_found":
         raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found.")
     if outcome.status == "has_linked_simulations":
@@ -224,13 +252,17 @@ def delete_model(model_id: ModelId) -> DeletedModel:
             status_code=409,
             detail={
                 "message": (
-                    f"Model '{model_id}' has {linked_count} linked simulation(s). "
-                    "Delete them first."
+                    f"El modelo '{model_id}' tiene {linked_count} "
+                    "generación(es) asociada(s)."
                 ),
                 "linked_simulation_ids": outcome.linked_simulation_ids,
             },
         )
-    return DeletedModel(deleted_id=model_id)
+    return DeletedModel(
+        deleted_id=model_id,
+        deleted_simulation_ids=outcome.deleted_simulation_ids,
+        deleted_evaluation_ids=outcome.deleted_evaluation_ids,
+    )
 
 
 @router.get("/{model_id}/columns", response_model=dict[str, list[str]])
@@ -244,6 +276,17 @@ def get_model_columns(model_id: ModelId) -> dict[str, list[str]]:
         return list_model_columns(model_id)
     except ModelNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
+
+
+@router.get("/{model_id}/columns/types", response_model=dict[str, dict[str, str]])
+def get_model_column_types(model_id: ModelId) -> dict[str, dict[str, str]]:
+    """Returns ``{table: {column: kind}}`` for a trained model.
+
+    ``kind`` is ``numeric``, ``datetime`` or ``categorical``. The
+    conditional-generation UI uses it to offer only the constraint types that
+    fit a column. Returns an empty dict when encoding metadata is unavailable.
+    """
+    return list_model_column_types(model_id)
 
 
 @router.get(

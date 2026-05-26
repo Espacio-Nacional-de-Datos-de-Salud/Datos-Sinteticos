@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { Trash2, XCircle } from "lucide-react";
+import { DownloadMenu } from "@/components/pipeline-step/download-menu";
 import { EditableName } from "@/components/jobs/editable-name";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { CollapseToggle } from "@/components/ui/collapse-toggle";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -24,7 +23,7 @@ import {
 } from "@/components/ui/table";
 import type { InspectionSummary } from "@/lib/api";
 import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration, formatJobDate } from "@/lib/utils";
 
 // Catalogue of every inspection on the server. Click a row to load that
 // inspection's schema/profiling into the page; the per-row × deletes (or
@@ -61,7 +60,6 @@ export function HistoryCard({
   isPurging: boolean;
   isCancelling: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between space-y-0">
@@ -93,19 +91,9 @@ export function HistoryCard({
             <Trash2 className="mr-2 h-3.5 w-3.5" />
             Limpiar todas las sesiones
           </Button>
-          <CollapseToggle
-            open={open}
-            onToggle={() => setOpen((v) => !v)}
-            ariaLabel={
-              open
-                ? "Contraer inspecciones previas"
-                : "Expandir inspecciones previas"
-            }
-          />
         </div>
       </CardHeader>
-      {open && (
-        <CardContent>
+      <CardContent>
           {isLoading && <Skeleton className="h-24 w-full" />}
           {isError && (
             <p className="text-sm text-destructive">
@@ -125,10 +113,12 @@ export function HistoryCard({
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[28%]">Nombre</TableHead>
-                  <TableHead className="w-[12%]">Estado</TableHead>
-                  <TableHead className="w-[35%]">Tablas</TableHead>
-                  <TableHead className="w-[15%] text-right">Filas</TableHead>
+                  <TableHead className="w-[22%]">Nombre</TableHead>
+                  <TableHead className="w-[10%]">Estado</TableHead>
+                  <TableHead className="w-[24%]">Tablas</TableHead>
+                  <TableHead className="w-[10%] text-right">Filas</TableHead>
+                  <TableHead className="w-[9%] text-right">Tiempo</TableHead>
+                  <TableHead className="w-[15%]">Fecha</TableHead>
                   <TableHead className="w-[10%]" />
                 </TableRow>
               </TableHeader>
@@ -186,34 +176,54 @@ export function HistoryCard({
                       <TableCell className="text-right tabular-nums">
                         {totalRows > 0 ? totalRows.toLocaleString() : "—"}
                       </TableCell>
-                      <TableCell className="text-right">
-                        {i.status === "in_progress" ? (
-                          <button
-                            type="button"
-                            aria-label="Cancelar inspección"
-                            disabled={isCancelling}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onCancel(i.inspection_id);
-                            }}
-                            className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                          >
-                            <XCircle className="h-3.5 w-3.5" />
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            aria-label="Eliminar inspección"
-                            disabled={isDeleting}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDelete(i.inspection_id);
-                            }}
-                            className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
+                      <TableCell className="whitespace-nowrap text-right tabular-nums text-xs text-muted-foreground">
+                        {formatDuration(i.duration_seconds)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                        {formatJobDate(i.timestamp)}
+                      </TableCell>
+                      <TableCell
+                        className="text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end gap-1">
+                          {i.status === "completed" && (
+                            <DownloadMenu
+                              ariaLabel="Descargar inspección"
+                              options={[
+                                {
+                                  label: "Dataset preprocesado",
+                                  href: `/inspections/${i.inspection_id}/download/preprocessed`,
+                                },
+                                {
+                                  label: "Carpeta completa",
+                                  href: `/inspections/${i.inspection_id}/download`,
+                                },
+                              ]}
+                            />
+                          )}
+                          {i.status === "in_progress" ? (
+                            <button
+                              type="button"
+                              aria-label="Cancelar inspección"
+                              disabled={isCancelling}
+                              onClick={() => onCancel(i.inspection_id)}
+                              className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                            >
+                              <XCircle className="h-3.5 w-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              aria-label="Eliminar inspección"
+                              disabled={isDeleting}
+                              onClick={() => onDelete(i.inspection_id)}
+                              className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -222,7 +232,6 @@ export function HistoryCard({
             </Table>
           )}
         </CardContent>
-      )}
     </Card>
   );
 }

@@ -16,6 +16,8 @@ class PipelineSummary(BaseModel):
     # Coarse "Job X of N" progress while ``status == "in_progress"``. ``None``
     # for older runs that did not record it or once the run is terminal.
     progress: dict[str, Any] | None = None
+    started_at_ms: int | None = None
+    duration_seconds: float | None = None
 
 
 class PipelineCreateRequest(BaseModel):

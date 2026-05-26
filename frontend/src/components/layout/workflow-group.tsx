@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils";
 type WorkflowGroupProps = React.ComponentProps<"section"> & {
   label: string;
   defaultOpen?: boolean;
+  /** Controlled open state. When provided, `onOpenChange` must update it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 function WorkflowGroup({
@@ -15,22 +18,25 @@ function WorkflowGroup({
   className,
   children,
   defaultOpen = true,
+  open: openProp,
+  onOpenChange,
   ...props
 }: WorkflowGroupProps) {
-  const [open, setOpen] = React.useState(defaultOpen);
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : uncontrolledOpen;
   const contentId = React.useId();
   const sectionRef = React.useRef<HTMLElement | null>(null);
 
   const handleToggle = () => {
-    setOpen((prev) => {
-      const next = !prev;
-      if (next && !prev) {
-        requestAnimationFrame(() => {
-          sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        });
-      }
-      return next;
-    });
+    const next = !open;
+    if (next) {
+      requestAnimationFrame(() => {
+        sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+    if (isControlled) onOpenChange?.(next);
+    else setUncontrolledOpen(next);
   };
 
   return (
@@ -45,6 +51,7 @@ function WorkflowGroup({
     >
       <button
         type="button"
+        data-workflow-group-toggle
         className="mb-1 flex w-full items-center justify-between gap-3 rounded-md px-1 py-1 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-expanded={open}
         aria-controls={contentId}

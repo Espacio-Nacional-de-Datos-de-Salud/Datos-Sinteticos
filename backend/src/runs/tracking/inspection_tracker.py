@@ -99,7 +99,7 @@ class InspectionTracker(BaseRunTracker):
     # Session pre-initialization (synchronous; used by the API layer)
     # ------------------------------------------------------------------
     @classmethod
-    def initialize_session(cls) -> InspectionSession:
+    def initialize_session(cls, name: str | None = None) -> InspectionSession:
         """Create the output folder and the ``in_progress`` inspection card.
 
         Refreshes the run timestamp and writes the initial card so callers
@@ -112,11 +112,12 @@ class InspectionTracker(BaseRunTracker):
         os.makedirs(processed_data_dir, exist_ok=True)
         logger.info("Created inspection output directory: %s", tracker.output_directory)
 
+        inspection_name = name.strip() if name and name.strip() else tracker.inspection_id
         write_json(
             tracker.card_path,
             {
                 "inspection_id": tracker.inspection_id,
-                "inspection_name": tracker.inspection_id,
+                "inspection_name": inspection_name,
                 "status": "in_progress",
                 "timestamp": tracker.timestamp,
                 "timestamp_ms": int(pd.Timestamp.utcnow().timestamp() * 1000),

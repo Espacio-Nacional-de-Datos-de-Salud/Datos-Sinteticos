@@ -1,4 +1,4 @@
-.PHONY: help setup config clean-config reset-config local cli inspect train simulate eval pipeline format lint ty test test-eval coverage models simulations inspections evaluations pipelines api frontend compose compose-api compose-cli compose-prod compose-stop kill-ports nuke clean copy-repo
+.PHONY: help setup config clean-config reset-config local cli inspect train simulate eval pipeline format lint ty test test-eval coverage models simulations inspections evaluations pipelines api frontend compose compose-api compose-cli compose-prod compose-stop kill-ports nuke ports kill-port clean copy-repo
 
 SHELL := /bin/bash
 
@@ -15,8 +15,8 @@ endif
 
 
 API_HOST ?= 0.0.0.0
-API_PORT ?= 8001
-FRONTEND_PORT ?= 3001
+API_PORT ?= 8000
+FRONTEND_PORT ?= 3000
 FRONTEND_DIR := frontend
 NODE_MIN_VERSION ?= 20.9.0
 NODE_VERSION ?= 20
@@ -92,6 +92,8 @@ help:
 	@printf "  make compose-prod     Build and start services in prod mode (no bind mounts, baked config)\n"
 	@printf "  make compose-stop     Stop and remove all running compose containers\n"
 	@printf "  make kill-ports       Full reset: stop compose + kill stray uvicorn/next + free ports (alias: make nuke)\n"
+	@printf "  make ports            List processes listening on the project ports\n"
+	@printf "  make kill-port PORT=N Kill the process listening on a single port (e.g. make kill-port PORT=8001)\n"
 	@printf "\nDev:\n"
 	@printf "  make clean        Remove generated run artifacts and local caches\n"
 	@printf "  make copy-repo    Create a clean copy of the repo in the parent folder (excludes venvs, deps, outputs, etc.)\n"
@@ -225,6 +227,22 @@ kill-ports nuke:
 		else echo "  port $$p free"; fi; \
 	done
 	@echo "==> Environment clean. Relaunch with: make compose   (or make local)"
+
+ports:
+	@echo "==> Processes listening on project ports:"
+	@for p in $$(echo "$(API_PORT) $(FRONTEND_PORT) 3000 3001 8000 8001" | tr ' ' '\n' | sort -un); do \
+		pids=$$(lsof -nP -tiTCP:$$p -sTCP:LISTEN 2>/dev/null); \
+		if [ -n "$$pids" ]; then \
+			echo "  port $$p -> PID(s) $$pids"; \
+			lsof -nP -iTCP:$$p -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {printf "      %s (PID %s)\n", $$1, $$2}'; \
+		else echo "  port $$p free"; fi; \
+	done
+
+kill-port:
+	@if [ -z "$(PORT)" ]; then echo "Usage: make kill-port PORT=<number>"; exit 1; fi
+	@pids=$$(lsof -nP -tiTCP:$(PORT) -sTCP:LISTEN 2>/dev/null); \
+	if [ -n "$$pids" ]; then echo "==> port $(PORT) -> killing PID(s) $$pids"; kill -9 $$pids 2>/dev/null || true; \
+	else echo "==> port $(PORT) free"; fi
 
 clean:
 	$(CORE_PYTHON) -m backend.src.runs.catalog.cleanup

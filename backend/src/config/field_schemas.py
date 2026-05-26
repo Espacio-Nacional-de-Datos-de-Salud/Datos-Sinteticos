@@ -89,6 +89,7 @@ GENERAL_SCHEMA = ConfigSchema(
                     path="settings.default_csv_delimiter",
                     label="Delimitador CSV por defecto",
                     kind="select",
+                    help="Carácter usado para separar columnas al leer CSVs sin delimitador detectable.",
                     options=[
                         _opt(",", "coma (,)"),
                         _opt(";", "punto y coma (;)"),
@@ -128,6 +129,7 @@ GENERAL_SCHEMA = ConfigSchema(
                     path="execution.mode",
                     label="Modo",
                     kind="select",
+                    help="Fase del pipeline a ejecutar cuando se llama a la CLI sin argumentos.",
                     options=[
                         _opt("i", "Inspeccionar (i)"),
                         _opt("t", "Entrenar (t)"),
@@ -140,12 +142,14 @@ GENERAL_SCHEMA = ConfigSchema(
                     label="Tamaño de muestra",
                     kind="number",
                     nullable=True,
+                    help="Filas a generar en simulación cuando no se pasa por línea de comandos. Vacío = valor por defecto.",
                 ),
                 FieldSchema(
                     path="execution.model_id",
                     label="ID de modelo",
                     kind="text",
                     nullable=True,
+                    help="Identificador del modelo entrenado a usar en simulación/evaluación. Vacío = el más reciente.",
                 ),
             ],
         ),
@@ -160,28 +164,6 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
     description="Parámetros del modelo y del entrenamiento. Aplican tanto al entrenamiento como a la generación.",
     groups=[
         FieldGroup(
-            title="Modelo",
-            fields=[
-                FieldSchema(
-                    path="generator.name",
-                    label="Nombre",
-                    kind="text",
-                    help="Prefijo usado al nombrar los modelos creados.",
-                ),
-                FieldSchema(
-                    path="generator.description",
-                    label="Descripción",
-                    kind="text",
-                ),
-                FieldSchema(
-                    path="generator.random_state",
-                    label="Random state",
-                    kind="number",
-                    help="Semilla para reproducibilidad. Mismo valor → mismos resultados.",
-                ),
-            ],
-        ),
-        FieldGroup(
             title="Entrenamiento",
             description="Limita tamaño/tiempo del entrenamiento. Vacío = sin límite.",
             fields=[
@@ -189,11 +171,13 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
                     path="model_settings.max_epochs",
                     label="Épocas máximas",
                     kind="number",
+                    help="Número máximo de pasadas completas sobre los datos durante el entrenamiento.",
                 ),
                 FieldSchema(
                     path="model_settings.batch_size",
                     label="Tamaño de batch",
                     kind="number",
+                    help="Filas por lote en cada paso de entrenamiento. Valores mayores aceleran pero requieren más memoria.",
                 ),
                 FieldSchema(
                     path="model_settings.max_training_time",
@@ -213,11 +197,13 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
                     path="model_settings.enable_model_report",
                     label="Generar informe del modelo",
                     kind="boolean",
+                    help="Si está activado, Mostly AI produce un informe HTML con métricas del entrenamiento.",
                 ),
                 FieldSchema(
                     path="model_settings.model",
                     label="Tamaño del modelo",
                     kind="select",
+                    help="Tamaño del modelo Mostly AI. Modelos mayores aprenden mejor a costa de tiempo y memoria.",
                     options=[
                         _opt("MOSTLY_AI/Small", "Pequeño (S)"),
                         _opt("MOSTLY_AI/Medium", "Mediano (M)"),
@@ -259,21 +245,25 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
                     path="model_settings.differential_privacy.delta",
                     label="Delta",
                     kind="number",
+                    help="Probabilidad de fallo del mecanismo DP. Valores típicos: 1e-5 o menores.",
                 ),
                 FieldSchema(
                     path="model_settings.differential_privacy.noise_multiplier",
                     label="Multiplicador de ruido",
                     kind="number",
+                    help="Cantidad de ruido añadido a los gradientes. Más ruido = más privacidad, menor utilidad.",
                 ),
                 FieldSchema(
                     path="model_settings.differential_privacy.max_grad_norm",
                     label="Norma máxima del gradiente",
                     kind="number",
+                    help="Umbral para recortar gradientes antes de añadir ruido (clipping).",
                 ),
                 FieldSchema(
                     path="model_settings.differential_privacy.value_protection_epsilon",
                     label="Epsilon de protección de valores",
                     kind="number",
+                    help="Presupuesto de privacidad reservado a proteger valores raros del dominio.",
                 ),
             ],
         ),
@@ -306,12 +296,14 @@ EVALUATION_SCHEMA = ConfigSchema(
                     path="metrics.default.sanity",
                     label="Sanity Checks",
                     kind="checklist",
+                    help="Comprobaciones básicas de coherencia entre datos reales y sintéticos.",
                     options=[_opt("common_rows_proportion", "Common Rows Proportion")],
                 ),
                 FieldSchema(
                     path="metrics.default.stats",
                     label="Estadísticas",
                     kind="checklist",
+                    help="Distancias estadísticas entre las distribuciones real y sintética.",
                     options=[
                         _opt("jensenshannon_dist", "Jensen-Shannon Distance"),
                         _opt("inv_kl_divergence", "Inverse KL Divergence"),
@@ -321,6 +313,7 @@ EVALUATION_SCHEMA = ConfigSchema(
                     path="metrics.default.performance",
                     label="Rendimiento (ML)",
                     kind="checklist",
+                    help="Modelos ML que se entrenan con los datos para comparar utilidad real vs sintética.",
                     options=[
                         _opt("linear_model", "Linear Model"),
                         _opt("mlp", "MLP"),
@@ -330,18 +323,23 @@ EVALUATION_SCHEMA = ConfigSchema(
                     path="metrics.default.detection",
                     label="Detección",
                     kind="checklist",
+                    help="Clasificador que intenta distinguir filas reales de sintéticas. Cuanto peor lo haga, mejor el sintético.",
                     options=[_opt("detection_mlp", "Detection MLP")],
                 ),
                 FieldSchema(
                     path="metrics.default.custom",
                     label="Personalizadas",
                     kind="checklist",
+                    help="Métricas propias de este proyecto (distancias a registros reales, comparación de distribuciones, etc.).",
                     options=[
                         _opt("dcr", "DCR (Distance to Closest Record)"),
                         _opt("nndr", "NNDR (Nearest Neighbor Distance Ratio)"),
                         _opt("correlation_matrix_distance", "Correlation Matrix Distance"),
                         _opt("confidence_interval_overlap", "Confidence Interval Overlap"),
-                        _opt("average_complementary_tvd", "Avg Complementary TVD"),
+                        _opt(
+                            "distribution_comparison_report",
+                            "Distribution Comparison (1-TVD uni/bi/tri)",
+                        ),
                     ],
                 ),
             ],
@@ -354,6 +352,7 @@ EVALUATION_SCHEMA = ConfigSchema(
                     path="metrics.default.privacy",
                     label="Métricas de Privacidad",
                     kind="checklist",
+                    help="Métricas que cuantifican el riesgo de re-identificación o inferencia sobre los datos sintéticos.",
                     options=[
                         _opt("k-anonymization", "k-anonymization"),
                         _opt("distinct l-diversity", "distinct l-diversity"),
@@ -385,11 +384,13 @@ EVALUATION_SCHEMA = ConfigSchema(
                     path="metrics.num_bootstrap_samples",
                     label="Muestras de bootstrap",
                     kind="number",
+                    help="Número de remuestreos usados para estimar intervalos de confianza.",
                 ),
                 FieldSchema(
-                    path="metrics.average_complementary_tvd_n_bins",
-                    label="Bins (TVD complementaria)",
+                    path="metrics.tvd_n_bins",
+                    label="Bins (TVD)",
                     kind="number",
+                    help="Número de bins para discretizar variables continuas al calcular Total Variation Distance.",
                 ),
             ],
         ),
@@ -402,11 +403,13 @@ EVALUATION_SCHEMA = ConfigSchema(
                     label="Columna objetivo",
                     kind="select",
                     dynamic_options="columns",
+                    help="Columna a predecir al entrenar con sintético y testear con real.",
                 ),
                 FieldSchema(
                     path="metrics.tstr.task_type",
                     label="Tipo de tarea",
                     kind="select",
+                    help="Naturaleza del problema supervisado en TSTR.",
                     options=[
                         _opt("classification", "Clasificación"),
                         _opt("regression", "Regresión"),

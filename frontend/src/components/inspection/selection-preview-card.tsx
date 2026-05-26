@@ -29,18 +29,24 @@ import { TableExplorerDialog } from "./table-explorer-dialog";
 // the full-paginated explorer.
 export function SelectionPreviewCard({
   previews,
+  hasSelection,
   isLoading,
   isError,
   csvDelimiter,
   excludedColumns,
   onToggleColumn,
+  startAction,
 }: {
   previews: FilePreview[];
+  /** Whether the user has any files selected — drives the empty state. */
+  hasSelection: boolean;
   isLoading: boolean;
   isError: boolean;
   csvDelimiter: string;
   excludedColumns: Record<string, Set<string>>;
   onToggleColumn: (table: string, col: string) => void;
+  /** Start-inspection controls rendered at the bottom of the card. */
+  startAction?: React.ReactNode;
 }) {
   return (
     <Card>
@@ -61,6 +67,12 @@ export function SelectionPreviewCard({
             No se pudo cargar la vista previa.
           </p>
         )}
+        {!isLoading && !isError && !hasSelection && (
+          <p className="text-sm text-muted-foreground">
+            No hay tablas seleccionadas para inspeccionar. Selecciona uno o más
+            ficheros arriba.
+          </p>
+        )}
         {!isLoading &&
           !isError &&
           previews.map((p) => (
@@ -72,6 +84,7 @@ export function SelectionPreviewCard({
               onToggleColumn={(col) => onToggleColumn(p.table, col)}
             />
           ))}
+        {startAction && <div className="border-t pt-3">{startAction}</div>}
       </CardContent>
     </Card>
   );

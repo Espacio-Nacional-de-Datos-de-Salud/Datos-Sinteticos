@@ -21,7 +21,45 @@ import glob
 import json
 import os
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+
+def folder_started_at_ms(folder: str, folder_prefix: str) -> int | None:
+    """Parse the UTC start time encoded in a ``<prefix>_YYYYMMDD_HHMMSS`` folder
+    and return it as epoch milliseconds.
+
+    This is the single source of truth for the "in-progress elapsed time"
+    counter shown by the UI: the folder name is set once at run creation, is
+    always UTC (``pd.Timestamp.utcnow``), and is never rewritten — unlike the
+    card's ``timestamp`` / ``timestamp_ms`` which can be refreshed mid-run.
+    """
+    folder_name = os.path.basename(folder)
+    start_time = parse_folder_start_time(folder_name, folder_prefix)
+    if start_time is None:
+        return None
+    return int(start_time.replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def read_total_run_duration_seconds(folder: str) -> float | None:
+    """Return the total duration recorded in ``time_profiling_report.json``.
+
+    Returns ``None`` if the file is missing, unreadable, or has no recorded total.
+    Imported lazily to avoid a circular import on ``config.general``.
+    """
+    from backend.src.config.general import TIME_PROFILING_REPORT_FILENAME
+
+    path = os.path.join(folder, TIME_PROFILING_REPORT_FILENAME)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    total = payload.get("total_seconds")
+    if isinstance(total, (int, float)) and total > 0:
+        return float(total)
+    return None
 
 
 def folder_has_files(folder: str) -> bool:

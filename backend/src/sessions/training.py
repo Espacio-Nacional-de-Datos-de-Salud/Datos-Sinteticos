@@ -60,7 +60,7 @@ class TrainingSession:
     timestamp: str
 
 
-def initialize_training_session() -> TrainingSession:
+def initialize_training_session(name: str | None = None) -> TrainingSession:
     """Create the output folder and the ``in_progress`` model card.
 
     Refreshes the run timestamp and materializes the session on disk.
@@ -81,7 +81,7 @@ def initialize_training_session() -> TrainingSession:
         card_path,
         {
             "model_id": model_id,
-            "model_name": model_id,
+            "model_name": name.strip() if name and name.strip() else model_id,
             "status": "in_progress",
             "timestamp": timestamp,
             "progress": initial_progress(TRAINING_PHASES),

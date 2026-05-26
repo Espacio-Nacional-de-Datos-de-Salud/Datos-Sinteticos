@@ -142,7 +142,7 @@ export function PipelineRunDialog({
                   <JobProgressPanel
                     status={run.status}
                     progress={run.progress}
-                    timestamp={run.timestamp}
+                    startedAtMs={run.started_at_ms ?? null}
                   />
                   <div className="mt-3">
                     <Button

@@ -2,9 +2,14 @@
 
 import json
 import os
+from pathlib import Path
 from typing import Literal
 
-from backend.src.api.schemas import CancelResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
+
+from backend.src.api.schemas import CancelResponse, TimeProfilingReport, load_time_profiling_report
+from backend.src.api.schemas.files import FilePreview
 from backend.src.api.schemas.simulations import (
     CleanupResult,
     DeletedSimulation,
@@ -13,18 +18,24 @@ from backend.src.api.schemas.simulations import (
     SimulationJob,
     SimulationSummary,
 )
-from backend.src.api.schemas.files import FilePreview
 from backend.src.config.general import SIM_CARD_FILENAME, SIMULATIONS_DIR
-from backend.src.runs.catalog.simulations import SYNTHETIC_DATA_DIRNAME
-from backend.src.sessions.files import FilePreviewError, read_file_preview
-from pathlib import Path
+from backend.src.domain.id_validation import SimulationId
 from backend.src.infrastructure.cancellation import register as register_cancel
 from backend.src.infrastructure.cancellation import request_cancel
+from backend.src.infrastructure.errors import (
+    SimulationNotFoundError,
+    SyntheticDataNotFoundError,
+)
 from backend.src.runs.card_io import update_card_status
 from backend.src.runs.catalog.downloads import (
     build_full_simulation_bundle,
     build_synthetic_data_bundle,
     build_zip_stream,
+)
+from backend.src.runs.catalog.simulations import (
+    SYNTHETIC_DATA_DIRNAME,
+    list_available_simulations,
+    list_simulation_columns,
 )
 from backend.src.runs.catalog.simulations import (
     cleanup_simulations as cleanup_simulations_catalog,
@@ -33,27 +44,17 @@ from backend.src.runs.catalog.simulations import (
     delete_simulation as delete_simulation_catalog,
 )
 from backend.src.runs.catalog.simulations import (
-    list_available_simulations,
-    list_simulation_columns,
-)
-from backend.src.runs.catalog.simulations import (
     purge_all_simulations as purge_all_simulations_catalog,
 )
 from backend.src.runs.catalog.simulations import (
     rename_simulation as rename_simulation_catalog,
 )
-from backend.src.infrastructure.errors import (
-    SimulationNotFoundError,
-    SyntheticDataNotFoundError,
-)
-from backend.src.domain.id_validation import SimulationId
 from backend.src.sessions.configs import resolve_config_path
+from backend.src.sessions.files import FilePreviewError, read_file_preview
 from backend.src.sessions.simulation import (
     initialize_simulation_session,
     run_simulation_flow_from_model,
 )
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
 
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
@@ -85,6 +86,7 @@ def create_simulation(
     session = initialize_simulation_session(
         model_id=request.model_id,
         synthetic_data_file_format=request.synthetic_data_file_format,
+        name=request.name,
     )
     cancel_event = register_cancel(session.simulation_id)
     background_tasks.add_task(
@@ -96,6 +98,7 @@ def create_simulation(
         session=session,
         cancel_event=cancel_event,
         table_sample_sizes=request.table_sample_sizes,
+        conditional=request.conditional.model_dump() if request.conditional else None,
     )
     return SimulationJob(simulation_id=session.simulation_id, status="in_progress")
 
@@ -191,13 +194,39 @@ def get_simulation(simulation_id: SimulationId) -> dict:
     raise HTTPException(status_code=404, detail=f"Simulation '{simulation_id}' not found.")
 
 
+@router.get("/{simulation_id}/time-profiling", response_model=TimeProfilingReport)
+def get_simulation_time_profiling(simulation_id: SimulationId) -> TimeProfilingReport:
+    """Returns the structured per-phase timing breakdown of a simulation run."""
+    folder = Path(SIMULATIONS_DIR) / simulation_id
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"Simulation '{simulation_id}' not found.")
+    report = load_time_profiling_report(str(folder))
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No time profiling report for simulation '{simulation_id}'.",
+        )
+    return report
+
+
 @router.delete("/{simulation_id}", response_model=DeletedSimulation)
-def delete_simulation(simulation_id: SimulationId) -> DeletedSimulation:
+def delete_simulation(
+    simulation_id: SimulationId,
+    mode: Literal["safe", "force", "cascade"] = Query(
+        default="safe",
+        description=(
+            "**safe** — refuse (409) when linked evaluations exist. "
+            "**force** — delete the simulation only, leaving its evaluations orphaned. "
+            "**cascade** — delete the simulation and every linked evaluation."
+        ),
+    ),
+) -> DeletedSimulation:
     """Deletes a simulation run and all its stored artifacts.
 
-    Returns 409 if the simulation has linked evaluations — delete those first.
+    With ``mode=safe`` (default), returns 409 if the simulation has linked
+    evaluations. Use ``mode=force`` or ``mode=cascade`` to delete anyway.
     """
-    outcome = delete_simulation_catalog(simulation_id)
+    outcome = delete_simulation_catalog(simulation_id, mode=mode)
     if outcome.status == "not_found":
         raise HTTPException(status_code=404, detail=f"Simulation '{simulation_id}' not found.")
     if outcome.status == "has_linked_evaluations":
@@ -206,13 +235,16 @@ def delete_simulation(simulation_id: SimulationId) -> DeletedSimulation:
             status_code=409,
             detail={
                 "message": (
-                    f"Simulation '{simulation_id}' has {linked_count} linked evaluation(s). "
-                    "Delete them first."
+                    f"La generación '{simulation_id}' tiene {linked_count} "
+                    "evaluación(es) asociada(s)."
                 ),
                 "linked_evaluation_ids": outcome.linked_evaluation_ids,
             },
         )
-    return DeletedSimulation(deleted_id=simulation_id)
+    return DeletedSimulation(
+        deleted_id=simulation_id,
+        deleted_evaluation_ids=outcome.deleted_evaluation_ids,
+    )
 
 
 # NOTE: /{simulation_id}/download/synthetic-dataset must be defined before

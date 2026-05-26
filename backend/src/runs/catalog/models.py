@@ -26,13 +26,19 @@ from backend.src.runs.card_io import read_json, write_json
 from backend.src.runs.catalog._base import (
     find_run_cleanup_candidates,
     purge_all_runs,
+    folder_started_at_ms,
+    read_total_run_duration_seconds,
 )
 from backend.src.runs.catalog.simulations import (
+    DeleteMode,
+    _column_types_from_inspection_metadata,
+    _column_types_from_model_metadata,
     _columns_from_files,
     _columns_from_inspection_metadata,
     _columns_from_model_metadata,
     _resolve_real_data_paths_from_card,
     _table_name_from_file,
+    delete_simulation,
     list_available_simulations,
 )
 
@@ -91,6 +97,8 @@ def list_available_models() -> list[dict]:
             "data_sources": [],
             "progress": None,
             "inspection_id": None,
+            "duration_seconds": read_total_run_duration_seconds(folder),
+            "started_at_ms": folder_started_at_ms(folder, MODEL_RUN_FOLDER_PREFIX),
         }
 
         if has_card:
@@ -231,23 +239,43 @@ class DeleteModelOutcome:
 
     status: Literal["deleted", "not_found", "has_linked_simulations"]
     linked_simulation_ids: list[str] = field(default_factory=list)
+    deleted_simulation_ids: list[str] = field(default_factory=list)
+    deleted_evaluation_ids: list[str] = field(default_factory=list)
 
 
-def delete_model(model_id: str) -> DeleteModelOutcome:
-    """Delete a single model folder, refusing if there are linked simulations."""
+def delete_model(model_id: str, mode: DeleteMode = "safe") -> DeleteModelOutcome:
+    """Delete a single model folder.
+
+    ``mode`` controls how linked simulations are handled:
+    - ``safe`` (default): refuse with ``has_linked_simulations`` when any exist.
+    - ``force``: delete the model only, leaving its simulations orphaned.
+    - ``cascade``: delete the model, its simulations, and their evaluations.
+    """
     if not any(m["model_id"] == model_id for m in list_available_models()):
         return DeleteModelOutcome(status="not_found")
 
     simulation_ids_by_model = group_simulation_ids_by_model(list_available_simulations())
     linked_simulation_ids = simulation_ids_by_model.get(model_id, [])
-    if linked_simulation_ids:
+    if linked_simulation_ids and mode == "safe":
         return DeleteModelOutcome(
             status="has_linked_simulations",
             linked_simulation_ids=linked_simulation_ids,
         )
 
+    deleted_simulation_ids: list[str] = []
+    deleted_evaluation_ids: list[str] = []
+    if mode == "cascade":
+        for simulation_id in linked_simulation_ids:
+            outcome = delete_simulation(simulation_id, mode="cascade")
+            deleted_simulation_ids.append(simulation_id)
+            deleted_evaluation_ids.extend(outcome.deleted_evaluation_ids)
+
     shutil.rmtree(f"{MODELS_DIR}/{model_id}", ignore_errors=True)
-    return DeleteModelOutcome(status="deleted")
+    return DeleteModelOutcome(
+        status="deleted",
+        deleted_simulation_ids=deleted_simulation_ids,
+        deleted_evaluation_ids=deleted_evaluation_ids,
+    )
 
 
 def format_available_models(models: list[dict], output: str = "json") -> str:
@@ -402,6 +430,38 @@ def list_model_columns(model_id: str) -> dict[str, list[str]]:
             return columns_by_table
 
     raise ModelNotFoundError(f"Could not find columns for model '{model_id}'.")
+
+
+def list_model_column_types(model_id: str) -> dict[str, dict[str, str]]:
+    """Return ``{table: {column: kind}}`` for a trained model.
+
+    ``kind`` is one of ``numeric``, ``datetime`` or ``categorical`` — a coarse
+    classification derived from each column's Mostly AI encoding type. Used by
+    the conditional-generation UI to offer only the constraint types that make
+    sense for a column (e.g. a numeric range only on numeric columns).
+
+    Prefers the source inspection metadata, then the model's ``metadata.json``.
+    Returns an empty dict when neither is available rather than raising — the
+    UI then falls back to offering all constraint types.
+    """
+    card = _read_model_card(model_id)
+    inspection_id = card.get("inspection_id")
+    metadata_path = os.path.join(MODELS_DIR, model_id, METADATA_FILENAME)
+
+    sources = (
+        lambda: _column_types_from_inspection_metadata(inspection_id),
+        lambda: _column_types_from_model_metadata(metadata_path),
+    )
+    for load_types in sources:
+        try:
+            types_by_table = load_types()
+        except Exception as exc:
+            logger.warning("Could not load column types for model %s: %s", model_id, exc)
+            continue
+        if types_by_table:
+            return types_by_table
+
+    return {}
 
 
 def list_model_column_values(

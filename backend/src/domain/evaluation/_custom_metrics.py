@@ -19,11 +19,12 @@ from backend.src.infrastructure.time_profiling import profiler
 from backend.src.domain.evaluation.custom_metrics import (
     DCR,
     NNDR,
-    AverageComplementaryTVD,
     ConfidenceIntervalOverlap,
     CorrelationMatrixDistance,
+    DistributionComparisonReport,
     KAnonymity,
     LDiversityPyCanon,
+    UtilityTests
 )
 
 logger = get_logger(__name__)
@@ -33,8 +34,9 @@ CUSTOM_METRIC_CLASSES = [
     NNDR,
     CorrelationMatrixDistance,
     ConfidenceIntervalOverlap,
-    AverageComplementaryTVD,
+    DistributionComparisonReport,
     KAnonymity,
+    UtilityTests
 ]
 
 if LDiversityPyCanon is not None:
@@ -46,30 +48,45 @@ def run_custom_metrics(
     syn: pd.DataFrame,
     report: pd.DataFrame,
     requested_metrics: list[str],
+    real_data_dict: dict[str, pd.DataFrame] | None = None,
+    synthetic_data_dict: dict[str, pd.DataFrame] | None = None,
 ) -> pd.DataFrame:
     """Append rows for each requested custom metric to ``report``.
 
     Args:
-        real (pd.DataFrame): Real dataset.
-        syn (pd.DataFrame): Synthetic dataset.
+        real (pd.DataFrame): First real dataset, used by single-table metrics.
+        syn (pd.DataFrame): First synthetic dataset, used by single-table metrics.
         report (pd.DataFrame): Report from the synthcity stage; rows are appended.
         requested_metrics (list[str]): Names (per ``MetricClass.name()``) to run.
+        real_data_dict: All real tables, used by multitable metrics.
+        synthetic_data_dict: All synthetic tables, used by multitable metrics.
 
     Returns:
         pd.DataFrame: The same report with custom-metric rows appended.
     """
     logger.info("Running custom metrics: %s", requested_metrics)
+
+    real_data_dict = real_data_dict or {}
+    synthetic_data_dict = synthetic_data_dict or {}
+
     for MetricClass in CUSTOM_METRIC_CLASSES:
         metric_name = MetricClass.name()
         if metric_name not in requested_metrics:
             continue
+
         try:
             with profiler.phase(custom_metric_phase_label(metric_name)):
-                results = MetricClass().evaluate(real, syn)
+                metric = MetricClass()
+                if getattr(metric, "supports_multitable", False):
+                    results = metric.evaluate(real_data_dict, synthetic_data_dict)
+                else:
+                    results = metric.evaluate(real, syn)
+
             logger.debug("Successfully executed custom metric %s", metric_name)
             report = _append_metric_rows(report, metric_name, results)
         except Exception as exc:
             logger.error("Failed to run custom metric %s: %s", metric_name, exc)
+
     return report
 
 

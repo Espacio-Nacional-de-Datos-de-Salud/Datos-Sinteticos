@@ -8,11 +8,15 @@ export function EditableName({
   name,
   existingNames = [],
   onSave,
+  size = "xs",
 }: {
   name: string;
   existingNames?: string[];
   onSave: (name: string) => Promise<void>;
+  /** Text size of the displayed name. Banners use "sm"; lists keep "xs". */
+  size?: "xs" | "sm";
 }) {
+  const textSize = size === "sm" ? "text-sm" : "text-xs";
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(name);
   const [saving, setSaving] = useState(false);
@@ -54,7 +58,7 @@ export function EditableName({
         }}
         disabled={saving}
         autoFocus
-        className="w-full rounded border border-border bg-background px-1 py-0.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+        className={`w-full rounded border border-border bg-background px-1 py-0.5 ${textSize} font-mono focus:outline-none focus:ring-1 focus:ring-ring`}
         onClick={(e) => e.stopPropagation()}
       />
     );
@@ -70,7 +74,7 @@ export function EditableName({
       }}
       title="Haz clic para editar el nombre"
     >
-      <span className="truncate font-mono text-xs">{name}</span>
+      <span className={`truncate font-mono ${textSize}`}>{name}</span>
       <Pencil className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
     </span>
   );

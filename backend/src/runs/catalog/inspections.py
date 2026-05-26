@@ -13,13 +13,15 @@ from backend.src.config.general import (
     INSPECTION_RUN_FOLDER_PREFIX,
     INSPECTIONS_DIR,
 )
+from backend.src.infrastructure.logging_config import get_logger
 from backend.src.runs.card_io import read_json, write_json
 from backend.src.runs.catalog._base import (
     delete_run_folders,
     find_run_cleanup_candidates,
     purge_all_runs,
+    folder_started_at_ms,
+    read_total_run_duration_seconds,
 )
-from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -52,6 +54,8 @@ def list_available_inspections() -> list[dict]:
             "tables": {},
             "file_paths": [],
             "progress": None,
+            "duration_seconds": read_total_run_duration_seconds(folder),
+            "started_at_ms": folder_started_at_ms(folder, INSPECTION_RUN_FOLDER_PREFIX),
         }
 
         try:
@@ -186,22 +190,51 @@ class DeleteInspectionOutcome:
 
     status: Literal["deleted", "not_found", "has_linked_models"]
     linked_model_ids: list[str] = field(default_factory=list)
+    deleted_model_ids: list[str] = field(default_factory=list)
+    deleted_simulation_ids: list[str] = field(default_factory=list)
+    deleted_evaluation_ids: list[str] = field(default_factory=list)
 
 
-def delete_inspection(inspection_id: str) -> DeleteInspectionOutcome:
-    """Delete a single inspection folder, refusing if there are linked models."""
+def delete_inspection(
+    inspection_id: str, mode: Literal["safe", "force", "cascade"] = "safe"
+) -> DeleteInspectionOutcome:
+    """Delete a single inspection folder.
+
+    ``mode`` controls how linked models are handled:
+    - ``safe`` (default): refuse with ``has_linked_models`` when any exist.
+    - ``force``: delete the inspection only, leaving its models orphaned.
+    - ``cascade``: delete the inspection and every downstream model,
+      simulation, and evaluation.
+    """
     if not any(i["inspection_id"] == inspection_id for i in list_available_inspections()):
         return DeleteInspectionOutcome(status="not_found")
 
     linked_model_ids = group_model_ids_by_inspection().get(inspection_id, [])
-    if linked_model_ids:
+    if linked_model_ids and mode == "safe":
         return DeleteInspectionOutcome(
             status="has_linked_models",
             linked_model_ids=linked_model_ids,
         )
 
+    deleted_model_ids: list[str] = []
+    deleted_simulation_ids: list[str] = []
+    deleted_evaluation_ids: list[str] = []
+    if mode == "cascade":
+        from backend.src.runs.catalog.models import delete_model
+
+        for model_id in linked_model_ids:
+            outcome = delete_model(model_id, mode="cascade")
+            deleted_model_ids.append(model_id)
+            deleted_simulation_ids.extend(outcome.deleted_simulation_ids)
+            deleted_evaluation_ids.extend(outcome.deleted_evaluation_ids)
+
     shutil.rmtree(f"{INSPECTIONS_DIR}/{inspection_id}", ignore_errors=True)
-    return DeleteInspectionOutcome(status="deleted")
+    return DeleteInspectionOutcome(
+        status="deleted",
+        deleted_model_ids=deleted_model_ids,
+        deleted_simulation_ids=deleted_simulation_ids,
+        deleted_evaluation_ids=deleted_evaluation_ids,
+    )
 
 
 def purge_all_inspections() -> list[str]:

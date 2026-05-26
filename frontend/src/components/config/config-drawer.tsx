@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip } from "@/components/ui/tooltip";
 import { ModeSelector, type ModeType } from "@/components/config/mode-selector";
 
 type DrawerProps = {
@@ -530,20 +531,20 @@ function SchemaForm({
                 return (
                   <div key={field.path} className="grid grid-cols-[1fr_auto] gap-2">
                     <div>
-                      <Label htmlFor={field.path} className="text-xs">
-                        {field.label}
-                      </Label>
+                      <div className="flex items-center gap-1">
+                        <Label htmlFor={field.path} className="text-xs">
+                          {field.label}
+                        </Label>
+                        {field.help && (
+                          <Tooltip content={field.help} side="top" />
+                        )}
+                      </div>
                       <FieldControl
                         field={field}
                         value={value}
                         onChange={(raw) => onChange(field, raw)}
                         simulationColumns={simulationColumns}
                       />
-                      {field.help && (
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {field.help}
-                        </p>
-                      )}
                     </div>
                     <button
                       type="button"

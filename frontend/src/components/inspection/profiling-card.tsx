@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Download, ExternalLink } from "lucide-react";
 import {
   Card,
@@ -9,7 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { CollapseToggle } from "@/components/ui/collapse-toggle";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,7 +29,6 @@ export function ProfilingCard({
 }) {
   const reports = query.data?.reports ?? [];
   const hasReports = reports.length > 0;
-  const [open, setOpen] = useState(false);
 
   return (
     <Card>
@@ -43,26 +40,18 @@ export function ProfilingCard({
             inspección se lanza con la casilla de profiling activada.
           </CardDescription>
         </div>
-        <div className="flex items-center gap-2">
-          {inspectionId && hasReports && (
-            <a
-              href={`${API_BASE_URL}/inspections/${inspectionId}/download/profiling`}
-            >
-              <Button variant="outline" size="sm" type="button">
-                <Download className="mr-2 h-4 w-4" />
-                Descargar todos (zip)
-              </Button>
-            </a>
-          )}
-          <CollapseToggle
-            open={open}
-            onToggle={() => setOpen((v) => !v)}
-            ariaLabel={open ? "Contraer profiling" : "Expandir profiling"}
-          />
-        </div>
+        {inspectionId && hasReports && (
+          <a
+            href={`${API_BASE_URL}/inspections/${inspectionId}/download/profiling`}
+          >
+            <Button variant="outline" size="sm" type="button">
+              <Download className="mr-2 h-4 w-4" />
+              Descargar todos (zip)
+            </Button>
+          </a>
+        )}
       </CardHeader>
-      {open && (
-        <CardContent>
+      <CardContent>
           {query.isLoading && <Skeleton className="h-[60vh] w-full" />}
           {query.isError && (
             <p className="text-sm text-destructive">
@@ -112,7 +101,6 @@ export function ProfilingCard({
             </Tabs>
           )}
         </CardContent>
-      )}
     </Card>
   );
 }

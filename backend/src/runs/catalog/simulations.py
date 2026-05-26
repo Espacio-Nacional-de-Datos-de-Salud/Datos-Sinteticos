@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from backend.src.config.general import (
+    EVALUATIONS_DIR,
     INSPECTION_METADATA_FILENAME,
     INSPECTIONS_DIR,
     METADATA_FILENAME,
@@ -36,6 +37,8 @@ from backend.src.runs.card_io import read_json, write_json
 from backend.src.runs.catalog._base import (
     find_run_cleanup_candidates,
     purge_all_runs,
+    folder_started_at_ms,
+    read_total_run_duration_seconds,
 )
 from backend.src.runs.catalog.evaluations import list_available_evaluations
 
@@ -122,6 +125,8 @@ def list_available_simulations() -> list[dict]:
             "training_table_sizes": {},
             "model_accuracy": None,
             "progress": None,
+            "duration_seconds": read_total_run_duration_seconds(folder),
+            "started_at_ms": folder_started_at_ms(folder, SIMULATION_RUN_FOLDER_PREFIX),
         }
 
         if has_card:
@@ -234,29 +239,45 @@ def cleanup_simulations(
     return deleted_empty, deleted_orphans, skipped
 
 
+DeleteMode = Literal["safe", "force", "cascade"]
+
+
 @dataclass
 class DeleteSimulationOutcome:
     """Result of attempting to delete a single simulation folder."""
 
     status: Literal["deleted", "not_found", "has_linked_evaluations"]
     linked_evaluation_ids: list[str] = field(default_factory=list)
+    deleted_evaluation_ids: list[str] = field(default_factory=list)
 
 
-def delete_simulation(simulation_id: str) -> DeleteSimulationOutcome:
-    """Delete a single simulation folder, refusing if there are linked evaluations."""
+def delete_simulation(simulation_id: str, mode: DeleteMode = "safe") -> DeleteSimulationOutcome:
+    """Delete a single simulation folder.
+
+    ``mode`` controls how linked evaluations are handled:
+    - ``safe`` (default): refuse with ``has_linked_evaluations`` when any exist.
+    - ``force``: delete the simulation only, leaving its evaluations orphaned.
+    - ``cascade``: delete the simulation and every linked evaluation.
+    """
     if not any(s["simulation_id"] == simulation_id for s in list_available_simulations()):
         return DeleteSimulationOutcome(status="not_found")
 
     evaluation_ids_by_simulation = group_evaluation_ids_by_simulation(list_available_evaluations())
     linked_evaluation_ids = evaluation_ids_by_simulation.get(simulation_id, [])
-    if linked_evaluation_ids:
+    if linked_evaluation_ids and mode == "safe":
         return DeleteSimulationOutcome(
             status="has_linked_evaluations",
             linked_evaluation_ids=linked_evaluation_ids,
         )
 
+    deleted_evaluation_ids: list[str] = []
+    if mode == "cascade":
+        for evaluation_id in linked_evaluation_ids:
+            shutil.rmtree(f"{EVALUATIONS_DIR}/{evaluation_id}", ignore_errors=True)
+            deleted_evaluation_ids.append(evaluation_id)
+
     shutil.rmtree(f"{SIMULATIONS_DIR}/{simulation_id}", ignore_errors=True)
-    return DeleteSimulationOutcome(status="deleted")
+    return DeleteSimulationOutcome(status="deleted", deleted_evaluation_ids=deleted_evaluation_ids)
 
 
 def purge_all_simulations() -> list[str]:
@@ -660,6 +681,68 @@ def _columns_from_inspection_metadata(inspection_id: str | None) -> dict[str, li
         return {}
     return {
         str(table): [str(column) for column in cols.keys()]
+        for table, cols in encoding_types.items()
+        if isinstance(cols, dict) and cols
+    }
+
+
+def _encoding_to_kind(encoding: object) -> str:
+    """Map a Mostly AI ``model_encoding_type`` to a coarse UI kind.
+
+    Returns one of ``numeric``, ``datetime`` or ``categorical`` (the default).
+    """
+    text = str(encoding or "").upper()
+    if "DATETIME" in text:
+        return "datetime"
+    if "NUMERIC" in text:
+        return "numeric"
+    return "categorical"
+
+
+def _column_types_from_model_metadata(metadata_path: str) -> dict[str, dict[str, str]]:
+    """Read ``{table: {column: kind}}`` from a Mostly AI model metadata file."""
+    if not os.path.exists(metadata_path):
+        return {}
+    with open(metadata_path, encoding="utf-8") as f:
+        metadata = json.load(f)
+    tables = metadata.get("tables", [])
+    if not isinstance(tables, list):
+        return {}
+
+    result: dict[str, dict[str, str]] = {}
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        table_name = table.get("name")
+        raw_columns = table.get("columns", [])
+        if not table_name or not isinstance(raw_columns, list):
+            continue
+        kinds = {
+            str(column.get("name")): _encoding_to_kind(column.get("model_encoding_type"))
+            for column in raw_columns
+            if isinstance(column, dict) and column.get("name")
+        }
+        if kinds:
+            result[str(table_name)] = kinds
+    return result
+
+
+def _column_types_from_inspection_metadata(
+    inspection_id: str | None,
+) -> dict[str, dict[str, str]]:
+    """Read ``{table: {column: kind}}`` from the source inspection metadata."""
+    if not inspection_id:
+        return {}
+    metadata_path = os.path.join(INSPECTIONS_DIR, inspection_id, INSPECTION_METADATA_FILENAME)
+    if not os.path.exists(metadata_path):
+        return {}
+    with open(metadata_path, encoding="utf-8") as f:
+        metadata = json.load(f)
+    encoding_types = metadata.get("encoding_types", {})
+    if not isinstance(encoding_types, dict):
+        return {}
+    return {
+        str(table): {str(column): _encoding_to_kind(enc) for column, enc in cols.items()}
         for table, cols in encoding_types.items()
         if isinstance(cols, dict) and cols
     }

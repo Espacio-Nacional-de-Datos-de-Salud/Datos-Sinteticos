@@ -1,8 +1,9 @@
 """Pydantic schemas for model-related API responses."""
 
+from pydantic import BaseModel, Field
+
 from backend.src.api.schemas.jobs import JobProgress
 from backend.src.domain.id_validation import INSPECTION_ID_PATTERN
-from pydantic import BaseModel, Field
 
 
 class ModelSummary(BaseModel):
@@ -20,6 +21,9 @@ class ModelSummary(BaseModel):
     accuracy: float | None = None
     qa_report_filename: str | None = None
     progress: JobProgress | None = None
+    inspection_id: str | None = None
+    duration_seconds: float | None = None
+    started_at_ms: int | None = None
 
 
 class RenameRequest(BaseModel):
@@ -34,6 +38,10 @@ class TrainingCreateRequest(BaseModel):
     Exactly one of ``file_paths`` or ``inspection_id`` must be provided.
     """
 
+    name: str | None = Field(
+        default=None,
+        description="Optional human-readable name for this training run.",
+    )
     file_paths: list[str] | None = Field(
         default=None,
         description="Paths to raw input data files or directories. Mutually exclusive with inspection_id.",
@@ -76,6 +84,8 @@ class DeletedModel(BaseModel):
     """Confirmation returned after successfully deleting a model."""
 
     deleted_id: str
+    deleted_simulation_ids: list[str] = []
+    deleted_evaluation_ids: list[str] = []
 
 
 class CleanupResult(BaseModel):

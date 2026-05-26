@@ -17,8 +17,16 @@ import {
   type InspectionSummary,
   type ProfilingReports,
 } from "@/lib/api";
-import { extractDetail } from "@/lib/errors";
+import { extractDeleteConflict, extractDetail } from "@/lib/errors";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
+import type {
+  DeleteConflictState,
+  DeleteMode,
+} from "@/components/pipeline-step/use-artifact-lifecycle";
+
+// A cascade delete of an inspection can also remove downstream models,
+// simulations, and evaluations, so a successful delete refreshes every list.
+const ALL_LIST_KEYS = ["inspections", "models", "simulations", "evaluations"];
 
 const STORAGE_KEY = STORAGE_KEYS.inspection;
 
@@ -27,6 +35,8 @@ export type StartInspectionPayload = {
   enableProfiling: boolean;
   csvDelimiter: string;
   excludedColumns: Record<string, string[]>;
+  /** Optional functional name entered in the start dialog. */
+  name?: string;
 };
 
 export function useInspeccionPage() {
@@ -282,19 +292,36 @@ export function useInspeccionPage() {
     }
   }, [inspectionQuery.isError, inspectionId]);
 
+  const [deleteConflict, setDeleteConflict] =
+    useState<DeleteConflictState | null>(null);
+
   const deleteInspection = useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/inspections/${id}`);
+    mutationFn: async ({ id, mode }: { id: string; mode: DeleteMode }) => {
+      await api.delete(`/inspections/${id}`, {
+        params: mode === "safe" ? undefined : { mode },
+      });
     },
-    onSuccess: (_data, id) => {
+    onSuccess: (_data, { id }) => {
       toast.success(`Inspección eliminada: ${id}`);
+      setDeleteConflict(null);
       if (inspectionId === id) {
         setInspectionId(null);
         window.localStorage.removeItem(STORAGE_KEY);
       }
-      queryClient.invalidateQueries({ queryKey: ["inspections"] });
+      for (const key of ALL_LIST_KEYS) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
     },
-    onError: (err) => {
+    onError: (err, { id, mode }) => {
+      const conflict = mode === "safe" ? extractDeleteConflict(err) : null;
+      if (conflict) {
+        setDeleteConflict({
+          id,
+          message: conflict.message,
+          linkedCount: conflict.linkedIds.length,
+        });
+        return;
+      }
       toast.error(`No se pudo eliminar: ${extractDetail(err)}`);
     },
   });
@@ -303,8 +330,9 @@ export function useInspeccionPage() {
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
       await api.patch(`/inspections/${id}/name`, { name });
     },
-    onSuccess: () => {
+    onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: ["inspections"] });
+      queryClient.invalidateQueries({ queryKey: ["inspection", id] });
     },
   });
 
@@ -342,11 +370,13 @@ export function useInspeccionPage() {
 
   const startInspection = useMutation({
     mutationFn: async (payload: StartInspectionPayload) => {
+      const trimmedName = payload.name?.trim();
       const { data } = await api.post<InspectionJob>("/inspections/", {
         file_paths: payload.filePaths,
         csv_delimiter: payload.csvDelimiter,
         enable_data_profiling: payload.enableProfiling,
         excluded_columns: payload.excludedColumns,
+        ...(trimmedName ? { name: trimmedName } : {}),
       });
       return data;
     },
@@ -428,8 +458,15 @@ export function useInspeccionPage() {
       startInspection.mutate(payload),
     isStarting: startInspection.isPending,
 
-    deleteInspection: (id: string) => deleteInspection.mutate(id),
+    deleteInspection: (id: string) =>
+      deleteInspection.mutate({ id, mode: "safe" }),
     isDeleting: deleteInspection.isPending,
+    deleteConflict,
+    dismissDeleteConflict: () => setDeleteConflict(null),
+    resolveDeleteConflict: (mode: "force" | "cascade") => {
+      if (deleteConflict)
+        deleteInspection.mutate({ id: deleteConflict.id, mode });
+    },
 
     renameInspection: (id: string, name: string) =>
       renameInspection.mutateAsync({ id, name }),
