@@ -7,10 +7,10 @@ import sys
 # Ensure the root directory is accessible.
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from backend.src.infrastructure.logging_config import get_logger
-from backend.src.infrastructure.time_profiling import profiler
 from backend.src.domain.pipeline.executor import run_pipeline
 from backend.src.domain.pipeline.loader import load_pipeline_config
+from backend.src.infrastructure.logging_config import get_logger
+from backend.src.infrastructure.time_profiling import profiler
 
 logger = get_logger(__name__)
 

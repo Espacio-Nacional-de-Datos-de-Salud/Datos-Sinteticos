@@ -9,6 +9,8 @@ in ``services.configs``; this router just translates query params and handles
 HTTP status codes.
 """
 
+from fastapi import APIRouter, HTTPException, Path, Query, Response
+
 from backend.src.api.schemas.configs import (
     ConfigBulkResult,
     ConfigContent,
@@ -33,7 +35,6 @@ from backend.src.sessions.configs import (
     reset_config,
     write_config,
 )
-from fastapi import APIRouter, HTTPException, Path, Query, Response
 
 router = APIRouter(prefix="/configs", tags=["Configs"])
 

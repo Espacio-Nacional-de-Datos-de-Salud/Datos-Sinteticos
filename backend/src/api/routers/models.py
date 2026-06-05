@@ -103,6 +103,8 @@ def create_training(
         background_tasks.add_task(
             run_training_flow_from_inspection,
             inspection_id=request.inspection_id,
+            brc_id=request.brc_id,
+            skip_rules=request.brc_id is None,
             session=session,
             cancel_event=cancel_event,
         )
@@ -252,8 +254,7 @@ def delete_model(
             status_code=409,
             detail={
                 "message": (
-                    f"El modelo '{model_id}' tiene {linked_count} "
-                    "generación(es) asociada(s)."
+                    f"El modelo '{model_id}' tiene {linked_count} generación(es) asociada(s)."
                 ),
                 "linked_simulation_ids": outcome.linked_simulation_ids,
             },

@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 import yaml
+
 from backend.src.cli._aliases import _BACK_ALIASES, _QUIT_ALIASES
 from backend.src.config.field_schemas import (
     CONFIG_SCHEMAS,
@@ -409,8 +410,8 @@ def edit_config(config_id: str) -> None:
 # ── rules.yaml (special-case: list of objects) ────────────────────────────────
 
 _RULE_TYPES = [
-    ("date_inequality", "Desigualdad de fechas"),
-    ("numeric_inequality", "Desigualdad numérica"),
+    ("date_inequality", "Relación entre fechas"),
+    ("numeric_inequality", "Relación entre números"),
     ("semantic_ranking_consistency", "Consistencia semántica (ranking)"),
     ("semantic_proportional_consistency", "Consistencia semántica (proporcional)"),
     ("foreign_keys_consistency_rule", "Consistencia de claves foráneas"),

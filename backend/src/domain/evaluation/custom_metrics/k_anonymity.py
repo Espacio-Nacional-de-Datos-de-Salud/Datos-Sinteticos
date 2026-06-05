@@ -8,9 +8,10 @@ every QI column.
 
 import numpy as np
 import pandas as pd
-from backend.src.infrastructure.logging_config import get_logger
+
 from backend.src.domain.evaluation.custom_metrics.base import MetricEvaluator
 from backend.src.domain.evaluation.custom_metrics.helpers import resolve_quasi_identifier_subsets
+from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
 

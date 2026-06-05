@@ -25,8 +25,8 @@ from backend.src.infrastructure.logging_config import get_logger
 from backend.src.runs.card_io import read_json, write_json
 from backend.src.runs.catalog._base import (
     find_run_cleanup_candidates,
-    purge_all_runs,
     folder_started_at_ms,
+    purge_all_runs,
     read_total_run_duration_seconds,
 )
 from backend.src.runs.catalog.simulations import (
@@ -97,6 +97,8 @@ def list_available_models() -> list[dict]:
             "data_sources": [],
             "progress": None,
             "inspection_id": None,
+            "brc_id": None,
+            "brc_name": None,
             "duration_seconds": read_total_run_duration_seconds(folder),
             "started_at_ms": folder_started_at_ms(folder, MODEL_RUN_FOLDER_PREFIX),
         }
@@ -112,6 +114,8 @@ def list_available_models() -> list[dict]:
                 model_info["data_sources"] = card.get("data_sources", [])
                 model_info["progress"] = card.get("progress")
                 model_info["inspection_id"] = card.get("inspection_id")
+                model_info["brc_id"] = card.get("brc_id")
+                model_info["brc_name"] = card.get("brc_name")
                 stats = card.get("mostly_statistics", {})
                 model_info["accuracy"] = stats.get("generator_accuracy")
 

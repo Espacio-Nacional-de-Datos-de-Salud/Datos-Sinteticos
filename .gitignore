@@ -1,5 +1,5 @@
 .venv*
-**pyc**
+**/*.pyc
 outputs
 mlruns
 .vscode/**
@@ -19,3 +19,4 @@ mlflow.db
 frontend/node_modules/**
 .coverage
 frontend/src/lib/api-types.ts
+frontend/tsconfig.tsbuildinfo

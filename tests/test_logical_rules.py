@@ -89,11 +89,11 @@ def test_manager_applies_rule_through_multihop_join_and_strips_origin_columns() 
     manager = LogicalRuleManager(
         rules=[
             DateToAgeRule(
-                table_origin="patients",
                 table_target="conditions",
-                origin_col="birth_date",
+                origin_col="condition_start_date",
                 aux_col="age_at_condition",
-                reference_date_col="condition_start_date",
+                reference_date_col="birth_date",
+                reference_date_table="patients",
             )
         ]
     )
@@ -101,7 +101,8 @@ def test_manager_applies_rule_through_multihop_join_and_strips_origin_columns() 
     processed = manager.apply_all_pre(data, relationships)
 
     conditions = processed["conditions"]
-    assert conditions["age_at_condition"].tolist() == [40.0, 30.0]
+    # aux_col gains the unit suffix (default "years"); span = origin - reference
+    assert conditions["age_at_condition_years"].tolist() == [40.0, 30.0]
     assert "birth_date" not in conditions.columns
     assert "visit_start_date" not in conditions.columns
     assert "patient_id_origin" not in conditions.columns
@@ -166,18 +167,18 @@ def test_date_inequality_with_constant_reconstructs_from_non_negative_duration()
 
     # Pre-processing: encode as days since deadline (must be >= 0)
     preprocessed = rule.apply_pre(original)
-    assert preprocessed["duration_discharge_date"].tolist() == [11, 0]
+    assert preprocessed["duration_discharge_date_days"].tolist() == [11, 0]
     assert "discharge_date" not in preprocessed.columns
 
     # Post-processing: reconstruct dates from durations (clamps negatives to deadline)
-    synthetic = pd.DataFrame({"duration_discharge_date": [-5, 3]})
+    synthetic = pd.DataFrame({"duration_discharge_date_days": [-5, 3]})
     reconstructed = rule.apply_post(synthetic)
 
     assert reconstructed["discharge_date"].tolist() == [
         pd.Timestamp("2020-01-31"),
         pd.Timestamp("2020-01-28"),
     ]
-    assert "duration_discharge_date" not in reconstructed.columns
+    assert "duration_discharge_date_days" not in reconstructed.columns
 
     # Sanity check: flag dates that violate the constraint
     failures = rule.sanity_check(pd.DataFrame({"discharge_date": ["2020-02-01"]}))
@@ -196,7 +197,7 @@ def test_date_inequality_with_invalid_origin_date_coerces_to_nat() -> None:
         pd.DataFrame(
             {
                 "condition_start_date": ["-- 00", "2020-01-10"],
-                "duration_condition_end_date": [5, 3],
+                "duration_condition_end_date_days": [5, 3],
             }
         )
     )
@@ -236,24 +237,27 @@ def test_numeric_inequality_with_column_reconstructs_and_validates_less_than_rul
 
 
 def test_date_to_age_can_drop_and_reconstruct_origin_column() -> None:
+    # New convention: origin_col is the more recent date (admission), reference
+    # is the older anchor (DOB). The dropped/reconstructed column is the origin.
     rule = DateToAgeRule(
         table_target="patients",
-        origin_col="birth_date",
+        origin_col="admission_date",
         aux_col="age",
-        reference_date="2020-01-01",
+        reference_date="2000-01-02",
         drop_origin=True,
         reconstruct_origin=True,
     )
-    original = pd.DataFrame({"birth_date": ["2000-01-02", "1980-01-01"]})
+    original = pd.DataFrame({"admission_date": ["2019-01-02", "2040-01-02"]})
 
     preprocessed = rule.apply_pre(original)
-    assert preprocessed["age"].tolist() == [19.0, 40.0]
-    assert "birth_date" not in preprocessed.columns
+    # span = origin - reference (years). Suffix appended automatically.
+    assert preprocessed["age_years"].tolist() == [19.0, 40.0]
+    assert "admission_date" not in preprocessed.columns
 
     reconstructed = rule.apply_post(preprocessed)
 
-    assert "birth_date" in reconstructed.columns
-    assert reconstructed["birth_date"].dt.year.tolist() == [2000, 1980]
+    assert "admission_date" in reconstructed.columns
+    assert reconstructed["admission_date"].dt.year.tolist() == [2019, 2040]
 
 
 def test_numeric_bucket_can_drop_and_reconstruct_origin_within_bucket(
@@ -509,6 +513,7 @@ def test_semantic_concatenation_on_origin_side() -> None:
             {
                 "person_id": [1, 2],
                 "birth_date": ["1980-01-01", "1990-01-01"],
+                "as_of_date": ["2020-01-01", "2020-01-01"],
                 "diagnosis": ["flu", "cancer"],
             }
         )
@@ -518,14 +523,15 @@ def test_semantic_concatenation_on_origin_side() -> None:
     rule_age = DateToAgeRule(
         table_target="patients",
         table_origin="patients",
-        origin_col="birth_date",
+        origin_col="as_of_date",
         aux_col="age",
-        reference_date="2020-01-01",
+        reference_date_col="birth_date",
     )
+    # aux_col gains the unit suffix → "age_years"; bucket consumes that name.
     rule_bucket = NumericBucketRule(
         table_target="patients",
         table_origin="patients",
-        origin_col="age",
+        origin_col="age_years",
         aux_col="age_bucket",
         bins=[0, 65, 120],
         labels=["adult", "senior"],
@@ -953,14 +959,16 @@ def test_detect_rule_interactions_flips_isolated_date_inequality_rules() -> None
     assert new_rule.constraint_operator == ">="
     assert new_rule.origin_col == "visit_end_date"
     assert new_rule.target_col == "admission_date"
-    assert existing_rule.target_col == "visit_end_date"
+    assert existing_rule.constraint_operator == ">="
+    assert existing_rule.origin_col == "visit_end_date"
+    assert existing_rule.target_col == "visit_start_date"
 
-    # now sort and make sure the new rule gets moved before the existing rule since it depends on the same target column
     sorted_rules = manager._sort_concat_rules(
         {"visits.visit_start_date", "visits.visit_end_date", "visits.admission_date"}
     )
-    assert sorted_rules[0] == new_rule
-    assert sorted_rules[1] == existing_rule
+    # doesnt really matter which order they are in
+    assert sorted_rules[0] == existing_rule
+    assert sorted_rules[1] == new_rule
 
 
 def test_detect_rule_interactions_raises_when_existing_rule_is_concatenated() -> None:
@@ -1014,14 +1022,157 @@ def test_detect_rule_interactions_flips_isolated_numeric_inequality_rules() -> N
     assert new_rule.constraint_operator == ">="
     assert new_rule.origin_col == "lab_value"
     assert new_rule.target_col == "max_value"
-    assert new_rule.aux_col == "max_value_flipped"
-    assert existing_rule.target_col == "lab_value"
+    assert new_rule.aux_col.startswith("max_value_flipped_")
+    assert existing_rule.constraint_operator == ">="
+    assert existing_rule.origin_col == "lab_value"
+    assert existing_rule.target_col == "min_value"
 
     sorted_rules = manager._sort_concat_rules(
         {"labs.min_value", "labs.lab_value", "labs.max_value"}
     )
-    assert sorted_rules[0] == new_rule
-    assert sorted_rules[1] == existing_rule
+    assert sorted_rules[0] == existing_rule
+    assert sorted_rules[1] == new_rule
+
+
+def test_detect_rule_interactions_flips_chained_date_inequality_rules() -> None:
+    manager = LogicalRuleManager(rules=[])
+
+    rule_a = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="b_date",
+        target_col="a_date",
+        constraint_operator="<=",
+    )
+    rule_b = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="c_date",
+        target_col="a_date",
+        constraint_operator="<=",
+    )
+    rule_c = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="d_date",
+        target_col="b_date",
+        constraint_operator="<=",
+    )
+
+    assert manager.add_rule(rule_a) is True
+    assert manager.add_rule(rule_c) is True
+    assert manager.add_rule(rule_b) is True
+
+    assert rule_a.interaction_type == InteractionType.SUPERIMPOSED
+    assert rule_b.interaction_type == InteractionType.SUPERIMPOSED
+    assert rule_c.interaction_type == InteractionType.SUPERIMPOSED
+
+    assert rule_a.constraint_operator == ">="
+    assert rule_b.constraint_operator == ">="
+    assert rule_c.constraint_operator == ">="
+
+    assert rule_a.origin_col == "a_date"
+    assert rule_a.target_col == "b_date"
+    assert rule_b.origin_col == "a_date"
+    assert rule_b.target_col == "c_date"
+    assert rule_c.origin_col == "b_date"
+    assert rule_c.target_col == "d_date"
+
+
+def test_detect_rule_interactions_flips_chained_numeric_inequality_rules() -> None:
+    manager = LogicalRuleManager(rules=[])
+
+    rule_a = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="b_value",
+        target_col="a_value",
+        constraint_operator="<=",
+    )
+    rule_b = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="c_value",
+        target_col="a_value",
+        constraint_operator="<=",
+    )
+    rule_c = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="d_value",
+        target_col="b_value",
+        constraint_operator="<=",
+    )
+
+    assert manager.add_rule(rule_a) is True
+    assert manager.add_rule(rule_c) is True
+    assert manager.add_rule(rule_b) is True
+
+    assert rule_a.interaction_type == InteractionType.SUPERIMPOSED
+    assert rule_b.interaction_type == InteractionType.SUPERIMPOSED
+    assert rule_c.interaction_type == InteractionType.SUPERIMPOSED
+
+    assert rule_a.constraint_operator == ">="
+    assert rule_b.constraint_operator == ">="
+    assert rule_c.constraint_operator == ">="
+
+    assert rule_a.origin_col == "a_value"
+    assert rule_a.target_col == "b_value"
+    assert rule_b.origin_col == "a_value"
+    assert rule_b.target_col == "c_value"
+    assert rule_c.origin_col == "b_value"
+    assert rule_c.target_col == "d_value"
+
+
+def test_detect_rule_interactions_flips_four_superimposed_numeric_rules() -> None:
+    manager = LogicalRuleManager(rules=[])
+
+    rule_a = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="min_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    rule_b = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="max_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    rule_c = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="baseline_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    rule_d = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="limit_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+
+    assert manager.add_rule(rule_a) is True
+    assert manager.add_rule(rule_b) is True
+    assert manager.add_rule(rule_c) is True
+    assert manager.add_rule(rule_d) is True
+
+    for rule in (rule_a, rule_b, rule_c, rule_d):
+        assert rule.interaction_type == InteractionType.SUPERIMPOSED
+        assert rule.constraint_operator == ">="
+        assert rule.origin_col == "lab_value"
+
+    assert rule_a.target_col == "min_value"
+    assert rule_b.target_col == "max_value"
+    assert rule_c.target_col == "baseline_value"
+    assert rule_d.target_col == "limit_value"
+
+    aux_names = {rule.aux_col for rule in (rule_a, rule_b, rule_c, rule_d)}
+    assert len(aux_names) == 4
 
 
 def test_detect_rule_interactions_raises_when_existing_numeric_rule_is_concatenated() -> (
@@ -1242,7 +1393,7 @@ def test_sort_concat_rules_orders_derived_and_numeric_dependency() -> None:
     rule_is_adult = NumericThresholdRule(
         table_target="patients",
         table_origin="patients",
-        origin_col="age",
+        origin_col="age_years",
         aux_col="is_adult",
         threshold=18,
         operator=">=",
@@ -1277,7 +1428,7 @@ def test_sort_concat_rules_orders_three_rule_chain_with_semantic_consistency() -
     rule_is_senior = NumericThresholdRule(
         table_target="patients",
         table_origin="patients",
-        origin_col="age",
+        origin_col="age_years",
         aux_col="is_senior",
         threshold=65,
         operator=">=",
@@ -1320,7 +1471,7 @@ def test_sort_concat_rules_large_integration_all_rule_types() -> None:
     rule_is_senior = NumericThresholdRule(
         table_target="patients",
         table_origin="patients",
-        origin_col="age",
+        origin_col="age_years",
         aux_col="is_senior",
         threshold=65,
         operator=">=",
@@ -1332,7 +1483,7 @@ def test_sort_concat_rules_large_integration_all_rule_types() -> None:
     rule_bucket = NumericBucketRule(
         table_target="patients",
         table_origin="patients",
-        origin_col="age",
+        origin_col="age_years",
         aux_col="age_bucket",
         bins=[0, 18, 65, 120],
         labels=["minor", "adult", "senior"],
@@ -1364,7 +1515,7 @@ def test_sort_concat_rules_large_integration_all_rule_types() -> None:
     rule_long_stay = NumericThresholdRule(
         table_target="visits",
         table_origin="visits",
-        origin_col="duration_visit_end_date",
+        origin_col="duration_visit_end_date_days",
         aux_col="long_stay",
         threshold=10,
         operator=">=",
@@ -1500,7 +1651,7 @@ def test_full_pipeline_with_add_rule_orders_and_transforms() -> None:
     rule_is_senior = NumericThresholdRule(
         table_target="patients",
         table_origin="patients",
-        origin_col="age",
+        origin_col="age_years",
         aux_col="is_senior",
         threshold=65,
         operator=">=",
@@ -1510,7 +1661,7 @@ def test_full_pipeline_with_add_rule_orders_and_transforms() -> None:
     rule_bucket = NumericBucketRule(
         table_target="patients",
         table_origin="patients",
-        origin_col="age",
+        origin_col="age_years",
         aux_col="age_bucket",
         bins=[0, 18, 65, 120],
         labels=["minor", "adult", "senior"],
@@ -1534,7 +1685,7 @@ def test_full_pipeline_with_add_rule_orders_and_transforms() -> None:
     rule_long_stay = NumericThresholdRule(
         table_target="visits",
         table_origin="visits",
-        origin_col="duration_visit_end_date",
+        origin_col="duration_visit_end_date_days",
         aux_col="long_stay",
         threshold=5,
         operator=">=",
@@ -1593,7 +1744,7 @@ def test_full_pipeline_with_add_rule_orders_and_transforms() -> None:
 
     preprocessed = manager.apply_all_pre(data, relationships)
 
-    assert "age" in preprocessed["patients"].columns
+    assert "age_years" in preprocessed["patients"].columns
     assert "is_senior" in preprocessed["patients"].columns
     assert "age_bucket" in preprocessed["patients"].columns
     assert "diagnosis" not in preprocessed["patients"].columns
@@ -1601,7 +1752,7 @@ def test_full_pipeline_with_add_rule_orders_and_transforms() -> None:
     assert "diagnosis_score" in preprocessed["patients"].columns
     assert "risk_band_score" in preprocessed["patients"].columns
     assert "visit_end_date" not in preprocessed["visits"].columns
-    assert "duration_visit_end_date" in preprocessed["visits"].columns
+    assert "duration_visit_end_date_days" in preprocessed["visits"].columns
     assert "long_stay" in preprocessed["visits"].columns
     assert "lab_value" not in preprocessed["labs"].columns
     assert "diff_lab_value" in preprocessed["labs"].columns
@@ -1615,6 +1766,555 @@ def test_full_pipeline_with_add_rule_orders_and_transforms() -> None:
     assert "visit_end_date" in reconstructed["visits"].columns
     assert "lab_value" in reconstructed["labs"].columns
     assert "person_id" in reconstructed["conditions"].columns
+
+
+def test_full_pipeline_with_multiple_flipped_branches(monkeypatch) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    data = {
+        "patients": pd.DataFrame(
+            {
+                "person_id": [1, 2],
+                "birth_date": ["1950-01-01", "1990-06-15"],
+                "diagnosis": ["flu", "allergy"],
+                "risk_band": ["low", "high"],
+            }
+        ),
+        "visits": pd.DataFrame(
+            {
+                "visit_id": [10, 20],
+                "person_id": [1, 2],
+                "visit_start_date": ["2020-01-03", "2020-02-05"],
+                "admission_date": ["2020-01-02", "2020-02-03"],
+                "arrival_date": ["2020-01-04", "2020-02-06"],
+                "checkin_date": ["2020-01-01", "2020-02-02"],
+                "visit_end_date": ["2020-01-01", "2020-02-01"],
+            }
+        ),
+        "labs": pd.DataFrame(
+            {
+                "lab_id": [1, 2],
+                "lab_value": [5.0, 6.0],
+                "min_value": [6.0, 7.0],
+                "max_value": [8.0, 9.0],
+                "baseline_value": [7.0, 8.0],
+                "limit_value": [10.0, 11.0],
+            }
+        ),
+    }
+
+    manager = LogicalRuleManager()
+
+    rule_age = DateToAgeRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="birth_date",
+        aux_col="age",
+        reference_date="2020-01-01",
+    )
+    rule_is_senior = NumericThresholdRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age_years",
+        aux_col="is_senior",
+        threshold=65,
+        operator=">=",
+        true_value=True,
+        false_value=False,
+    )
+    rule_bucket = NumericBucketRule(
+        table_target="patients",
+        table_origin="patients",
+        origin_col="age_years",
+        aux_col="age_bucket",
+        bins=[0, 18, 65, 120],
+        labels=["minor", "adult", "senior"],
+    )
+    rule_diagnosis = SemanticProportionalConsistencyRule(
+        table_target="patients",
+        origin_col="is_senior",
+        target_col="diagnosis",
+    )
+    rule_risk_band = SemanticRankingConsistencyRule(
+        table_target="patients",
+        origin_col="age_bucket",
+        target_col="risk_band",
+    )
+
+    # visits table: 4 rules with same target
+    visit_rule_start = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="visit_start_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    visit_rule_admission = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="admission_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    visit_rule_arrival = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="arrival_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    visit_rule_checkin = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="checkin_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+
+    # labs also has 4 rules with same target
+    lab_rule_min = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="min_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    lab_rule_max = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="max_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    lab_rule_baseline = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="baseline_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+    lab_rule_limit = NumericInequalityRule(
+        table_target="labs",
+        table_origin="labs",
+        origin_col="limit_value",
+        target_col="lab_value",
+        constraint_operator="<=",
+    )
+
+    for rule in (
+        rule_age,
+        rule_is_senior,
+        rule_bucket,
+        rule_diagnosis,
+        rule_risk_band,
+        visit_rule_start,
+        visit_rule_admission,
+        visit_rule_arrival,
+        visit_rule_checkin,
+        lab_rule_min,
+        lab_rule_max,
+        lab_rule_baseline,
+        lab_rule_limit,
+    ):
+        assert manager.add_rule(rule) is True
+
+    for rule in (
+        visit_rule_start,
+        visit_rule_admission,
+        visit_rule_arrival,
+        visit_rule_checkin,
+    ):
+        assert rule.interaction_type == InteractionType.SUPERIMPOSED
+        assert rule.constraint_operator == ">="
+        assert rule.origin_col == "visit_end_date"
+        assert rule.target_col in {
+            "visit_start_date",
+            "admission_date",
+            "arrival_date",
+            "checkin_date",
+        }
+
+    for rule in (lab_rule_min, lab_rule_max, lab_rule_baseline, lab_rule_limit):
+        assert rule.interaction_type == InteractionType.SUPERIMPOSED
+        assert rule.constraint_operator == ">="
+        assert rule.origin_col == "lab_value"
+        assert rule.target_col in {"min_value", "max_value", "baseline_value", "limit_value"}
+
+    visit_aux_names = {
+        rule.aux_col
+        for rule in (
+            visit_rule_start,
+            visit_rule_admission,
+            visit_rule_arrival,
+            visit_rule_checkin,
+        )
+    }
+    lab_aux_names = {rule.aux_col for rule in (lab_rule_min, lab_rule_max, lab_rule_baseline, lab_rule_limit)}
+    assert len(visit_aux_names) == 4
+    assert len(lab_aux_names) == 4
+
+    preprocessed = manager.apply_all_pre(data, relationships={})
+
+    assert "age_years" in preprocessed["patients"].columns
+    assert "is_senior" in preprocessed["patients"].columns
+    assert "age_bucket" in preprocessed["patients"].columns
+    assert "diagnosis" not in preprocessed["patients"].columns
+    assert "risk_band" not in preprocessed["patients"].columns
+    assert "diagnosis_score" in preprocessed["patients"].columns
+    assert "risk_band_score" in preprocessed["patients"].columns
+
+    for rule in (
+        visit_rule_start,
+        visit_rule_admission,
+        visit_rule_arrival,
+        visit_rule_checkin,
+    ):
+        assert rule.aux_col in preprocessed["visits"].columns
+    assert "visit_start_date" not in preprocessed["visits"].columns
+    assert "admission_date" not in preprocessed["visits"].columns
+    assert "arrival_date" not in preprocessed["visits"].columns
+    assert "checkin_date" not in preprocessed["visits"].columns
+    assert "visit_end_date" in preprocessed["visits"].columns
+
+    for rule in (lab_rule_min, lab_rule_max, lab_rule_baseline, lab_rule_limit):
+        assert rule.aux_col in preprocessed["labs"].columns
+    assert "min_value" not in preprocessed["labs"].columns
+    assert "max_value" not in preprocessed["labs"].columns
+    assert "baseline_value" not in preprocessed["labs"].columns
+    assert "limit_value" not in preprocessed["labs"].columns
+    assert "lab_value" in preprocessed["labs"].columns
+
+    reconstructed = manager.apply_all_post(preprocessed)
+
+    assert "diagnosis" in reconstructed["patients"].columns
+    assert "risk_band" in reconstructed["patients"].columns
+    assert "visit_start_date" in reconstructed["visits"].columns
+    assert "admission_date" in reconstructed["visits"].columns
+    assert "arrival_date" in reconstructed["visits"].columns
+    assert "checkin_date" in reconstructed["visits"].columns
+    assert "visit_end_date" in reconstructed["visits"].columns
+    assert "min_value" in reconstructed["labs"].columns
+    assert "max_value" in reconstructed["labs"].columns
+    assert "baseline_value" in reconstructed["labs"].columns
+    assert "limit_value" in reconstructed["labs"].columns
+    assert "lab_value" in reconstructed["labs"].columns
+
+
+def test_flipping_multiple_layers(monkeypatch) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    data = {
+        "visits": pd.DataFrame(
+            {
+                "visit_id": [10, 20],
+                "person_id": [1, 2],
+                "visit_start_date": ["2020-01-03", "2020-02-05"],
+                "admission_date": ["2020-01-02", "2020-02-03"],
+                "arrival_date": ["2020-01-04", "2020-02-06"],
+                "checkin_date": ["2020-01-01", "2020-02-02"],
+                "visit_end_date": ["2020-01-01", "2020-02-01"],
+                "test_date1": ["2002-01-02", "2002-02-02"],
+                "test_date2": ["2001-01-01", "2001-02-01"],
+                "test_date3": ["2000-01-01", "2000-02-01"],
+                "test_date4": ["1999-01-01", "1999-02-01"],
+            }
+        ),
+    }
+
+    manager = LogicalRuleManager()
+
+    # visits table: 4 rules with same target
+    visit_rule_start = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="visit_start_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    visit_rule_admission = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="admission_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    visit_rule_arrival = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="arrival_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    visit_rule_checkin = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="checkin_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    
+    # now lets build a second set of 4 that have the original 4 origins as targets
+    visit_rule_test1 = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="test_date1",
+        target_col="visit_start_date",
+        constraint_operator="<=",
+    )
+    visit_rule_test2 = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="test_date2",
+        target_col="admission_date",
+        constraint_operator="<=",
+    )
+    visit_rule_test3 = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="test_date3",
+        target_col="arrival_date",
+        constraint_operator="<=",
+    )
+    visit_rule_test4 = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="test_date4",
+        target_col="checkin_date",
+        constraint_operator="<=",
+    )
+
+    for rule in (
+        visit_rule_start,
+        visit_rule_admission,
+        visit_rule_arrival,
+        visit_rule_checkin,
+        visit_rule_test1,
+        visit_rule_test2,
+        visit_rule_test3,
+        visit_rule_test4,
+    ):
+        assert manager.add_rule(rule) is True
+
+    for rule in (
+        visit_rule_start,
+        visit_rule_admission,
+        visit_rule_arrival,
+        visit_rule_checkin,
+    ):
+        assert rule.interaction_type == InteractionType.SUPERIMPOSED
+        assert rule.constraint_operator == ">="
+        assert rule.origin_col == "visit_end_date"
+        assert rule.target_col in {
+            "visit_start_date",
+            "admission_date",
+            "arrival_date",
+            "checkin_date",
+        }
+
+    for rule in (
+        visit_rule_test1,
+        visit_rule_test2,
+        visit_rule_test3,
+        visit_rule_test4,
+    ):
+        assert rule.interaction_type == InteractionType.SUPERIMPOSED
+        assert rule.constraint_operator == ">="
+        assert rule.origin_col in {
+            "visit_start_date",
+            "admission_date",
+            "arrival_date",
+            "checkin_date",
+        }
+        assert rule.target_col in {
+            "test_date1",
+            "test_date2",
+            "test_date3",
+            "test_date4",
+        }
+        
+    preprocessed = manager.apply_all_pre(data, relationships={})
+
+    for rule in (
+        visit_rule_start,
+        visit_rule_admission,
+        visit_rule_arrival,
+        visit_rule_checkin,
+    ):
+        assert rule.aux_col in preprocessed["visits"].columns
+    assert "visit_start_date" not in preprocessed["visits"].columns
+    assert "admission_date" not in preprocessed["visits"].columns
+    assert "arrival_date" not in preprocessed["visits"].columns
+    assert "checkin_date" not in preprocessed["visits"].columns
+    assert "visit_end_date" in preprocessed["visits"].columns
+
+
+    reconstructed = manager.apply_all_post(preprocessed)
+
+    assert "visit_start_date" in reconstructed["visits"].columns
+    assert "admission_date" in reconstructed["visits"].columns
+    assert "arrival_date" in reconstructed["visits"].columns
+    assert "checkin_date" in reconstructed["visits"].columns
+    assert "visit_end_date" in reconstructed["visits"].columns
+
+
+def test_flipping_multiple_layers_opposite_signs(monkeypatch) -> None:
+    monkeypatch.setattr(np.random, "uniform", _midpoint_uniform_series)
+    data = {
+        "visits": pd.DataFrame(
+            {
+                "visit_id": [10, 20],
+                "person_id": [1, 2],
+                "visit_start_date": ["2020-01-03", "2020-02-05"],
+                "admission_date": ["2020-01-02", "2020-02-03"],
+                "arrival_date": ["2020-01-04", "2020-02-06"],
+                "checkin_date": ["2020-01-01", "2020-02-02"],
+                "visit_end_date": ["2020-01-01", "2020-02-01"],
+                "test_date1": ["2002-01-02", "2002-02-02"],
+                "test_date2": ["2001-01-01", "2001-02-01"],
+                "test_date3": ["2000-01-01", "2000-02-01"],
+                "test_date4": ["1999-01-01", "1999-02-01"],
+            }
+        ),
+    }
+
+    manager = LogicalRuleManager()
+
+    visit_rule_start = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="visit_start_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    visit_rule_admission = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="admission_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    visit_rule_arrival = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="arrival_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+    visit_rule_checkin = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="checkin_date",
+        target_col="visit_end_date",
+        constraint_operator="<=",
+    )
+
+    visit_rule_test1 = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="test_date1",
+        target_col="visit_start_date",
+        constraint_operator=">=",
+    )
+    visit_rule_test2 = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="test_date2",
+        target_col="admission_date",
+        constraint_operator=">=",
+    )
+    visit_rule_test3 = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="test_date3",
+        target_col="arrival_date",
+        constraint_operator=">=",
+    )
+    visit_rule_test4 = DateInequalityRule(
+        table_target="visits",
+        table_origin="visits",
+        origin_col="test_date4",
+        target_col="checkin_date",
+        constraint_operator=">=",
+    )
+
+    for rule in (
+        visit_rule_start,
+        visit_rule_admission,
+        visit_rule_arrival,
+        visit_rule_checkin,
+        visit_rule_test1,
+        visit_rule_test2,
+        visit_rule_test3,
+        visit_rule_test4,
+    ):
+        assert manager.add_rule(rule) is True
+
+    for rule in (
+        visit_rule_start,
+        visit_rule_admission,
+        visit_rule_arrival,
+        visit_rule_checkin,
+    ):
+        assert rule.interaction_type == InteractionType.SUPERIMPOSED
+        assert rule.constraint_operator == ">="
+        assert rule.origin_col == "visit_end_date"
+        assert rule.target_col in {
+            "visit_start_date",
+            "admission_date",
+            "arrival_date",
+            "checkin_date",
+        }
+
+    for rule in (
+        visit_rule_test1,
+        visit_rule_test2,
+        visit_rule_test3,
+        visit_rule_test4,
+    ):
+        assert rule.interaction_type == InteractionType.SUPERIMPOSED
+        assert rule.constraint_operator == "<="
+        assert rule.origin_col in {
+            "visit_start_date",
+            "admission_date",
+            "arrival_date",
+            "checkin_date",
+        }
+        assert rule.target_col in {
+            "test_date1",
+            "test_date2",
+            "test_date3",
+            "test_date4",
+        }
+
+    preprocessed = manager.apply_all_pre(data, relationships={})
+
+    for rule in (
+        visit_rule_start,
+        visit_rule_admission,
+        visit_rule_arrival,
+        visit_rule_checkin,
+    ):
+        assert rule.aux_col in preprocessed["visits"].columns
+    assert "visit_start_date" not in preprocessed["visits"].columns
+    assert "admission_date" not in preprocessed["visits"].columns
+    assert "arrival_date" not in preprocessed["visits"].columns
+    assert "checkin_date" not in preprocessed["visits"].columns
+    assert "test_date1" not in preprocessed["visits"].columns
+    assert "test_date2" not in preprocessed["visits"].columns
+    assert "test_date3" not in preprocessed["visits"].columns
+    assert "test_date4" not in preprocessed["visits"].columns
+    assert "visit_end_date" in preprocessed["visits"].columns
+
+    reconstructed = manager.apply_all_post(preprocessed)
+
+    assert "visit_start_date" in reconstructed["visits"].columns
+    assert "admission_date" in reconstructed["visits"].columns
+    assert "arrival_date" in reconstructed["visits"].columns
+    assert "checkin_date" in reconstructed["visits"].columns
+    assert "visit_end_date" in reconstructed["visits"].columns
+    assert "test_date1" in reconstructed["visits"].columns
+    assert "test_date2" in reconstructed["visits"].columns
+    assert "test_date3" in reconstructed["visits"].columns
+    assert "test_date4" in reconstructed["visits"].columns
+
 
 
 def test_full_pipeline_with_add_rule_valid_and_invalid_flips() -> None:
@@ -1643,6 +2343,9 @@ def test_full_pipeline_with_add_rule_valid_and_invalid_flips() -> None:
     assert new_date_rule.constraint_operator == ">="
     assert new_date_rule.origin_col == "visit_end_date"
     assert new_date_rule.target_col == "admission_date"
+    assert existing_date_rule.constraint_operator == ">="
+    assert existing_date_rule.origin_col == "visit_end_date"
+    assert existing_date_rule.target_col == "visit_start_date"
 
     existing_numeric_rule = NumericInequalityRule(
         table_target="labs",
@@ -1667,7 +2370,10 @@ def test_full_pipeline_with_add_rule_valid_and_invalid_flips() -> None:
     assert new_numeric_rule.constraint_operator == ">="
     assert new_numeric_rule.origin_col == "lab_value"
     assert new_numeric_rule.target_col == "max_value"
-    assert new_numeric_rule.aux_col == "max_value_flipped"
+    assert new_numeric_rule.aux_col.startswith("max_value_flipped_")
+    assert existing_numeric_rule.constraint_operator == ">="
+    assert existing_numeric_rule.origin_col == "lab_value"
+    assert existing_numeric_rule.target_col == "min_value"
 
     valid_concat_ineq_date = DateInequalityRule(
         table_target="visits",
@@ -1677,7 +2383,7 @@ def test_full_pipeline_with_add_rule_valid_and_invalid_flips() -> None:
         constraint_operator="<=",
     )
     assert manager.add_rule(valid_concat_ineq_date) is True
-    assert valid_concat_ineq_date.interaction_type == InteractionType.CONCATENATED
+    assert valid_concat_ineq_date.interaction_type == InteractionType.ISOLATED
     assert valid_concat_ineq_date.origin_col == "visit_end_date"
     assert valid_concat_ineq_date.target_col == "discharge_date"
 

@@ -65,9 +65,28 @@ def _opt(value: str, label: str) -> FieldOption:
     return FieldOption(value=value, label=label)
 
 
+# Schema field names that need snake_case → camelCase for the frontend.
+# We rename selectively (not a blanket camelize) because GroupToggle.defaults
+# carries user YAML keys that must stay snake_case.
+_API_KEY_RENAMES = {"dynamic_options": "dynamicOptions"}
+
+
+def _rename_api_keys(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        return {_API_KEY_RENAMES.get(k, k): _rename_api_keys(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_rename_api_keys(v) for v in obj]
+    return obj
+
+
 def to_dict(schema: ConfigSchema) -> dict:
-    """Recursively convert a ConfigSchema to a plain JSON-serialisable dict."""
-    return asdict(schema)
+    """Recursively convert a ConfigSchema to a JSON-serialisable dict.
+
+    Renames ``dynamic_options`` → ``dynamicOptions`` so the payload matches
+    the TypeScript ``FieldSchema`` type in
+    ``frontend/src/components/config/schemas.ts``.
+    """
+    return _rename_api_keys(asdict(schema))
 
 
 # ── general.yaml ─────────────────────────────────────────────────────────────
@@ -160,7 +179,7 @@ GENERAL_SCHEMA = ConfigSchema(
 # ── mostly_ai.yaml ────────────────────────────────────────────────────────────
 
 MOSTLY_AI_SCHEMA = ConfigSchema(
-    title="Configuración del modelo (Mostly AI)",
+    title="Configuración del modelo",
     description="Parámetros del modelo y del entrenamiento. Aplican tanto al entrenamiento como a la generación.",
     groups=[
         FieldGroup(
@@ -275,10 +294,10 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
 
 EVALUATION_SCHEMA = ConfigSchema(
     title="Configuración de evaluación",
-    description="Parámetros de ejecución, métricas de utilidad (Synthcity), privacidad y estadísticos.",
+    description="Métricas agrupadas por eje: privacidad, fidelidad y utilidad.",
     groups=[
         FieldGroup(
-            title="Ejecución",
+            title="Ajustes generales",
             fields=[
                 FieldSchema(
                     path="execution.drop_id_columns_from_metrics",
@@ -289,70 +308,14 @@ EVALUATION_SCHEMA = ConfigSchema(
             ],
         ),
         FieldGroup(
-            title="Métricas de Utilidad (Synthcity)",
-            description="Activa o desactiva las métricas por categoría.",
-            fields=[
-                FieldSchema(
-                    path="metrics.default.sanity",
-                    label="Sanity Checks",
-                    kind="checklist",
-                    help="Comprobaciones básicas de coherencia entre datos reales y sintéticos.",
-                    options=[_opt("common_rows_proportion", "Common Rows Proportion")],
-                ),
-                FieldSchema(
-                    path="metrics.default.stats",
-                    label="Estadísticas",
-                    kind="checklist",
-                    help="Distancias estadísticas entre las distribuciones real y sintética.",
-                    options=[
-                        _opt("jensenshannon_dist", "Jensen-Shannon Distance"),
-                        _opt("inv_kl_divergence", "Inverse KL Divergence"),
-                    ],
-                ),
-                FieldSchema(
-                    path="metrics.default.performance",
-                    label="Rendimiento (ML)",
-                    kind="checklist",
-                    help="Modelos ML que se entrenan con los datos para comparar utilidad real vs sintética.",
-                    options=[
-                        _opt("linear_model", "Linear Model"),
-                        _opt("mlp", "MLP"),
-                    ],
-                ),
-                FieldSchema(
-                    path="metrics.default.detection",
-                    label="Detección",
-                    kind="checklist",
-                    help="Clasificador que intenta distinguir filas reales de sintéticas. Cuanto peor lo haga, mejor el sintético.",
-                    options=[_opt("detection_mlp", "Detection MLP")],
-                ),
-                FieldSchema(
-                    path="metrics.default.custom",
-                    label="Personalizadas",
-                    kind="checklist",
-                    help="Métricas propias de este proyecto (distancias a registros reales, comparación de distribuciones, etc.).",
-                    options=[
-                        _opt("dcr", "DCR (Distance to Closest Record)"),
-                        _opt("nndr", "NNDR (Nearest Neighbor Distance Ratio)"),
-                        _opt("correlation_matrix_distance", "Correlation Matrix Distance"),
-                        _opt("confidence_interval_overlap", "Confidence Interval Overlap"),
-                        _opt(
-                            "distribution_comparison_report",
-                            "Distribution Comparison (1-TVD uni/bi/tri)",
-                        ),
-                    ],
-                ),
-            ],
-        ),
-        FieldGroup(
             title="Privacidad",
-            description="Métricas y parámetros de privacidad.",
+            description="¿Los datos sintéticos protegen frente a re-identificación e inferencia?",
             fields=[
                 FieldSchema(
                     path="metrics.default.privacy",
-                    label="Métricas de Privacidad",
+                    label="k-anonimato y derivados",
                     kind="checklist",
-                    help="Métricas que cuantifican el riesgo de re-identificación o inferencia sobre los datos sintéticos.",
+                    help="Métricas de anonimato y ataques de inferencia de membresía. L-diversity requiere columnas sensibles y subconjuntos QI explícitos.",
                     options=[
                         _opt("k-anonymization", "k-anonymization"),
                         _opt("distinct l-diversity", "distinct l-diversity"),
@@ -362,18 +325,77 @@ EVALUATION_SCHEMA = ConfigSchema(
                     ],
                 ),
                 FieldSchema(
+                    path="metrics.default.custom",
+                    label="Distancia a registros reales",
+                    kind="checklist",
+                    help="DCR y NNDR: miden cuán cerca quedan las filas sintéticas de filas reales.",
+                    options=[
+                        _opt("dcr", "DCR (Distance to Closest Record)"),
+                        _opt("nndr", "NNDR (Nearest Neighbor Distance Ratio)"),
+                    ],
+                ),
+                FieldSchema(
+                    path="metrics.default.sanity",
+                    label="Filas exactas (EMR)",
+                    kind="checklist",
+                    help="Proporción de filas sintéticas idénticas a alguna fila real. Debe ser 0.",
+                    options=[
+                        _opt("common_rows_proportion", "Common Rows Proportion"),
+                        _opt("exact_match_rows", "Exact Match Rows (detallado)"),
+                    ],
+                ),
+                FieldSchema(
+                    path="metrics.default.detection",
+                    label="Detectabilidad",
+                    kind="checklist",
+                    help="Clasificador que intenta distinguir filas reales de sintéticas. Cerca de 0.5 = indistinguibles.",
+                    options=[_opt("detection_mlp", "Detection MLP")],
+                ),
+                FieldSchema(
                     path="metrics.sensitive_columns",
-                    label="Columnas Sensibles",
+                    label="Columnas sensibles",
                     kind="checklist",
                     nullable=True,
                     dynamic_options="columns",
                     help="Columnas a proteger (usadas en l-diversity).",
                 ),
+                FieldSchema(
+                    path="metrics.quasi_identifier_subsets",
+                    label="Subconjuntos de quasi-identificadores",
+                    kind="json",
+                    nullable=True,
+                    help="Grupos de columnas QI usados por k-anonimato y l-diversity. L-diversity se omite si no hay grupos explícitos.",
+                ),
             ],
         ),
         FieldGroup(
-            title="Parámetros estadísticos",
+            title="Fidelidad",
+            description="¿Las distribuciones y correlaciones sintéticas se parecen a las reales?",
             fields=[
+                FieldSchema(
+                    path="metrics.default.stats",
+                    label="Distancias entre distribuciones",
+                    kind="checklist",
+                    help="Comparan distribuciones marginales reales vs sintéticas.",
+                    options=[
+                        _opt("jensenshannon_dist", "Jensen-Shannon Distance"),
+                        _opt("inv_kl_divergence", "Inverse KL Divergence"),
+                    ],
+                ),
+                FieldSchema(
+                    path="metrics.default.custom",
+                    label="Correlaciones e intervalos",
+                    kind="checklist",
+                    help="Preservación de correlaciones y de intervalos de confianza de estadísticos clave.",
+                    options=[
+                        _opt("correlation_matrix_distance", "Correlation Matrix Distance"),
+                        _opt("confidence_interval_overlap", "Confidence Interval Overlap"),
+                        _opt(
+                            "distribution_comparison_report",
+                            "Distribution Comparison (1-TVD uni/bi/tri)",
+                        ),
+                    ],
+                ),
                 FieldSchema(
                     path="metrics.confidence_interval_level",
                     label="Nivel de confianza",
@@ -392,12 +414,28 @@ EVALUATION_SCHEMA = ConfigSchema(
                     kind="number",
                     help="Número de bins para discretizar variables continuas al calcular Total Variation Distance.",
                 ),
+                FieldSchema(
+                    path="statistics",
+                    label="Estadísticos de columna",
+                    kind="json",
+                    help="Lista de objetos con: operation, table, col. Ej: mean, median, mode.",
+                ),
             ],
         ),
         FieldGroup(
-            title="TSTR (Train Synthetic, Test Real)",
-            description="Predicción supervisada para evaluar utilidad.",
+            title="Utilidad",
+            description="¿Sirven los datos sintéticos para entrenar modelos predictivos?",
             fields=[
+                FieldSchema(
+                    path="metrics.default.performance",
+                    label="Modelos ML (TSTR)",
+                    kind="checklist",
+                    help="Modelos entrenados con sintéticos y evaluados en reales para medir utilidad predictiva.",
+                    options=[
+                        _opt("linear_model", "Linear Model"),
+                        _opt("mlp", "MLP"),
+                    ],
+                ),
                 FieldSchema(
                     path="metrics.tstr.target_column",
                     label="Columna objetivo",
@@ -414,31 +452,6 @@ EVALUATION_SCHEMA = ConfigSchema(
                         _opt("classification", "Clasificación"),
                         _opt("regression", "Regresión"),
                     ],
-                ),
-            ],
-        ),
-        FieldGroup(
-            title="Estadísticos de Columna",
-            description="Operaciones específicas por tabla/columna.",
-            fields=[
-                FieldSchema(
-                    path="statistics",
-                    label="Definición de estadísticos",
-                    kind="json",
-                    help="Lista de objetos con: operation, table, col. Ej: mean, median, mode.",
-                ),
-            ],
-        ),
-        FieldGroup(
-            title="Subconjuntos de Quasi-identificadores",
-            description="Para el cálculo de k-anonimato.",
-            fields=[
-                FieldSchema(
-                    path="metrics.quasi_identifier_subsets",
-                    label="Subconjuntos",
-                    kind="json",
-                    nullable=True,
-                    help="Lista de listas de columnas. Si es nulo, usa todas las combinaciones pares.",
                 ),
             ],
         ),

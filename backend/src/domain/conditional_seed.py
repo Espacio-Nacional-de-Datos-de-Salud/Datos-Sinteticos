@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from backend.src.config.general import DEFAULT_SAMPLE_SIZE
+from backend.src.infrastructure.date_parsing import parse_dates
 from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -39,9 +40,7 @@ def _allocate_categorical(weights: dict[str, float], n_rows: int, rng) -> list:
     counts = [int(np.floor(x)) for x in exact]
     remainder = n_rows - sum(counts)
     # Hand out the leftover rows to the categories with the largest fractions.
-    fractional_order = sorted(
-        range(len(values)), key=lambda i: exact[i] - counts[i], reverse=True
-    )
+    fractional_order = sorted(range(len(values)), key=lambda i: exact[i] - counts[i], reverse=True)
     for i in range(remainder):
         counts[fractional_order[i % len(values)]] += 1
 
@@ -174,9 +173,7 @@ def attach_sample_seeds(
         return simulation_config
 
     config = copy.deepcopy(simulation_config)
-    table_entry = next(
-        (t for t in config.get("tables", []) if t.get("name") == target_table), None
-    )
+    table_entry = next((t for t in config.get("tables", []) if t.get("name") == target_table), None)
     if table_entry is None:
         logger.warning(
             "Conditional generation targets table '%s' which is not in the simulation "
@@ -192,7 +189,7 @@ def attach_sample_seeds(
     # Date strings entered for fixed / categorical constraints must reach the
     # engine as a real datetime dtype so Mostly AI conditions the column correctly.
     for column in _datetime_columns(metadata, target_table) & set(seed_df.columns):
-        seed_df[column] = pd.to_datetime(seed_df[column], errors="coerce")
+        seed_df[column] = parse_dates(seed_df[column], col_name=column, errors="coerce")
 
     table_configuration.pop("sample_size", None)
     table_configuration["sample_seed_data"] = seed_df

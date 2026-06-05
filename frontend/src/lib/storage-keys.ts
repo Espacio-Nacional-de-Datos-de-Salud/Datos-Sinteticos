@@ -16,9 +16,11 @@
 
 export const STORAGE_KEYS = {
   inspection: "ends.pipeline.currentInspectionId",
+  brc: "ends.pipeline.currentBrcId",
   model: "ends.pipeline.currentModelId",
   simulation: "ends.pipeline.currentSimulationId",
   evaluation: "ends.pipeline.currentEvaluationId",
+  trainingSource: "ends.pipeline.trainingSource",
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

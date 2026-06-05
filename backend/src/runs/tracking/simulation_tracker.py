@@ -9,8 +9,9 @@ import json
 import os
 import shutil
 
-import backend.src.config.general as general_config
 import pandas as pd
+
+import backend.src.config.general as general_config
 from backend.src.config.general import (
     MODEL_CARD_FILENAME,
     MODELS_DIR,
@@ -159,7 +160,9 @@ class SimulationTracker(BaseRunTracker):
         Args:
             synthetic_dataset_id (str): The MostlyAI synthetic dataset UUID returned by simulate().
         """
-        src = os.path.join(MOSTLYAI_DIR, "synthetic-datasets", synthetic_dataset_id, "job_progress.json")
+        src = os.path.join(
+            MOSTLYAI_DIR, "synthetic-datasets", synthetic_dataset_id, "job_progress.json"
+        )
         dst = os.path.join(self.output_directory, "job_progress.json")
         if not os.path.exists(src):
             logger.warning("job_progress.json not found at '%s'; skipping copy.", src)

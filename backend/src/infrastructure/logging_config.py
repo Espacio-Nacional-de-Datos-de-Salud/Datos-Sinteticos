@@ -147,6 +147,7 @@ def add_file_handler(logger: logging.Logger, run_directory: str) -> None:
 
 _MODE_LABELS = {
     "i": "INSPECCION",
+    "r": "REGLAS",
     "t": "ENTRENAMIENTO",
     "s": "SIMULACION",
     "e": "EVALUACION",

@@ -36,8 +36,8 @@ from backend.src.infrastructure.logging_config import get_logger
 from backend.src.runs.card_io import read_json, write_json
 from backend.src.runs.catalog._base import (
     find_run_cleanup_candidates,
-    purge_all_runs,
     folder_started_at_ms,
+    purge_all_runs,
     read_total_run_duration_seconds,
 )
 from backend.src.runs.catalog.evaluations import list_available_evaluations
@@ -45,6 +45,44 @@ from backend.src.runs.catalog.evaluations import list_available_evaluations
 logger = get_logger(__name__)
 
 SYNTHETIC_DATA_DIRNAME = "synthetic_data"
+SIM_METADATA_FILENAME = "sim_metadata.json"
+
+
+def read_simulation_relationships(simulation_dir: str) -> list[dict]:
+    """Return the table foreign-key edges recorded in ``sim_metadata.json``.
+
+    Each edge is ``{parent, child, column, is_context}`` where ``parent`` is the
+    referenced table and ``child`` is the table holding the FK column. The UI
+    uses these to draw a simplified schema diagram of the simulation. Returns an
+    empty list when the metadata file is missing or unreadable.
+    """
+    metadata_path = os.path.join(simulation_dir, SIM_METADATA_FILENAME)
+    if not os.path.isfile(metadata_path):
+        return []
+    try:
+        with open(metadata_path, encoding="utf-8") as f:
+            metadata = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Error reading %s: %s", metadata_path, exc)
+        return []
+
+    relationships: list[dict] = []
+    for table in metadata.get("tables", []):
+        child = table.get("name")
+        for fk in table.get("foreign_keys", []) or []:
+            parent = fk.get("referenced_table")
+            column = fk.get("column")
+            if not (child and parent and column):
+                continue
+            relationships.append(
+                {
+                    "parent": parent,
+                    "child": child,
+                    "column": column,
+                    "is_context": bool(fk.get("is_context")),
+                }
+            )
+    return relationships
 
 
 def _list_synthetic_files_from_directory(synthetic_dir: str) -> list[str]:
@@ -123,6 +161,7 @@ def list_available_simulations() -> list[dict]:
             "sample_size": None,
             "tables": "",
             "training_table_sizes": {},
+            "relationships": [],
             "model_accuracy": None,
             "progress": None,
             "duration_seconds": read_total_run_duration_seconds(folder),
@@ -149,6 +188,9 @@ def list_available_simulations() -> list[dict]:
             sim_info["tables"] = ", ".join(list_synthetic_table_names(folder))
         except OSError as exc:
             logger.warning("Error listing synthetic data in %s: %s", folder, exc)
+
+        # Foreign-key edges drive the simplified schema diagram in the UI.
+        sim_info["relationships"] = read_simulation_relationships(folder)
 
         # Best-effort enrichment with the linked model's accuracy.
         model_id = sim_info["model_id"]

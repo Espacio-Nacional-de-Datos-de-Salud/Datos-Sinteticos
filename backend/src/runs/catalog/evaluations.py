@@ -20,8 +20,8 @@ from backend.src.runs.card_io import read_json, write_json
 from backend.src.runs.catalog._base import (
     delete_run_folders,
     find_run_cleanup_candidates,
-    purge_all_runs,
     folder_started_at_ms,
+    purge_all_runs,
     read_total_run_duration_seconds,
 )
 

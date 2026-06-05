@@ -7,11 +7,12 @@
 // • Score badges (composite 0–1 scores, higher = better) with colour annotations
 // • Per-metric rows showing RAW values with thresholds per metric direction
 //   (some metrics: lower = better; some: higher = better; some: target ≈ 0.5)
-// • Sandboxed iframe embedding the full HTML report inline
+// • Sandboxed iframe embedding the full HTML report inline (collapsible)
 // • Buttons: open in new tab, download zip
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Download, ExternalLink, FileText, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, ExternalLink, FileText, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -339,6 +340,7 @@ function buildAxisMetrics(summary: Summary): { label: string; metrics: MetricDef
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function EvaluationReportSection({ evaluationId }: { evaluationId: string }) {
+    const [iframeOpen, setIframeOpen] = useState(false);
     const reportDataQuery = useQuery<ReportData>({
         queryKey: ["evaluation-report-data", evaluationId],
         queryFn: async () => {
@@ -437,15 +439,31 @@ export function EvaluationReportSection({ evaluationId }: { evaluationId: string
                 </p>
             )}
 
-            {/* Inline HTML report */}
+            {/* Inline HTML report — collapsible */}
             <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
-                <iframe
-                    src={reportUrl}
-                    title="Reporte HTML de evaluación"
-                    className="h-[700px] w-full"
-                    sandbox="allow-scripts allow-same-origin"
-                    loading="lazy"
-                />
+                <button
+                    type="button"
+                    onClick={() => setIframeOpen((v) => !v)}
+                    className="flex w-full items-center justify-between gap-2 px-4 py-3 text-sm font-medium hover:bg-muted/40 transition-colors"
+                >
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                        <FileText className="h-4 w-4" />
+                        Informe HTML completo
+                    </span>
+                    {iframeOpen
+                        ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    }
+                </button>
+                {iframeOpen && (
+                    <iframe
+                        src={reportUrl}
+                        title="Reporte HTML de evaluación"
+                        className="h-[700px] w-full border-t"
+                        sandbox="allow-scripts allow-same-origin"
+                        loading="lazy"
+                    />
+                )}
             </div>
         </div>
     );

@@ -17,7 +17,7 @@ def _id_pattern(prefix: str) -> str:
     return rf"^{prefix}_\d{{8}}_\d{{6}}$"
 
 
-INSPECTION_ID_PATTERN = _id_pattern("inspection")
+INSPECTION_ID_PATTERN = r"^(inspection|upload)_\d{8}_\d{6}$"
 MODEL_ID_PATTERN = _id_pattern("model")
 SIMULATION_ID_PATTERN = _id_pattern("simulation")
 EVALUATION_ID_PATTERN = _id_pattern("evaluation")

@@ -16,10 +16,10 @@
 
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ExternalLink, FileText, Play, Sparkles, Trash2, XCircle } from "lucide-react";
+import { BookOpen, Play, Sparkles, Trash2, XCircle } from "lucide-react";
 
 import { ConfigPanel } from "@/components/config/config-drawer";
 import { EditableName } from "@/components/jobs/editable-name";
@@ -33,6 +33,7 @@ import { WizardConfirmDialogs } from "@/components/pipeline-step/wizard-confirm-
 import { RulesBanner } from "@/components/config/rules-banner";
 import { WizardShell } from "@/components/layout/wizard-shell";
 import { WorkflowGroup } from "@/components/layout/workflow-group";
+import { ENTRENAMIENTO_INSTRUCTIONS } from "@/components/training/instructions-content";
 import { NamePromptDialog } from "@/components/ui/name-prompt-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,9 +49,10 @@ import {
 } from "@/lib/api";
 import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
+import { listBrcs } from "@/lib/brc";
 import { cn } from "@/lib/utils";
 
-type StartInput = { inspection_id: string };
+type StartInput = { inspection_id: string; brc_id?: string };
 
 const ENTRENAMIENTO_OUTLINE = [
   { id: "preparacion", label: "Preparación", level: 1 },
@@ -60,7 +62,6 @@ const ENTRENAMIENTO_OUTLINE = [
   { id: "ejecutar-entrenamiento", label: "Ejecutar entrenamiento", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
   { id: "entrenamiento-actual", label: "Entrenamiento actual", level: 2 },
-  { id: "informe-calidad", label: "Informe de calidad", level: 2 },
   { id: "historial", label: "Historial", level: 1 },
   { id: "modelos-entrenados", label: "Modelos entrenados", level: 2 },
 ] as const;
@@ -71,13 +72,89 @@ export default function EntrenamientoPage() {
   const [confirmPurge, setConfirmPurge] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
 
+  // Instructions manual state — mirrors the wiring on the Inspección page so
+  // the manual panel, the help banner and the section toggles stay in sync.
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
+
+  // Page banner height — the manual's sticky "Resumen" block is sized to
+  // match it so the two banners look the same height.
+  const bannerRef = useRef<HTMLDivElement | null>(null);
+  const [bannerHeight, setBannerHeight] = useState<number | undefined>();
+  useLayoutEffect(() => {
+    const el = bannerRef.current;
+    if (!el) return;
+    const update = () => {
+      // Round to whole pixels — a fractional height feeds the panel's
+      // overview block and would jitter, retriggering measurement endlessly.
+      const h = Math.round(el.getBoundingClientRect().height);
+      setBannerHeight((prev) => (prev === h ? prev : h));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Open/collapsed state per page section — shared between the WorkflowGroups
+  // and the help panel so the two collapse in sync.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    preparacion: true,
+    resultados: true,
+    historial: false,
+  });
+  // When a section opens, scroll the page to it — same UX as the main page
+  // section toggles. Runs after the section has expanded in the DOM.
+  const scrollToSection = useCallback((id: string) => {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        document
+          .getElementById(id)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }),
+    );
+  }, []);
+  const toggleSection = useCallback(
+    (id: string) =>
+      setOpenSections((p) => {
+        const next = !(p[id] ?? true);
+        if (next) scrollToSection(id);
+        return { ...p, [id]: next };
+      }),
+    [scrollToSection],
+  );
+  const setSectionOpen = useCallback(
+    (id: string, open: boolean) => {
+      if (open) scrollToSection(id);
+      setOpenSections((p) => ({ ...p, [id]: open }));
+    },
+    [scrollToSection],
+  );
+
+  // Space the manual asks the page to reserve, keyed by id: the overview
+  // spacer height ("resumen") and the per-section deficit when a help block
+  // is taller than its page section.
+  const [helpReserve, setHelpReserve] = useState<Record<string, number>>({});
+  const handleHelpMeasure = useCallback(
+    (reserve: Record<string, number>) => setHelpReserve(reserve),
+    [],
+  );
+  // When a help block is taller than its section, add the extra space as a
+  // bottom margin — blank background between sections, not inside the box.
+  const helpGap = (id: string): React.CSSProperties | undefined =>
+    instructionsOpen && (openSections[id] ?? true) && helpReserve[id]
+      ? { marginBottom: helpReserve[id] + 16 }
+      : undefined;
+
   const lc = useArtifactLifecycle<ModelSummary, StartInput>({
     apiPath: "/models",
     listKey: "models",
     itemKey: "model",
     storageKey: STORAGE_KEYS.model,
     idField: "model_id",
-    buildStartBody: (input) => ({ inspection_id: input.inspection_id }),
+    buildStartBody: (input) => ({
+      inspection_id: input.inspection_id,
+      ...(input.brc_id ? { brc_id: input.brc_id } : {}),
+    }),
     labels: {
       startedToast: (id) => `Entrenamiento iniciado: ${id}`,
       startErrorPrefix: "No se pudo iniciar el entrenamiento",
@@ -103,22 +180,61 @@ export default function EntrenamientoPage() {
     (i) => i.status === "completed",
   );
 
-  const allInspections = inspectionsQuery.data ?? [];
-  const inspectionNameById = Object.fromEntries(
-    allInspections.map((i) => [i.inspection_id, i.inspection_name || i.inspection_id]),
-  );
-
   const { selectedId: selectedInspectionId, setSelectedId: setSelectedInspectionId } =
     useUpstreamSelection(completedInspections, "inspection_id", STORAGE_KEYS.inspection);
 
-  const openReport = (model: ModelSummary) => {
-    if (!model.qa_report_filename) {
-      toast.info("No hay informes de calidad disponibles para este modelo.");
-      return;
+  // Training source toggle: either train from a raw upload (rules.yaml applied
+  // live during training) or from a completed BRC run (preprocessed parquet
+  // already on disk). The choice gates which dropdown is shown and is
+  // remembered across reloads so the user's intent isn't silently overwritten
+  // by the auto-defaulting that used to pick the most recent BRC.
+  type TrainingSource = "upload" | "brc";
+  const [trainingSource, setTrainingSource] = useState<TrainingSource>("upload");
+  useEffect(() => {
+    const stored = window.localStorage.getItem(STORAGE_KEYS.trainingSource);
+    if (stored === "upload" || stored === "brc") setTrainingSource(stored);
+  }, []);
+  const updateTrainingSource = useCallback((value: TrainingSource) => {
+    setTrainingSource(value);
+    window.localStorage.setItem(STORAGE_KEYS.trainingSource, value);
+  }, []);
+
+  // List ALL completed BRCs (across uploads). When the user is in BRC mode,
+  // the dropdown shows every completed run; the originating upload is derived
+  // from the BRC itself so we don't need a separate upload selector.
+  const brcsQuery = useQuery({
+    queryKey: ["brc", "list", "all"],
+    queryFn: () => listBrcs(),
+  });
+  const completedBrcs = useMemo(
+    () => (brcsQuery.data ?? []).filter((r) => r.status === "completed"),
+    [brcsQuery.data],
+  );
+  const { selectedId: selectedBrcId, setSelectedId: setSelectedBrcId } =
+    useUpstreamSelection(completedBrcs, "brc_id", STORAGE_KEYS.brc);
+
+  const selectedBrc = useMemo(
+    () => completedBrcs.find((b) => b.brc_id === selectedBrcId) ?? null,
+    [completedBrcs, selectedBrcId],
+  );
+
+  // Effective inspection_id sent to the API: in upload mode it's the picked
+  // upload; in BRC mode it's the upload that owns the selected BRC.
+  const effectiveInspectionId =
+    trainingSource === "brc"
+      ? selectedBrc?.inspection_id ?? ""
+      : selectedInspectionId;
+  const effectiveBrcId = trainingSource === "brc" ? selectedBrcId : "";
+
+  const inspectionNameById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const i of inspectionsQuery.data ?? []) {
+      map[i.inspection_id] = i.inspection_name || i.inspection_id;
     }
-    const url = `${API_BASE_URL}/models/${model.model_id}/reports/${model.qa_report_filename}`;
-    window.open(url, "_blank");
-  };
+    return map;
+  }, [inspectionsQuery.data]);
+
+
 
   const columns: HistoryColumn<ModelSummary>[] = [
     {
@@ -156,23 +272,21 @@ export default function EntrenamientoPage() {
     },
     {
       key: "tables",
-      header: "Tablas / Inspección",
+      header: "Tablas / Entrada",
       width: "26%",
       render: (m) => {
-        const inspName = m.inspection_id ? (inspectionNameById[m.inspection_id] ?? m.inspection_id) : null;
+        const brcLabel = m.brc_id ? (m.brc_name || m.brc_id) : null;
         return (
           <div className="space-y-0.5 min-w-0">
             <span className="block truncate font-mono text-xs" title={m.tables || ""}>
               {m.tables || "—"}
             </span>
-            {inspName && (
-              <span
-                className="block truncate text-[10px] text-muted-foreground"
-                title={inspName}
-              >
-                {inspName}
-              </span>
-            )}
+            <span
+              className="block truncate text-[10px] font-medium text-muted-foreground"
+              title={brcLabel ?? (m.inspection_id || undefined)}
+            >
+              {brcLabel ?? m.inspection_id ?? "—"}
+            </span>
           </div>
         );
       },
@@ -202,12 +316,26 @@ export default function EntrenamientoPage() {
   ];
 
   return (
-    <WizardShell currentSlug="entrenamiento" canAdvance={lc.hasCompleted} outline={ENTRENAMIENTO_OUTLINE}>
+    <WizardShell
+      currentSlug="entrenamiento"
+      canAdvance={lc.hasCompleted}
+      outline={ENTRENAMIENTO_OUTLINE}
+      instructions={ENTRENAMIENTO_INSTRUCTIONS}
+      instructionsOpen={instructionsOpen}
+      instructionsSections={openSections}
+      onInstructionsToggleSection={toggleSection}
+      onInstructionsClose={() => setInstructionsOpen(false)}
+      onInstructionsMeasure={handleHelpMeasure}
+      instructionsBannerHeight={bannerHeight}
+    >
       <div className="space-y-6">
-        <div className="sticky top-0 z-20 -mx-8 -mt-6 border-b bg-background/95 px-8 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div
+          ref={bannerRef}
+          className="sticky top-0 z-20 -mx-8 -mt-6 border-b bg-background/95 px-8 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+        >
           <h1 className="text-2xl font-semibold tracking-tight">Entrenamiento</h1>
           <p className="text-sm text-muted-foreground">
-            Lanza un entrenamiento a partir de una inspección completada.
+            Lanza un entrenamiento a partir de una carga de datos completada.
             Puedes encadenar varios entrenamientos; cada uno aparecerá en el
             catálogo de abajo y estará disponible en el paso de{" "}
             <b>Generación</b>.
@@ -223,50 +351,143 @@ export default function EntrenamientoPage() {
               />
             </div>
           )}
+          {!instructionsOpen && (
+            // Yellow "Manual de instrucciones" button on the banner's right
+            // edge — matches the placement and styling used on the
+            // Inspección page so the manual UX feels consistent across the
+            // wizard.
+            <button
+              type="button"
+              onClick={() => setInstructionsOpen(true)}
+              aria-label="Abrir manual de instrucciones"
+              className="absolute right-8 top-1/2 flex -translate-y-1/2 items-center gap-2 rounded-lg bg-[#FFDB00] px-4 py-2.5 text-sm font-bold text-[#00215C] shadow-md transition-colors hover:bg-[#f0cf00]"
+            >
+              <BookOpen className="h-5 w-5" />
+              Manual de instrucciones
+            </button>
+          )}
         </div>
 
-        <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
-          <div id="reglas-preprocesamiento" className="scroll-mt-24">
-            <RulesBanner inspectionId={selectedInspectionId || null} />
-          </div>
-
+        <WorkflowGroup
+          id="preparacion"
+          label="Preparación"
+          open={openSections.preparacion ?? true}
+          onOpenChange={(o) => setSectionOpen("preparacion", o)}
+          className="scroll-mt-24"
+          style={helpGap("preparacion")}
+        >
           <div id="nuevo-entrenamiento" className="scroll-mt-24">
             <Card>
-              <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-end">
-                <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="inspection-select">Nuevo entrenamiento</Label>
-                    <Tooltip content="Selecciona la inspección completada sobre la que quieres entrenar el modelo. El modelo aprenderá los patrones de los datos y las reglas de preprocesamiento que definas." />
+              <CardContent className="flex flex-col gap-3 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                  <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
+                    <Sparkles className="h-5 w-5" />
                   </div>
-                  {inspectionsQuery.isLoading ? (
-                    <Skeleton className="h-9 w-full" />
-                  ) : completedInspections.length === 0 ? (
-                    <p className="text-sm text-destructive">
-                      No hay inspecciones completadas. Vuelve al paso{" "}
-                      <b>Inspección</b>.
-                    </p>
-                  ) : (
-                    <select
-                      id="inspection-select"
-                      value={selectedInspectionId}
-                      onChange={(e) => setSelectedInspectionId(e.target.value)}
-                      className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Label>Nuevo entrenamiento</Label>
+                      <Tooltip content="Elige primero la fuente: datos cargados (las reglas de rules.yaml se aplican en vivo durante el entrenamiento) o una ejecución del histórico de Configuración (BRC) cuyo dataset ya tiene las reglas PRE aplicadas." />
+                    </div>
+                    <div
+                      role="radiogroup"
+                      aria-label="Fuente del entrenamiento"
+                      className="inline-flex rounded-md border bg-background p-0.5 text-xs"
                     >
-                      {completedInspections.map((i) => {
-                        const tableSummary = Object.keys(i.tables ?? {}).join(", ");
+                      {([
+                        { value: "upload", label: "Datos preprocesados" },
+                        { value: "brc", label: "Datos preprocesados + Reglas aplicadas" },
+                      ] as const).map((opt) => {
+                        const active = trainingSource === opt.value;
+                        const disabled =
+                          opt.value === "brc" && completedBrcs.length === 0;
                         return (
-                          <option key={i.inspection_id} value={i.inspection_id}>
-                            {i.inspection_name || i.inspection_id}
-                            {tableSummary ? ` · ${tableSummary}` : ""}
-                          </option>
+                          <button
+                            key={opt.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            disabled={disabled}
+                            onClick={() => updateTrainingSource(opt.value)}
+                            className={cn(
+                              "rounded px-3 py-1.5 font-medium transition-colors disabled:opacity-50",
+                              active
+                                ? "bg-primary text-primary-foreground"
+                                : "text-muted-foreground hover:bg-muted",
+                            )}
+                            title={
+                              disabled
+                                ? "No hay ejecuciones BRC completadas todavía."
+                                : undefined
+                            }
+                          >
+                            {opt.label}
+                          </button>
                         );
                       })}
-                    </select>
-                  )}
+                    </div>
+                    {trainingSource === "upload" ? (
+                      inspectionsQuery.isLoading ? (
+                        <Skeleton className="h-9 w-full" />
+                      ) : completedInspections.length === 0 ? (
+                        <p className="text-sm text-destructive">
+                          No hay cargas de datos completadas. Vuelve al paso{" "}
+                          <b>Carga de Datos</b>.
+                        </p>
+                      ) : (
+                        <select
+                          id="inspection-select"
+                          value={selectedInspectionId}
+                          onChange={(e) => setSelectedInspectionId(e.target.value)}
+                          className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+                        >
+                          {completedInspections.map((i) => {
+                            const tableSummary = Object.keys(i.tables ?? {}).join(", ");
+                            return (
+                              <option key={i.inspection_id} value={i.inspection_id}>
+                                {i.inspection_name || i.inspection_id}
+                                {tableSummary ? ` · ${tableSummary}` : ""}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      )
+                    ) : brcsQuery.isLoading ? (
+                      <Skeleton className="h-9 w-full" />
+                    ) : completedBrcs.length === 0 ? (
+                      <p className="text-sm text-destructive">
+                        No hay ejecuciones BRC completadas. Crea una en{" "}
+                        <b>Configuración</b> o entrena desde datos cargados.
+                      </p>
+                    ) : (
+                      <select
+                        id="brc-select"
+                        value={selectedBrcId}
+                        onChange={(e) => setSelectedBrcId(e.target.value)}
+                        className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+                      >
+                        {completedBrcs.map((b) => {
+                          const uploadLabel =
+                            inspectionNameById[b.inspection_id] || b.inspection_id;
+                          return (
+                            <option key={b.brc_id} value={b.brc_id}>
+                              {b.brc_name || b.brc_id}
+                              {b.rules_count ? ` · ${b.rules_count} regla(s)` : ""}
+                              {` · ${uploadLabel}`}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    )}
+                  </div>
                 </div>
+                {trainingSource === "brc" && (
+                  <div id="reglas-preprocesamiento" className="scroll-mt-24">
+                    <RulesBanner
+                      brcId={selectedBrcId || null}
+                      title="Reglas de negocio"
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -282,11 +503,11 @@ export default function EntrenamientoPage() {
                   <p className="text-sm text-muted-foreground pt-0.5">
                     Configura los parámetros del modelo y haz clic en ejecutar.
                   </p>
-                  <Tooltip content="El entrenamiento creará un modelo de machine learning basado en los datos de la inspección seleccionada. Este modelo aprendera patrones y sera usado para generar datos sintéticos en el siguiente paso." side="left" />
+                  <Tooltip content="El entrenamiento creará un modelo de machine learning basado en los datos de la carga de datos seleccionada. Este modelo aprenderá patrones y será usado para generar datos sintéticos en el siguiente paso." side="left" />
                 </div>
                 <Button
                   type="button"
-                  disabled={!selectedInspectionId || lc.isStarting || lc.isRunning}
+                  disabled={!effectiveInspectionId || lc.isStarting || lc.isRunning}
                   onClick={() => setStartDialogOpen(true)}
                 >
                   <Play className="mr-2 h-4 w-4" />
@@ -301,7 +522,14 @@ export default function EntrenamientoPage() {
           </div>
         </WorkflowGroup>
 
-        <WorkflowGroup id="resultados" label="Resultados" className="scroll-mt-24">
+        <WorkflowGroup
+          id="resultados"
+          label="Resultados"
+          open={openSections.resultados ?? true}
+          onOpenChange={(o) => setSectionOpen("resultados", o)}
+          className="scroll-mt-24"
+          style={helpGap("resultados")}
+        >
           <div id="entrenamiento-actual" className="scroll-mt-24">
             <ActiveJobCard
               id={lc.activeId}
@@ -357,41 +585,17 @@ export default function EntrenamientoPage() {
             />
           </div>
 
-          {lc.active?.status === "completed" && lc.active?.qa_report_filename && lc.activeId && (
-            <div id="informe-calidad" className="scroll-mt-24">
-              <Card>
-                <CardHeader className="flex flex-row items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <CardTitle className="text-base">Informe de calidad del modelo</CardTitle>
-                    <CardDescription>
-                      Reporte generado automáticamente con las métricas de fidelidad y privacidad.
-                    </CardDescription>
-                  </div>
-                  <a
-                    href={`${API_BASE_URL}/models/${lc.activeId}/reports/${lc.active.qa_report_filename}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button variant="outline" size="sm" type="button">
-                      <ExternalLink className="mr-2 h-4 w-4" />
-                      Abrir en pestaña nueva
-                    </Button>
-                  </a>
-                </CardHeader>
-                <CardContent>
-                  <iframe
-                    title="Informe de calidad"
-                    src={`${API_BASE_URL}/models/${lc.activeId}/reports/${lc.active.qa_report_filename}`}
-                    className="h-[70vh] w-full rounded-md border bg-white"
-                    sandbox="allow-scripts allow-same-origin allow-popups"
-                  />
-                </CardContent>
-              </Card>
-            </div>
-          )}
+
         </WorkflowGroup>
 
-        <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
+        <WorkflowGroup
+          id="historial"
+          label="Historial"
+          open={openSections.historial ?? false}
+          onOpenChange={(o) => setSectionOpen("historial", o)}
+          className="scroll-mt-24"
+          style={helpGap("historial")}
+        >
           <div id="modelos-entrenados" className="scroll-mt-24">
             <HistoryCard
               title="Modelos entrenados"
@@ -414,16 +618,7 @@ export default function EntrenamientoPage() {
               onSelect={(id) => lc.setActiveId(id)}
               actionsCell={(m) => (
                 <>
-                  {m.status === "completed" && (
-                    <button
-                      type="button"
-                      aria-label="Ver informe"
-                      onClick={() => openReport(m)}
-                      className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                    >
-                      <FileText className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+
                   {m.status === "completed" && (
                     <DownloadMenu
                       ariaLabel="Descargar modelo"
@@ -473,7 +668,13 @@ export default function EntrenamientoPage() {
         description="Asigna un nombre funcional a este modelo para identificarlo más fácilmente. Puedes dejarlo en blanco y editarlo después."
         confirmLabel="Iniciar entrenamiento"
         onConfirm={(name) => {
-          lc.start({ inspection_id: selectedInspectionId }, name || undefined);
+          lc.start(
+            {
+              inspection_id: effectiveInspectionId,
+              brc_id: effectiveBrcId || undefined,
+            },
+            name || undefined,
+          );
           setStartDialogOpen(false);
         }}
         onCancel={() => setStartDialogOpen(false)}

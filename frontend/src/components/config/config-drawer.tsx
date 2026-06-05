@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import yaml from "js-yaml";
-import { RotateCcw, Save, Settings, X } from "lucide-react";
+import { Plus, RotateCcw, Save, Settings, Trash2, X } from "lucide-react";
 import { api, getSimulationColumns, type ConfigContent, type SimulationColumns } from "@/lib/api";
 import { extractDetail } from "@/lib/errors";
 import {
@@ -147,6 +147,27 @@ function inputToFieldValue(raw: string, field: FieldSchema): unknown {
   return raw;
 }
 
+function normalizeQiSubsets(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([name, columns]) => [
+        name,
+        Array.isArray(columns) ? columns.map(String).filter(Boolean) : [],
+      ])
+      .filter(([name]) => String(name).trim() !== ""),
+  );
+}
+
+function makeUniqueGroupName(base: string, existing: Iterable<string>): string {
+  const used = new Set(existing);
+  const cleanBase = base.trim() || "grupo";
+  if (!used.has(cleanBase)) return cleanBase;
+  let i = 2;
+  while (used.has(`${cleanBase}_${i}`)) i += 1;
+  return `${cleanBase}_${i}`;
+}
+
 function ConfigEditor({ configId, contextId, active, onSaved }: EditorProps) {
   const queryClient = useQueryClient();
   const { schemas } = useConfigSchemas();
@@ -254,6 +275,21 @@ function ConfigEditor({ configId, contextId, active, onSaved }: EditorProps) {
 
   const onResetField = (field: FieldSchema) => {
     const defaultValue = getByPath(exampleObj, field.path);
+    if (field.kind === "checklist" && field.options && field.options.length > 0) {
+      const ownOptions = new Set(field.options.map((o) => o.value));
+      const current = getByPath(exampleObj, field.path);
+      const defaultOwn = Array.isArray(current)
+        ? current.filter((v) => ownOptions.has(String(v)))
+        : [];
+      setDraftObj((prev) => {
+        const existing = getByPath(prev, field.path);
+        const others = Array.isArray(existing)
+          ? existing.filter((v) => !ownOptions.has(String(v)))
+          : [];
+        return setByPath(prev, field.path, [...others, ...defaultOwn]);
+      });
+      return;
+    }
     setDraftObj((prev) => setByPath(prev, field.path, defaultValue));
   };
 
@@ -430,11 +466,14 @@ export function ConfigPanel({
       <CardHeader className="space-y-0">
         <div className="flex flex-row items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Settings className="h-3.5 w-3.5" />
-              <span className="font-mono">{configId}.yaml</span>
-            </div>
-            <CardTitle className="text-base">
+            {!isMostlyAi && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Settings className="h-3.5 w-3.5" />
+                <span className="font-mono">{configId}.yaml</span>
+              </div>
+            )}
+            <CardTitle className="flex items-center gap-2 text-base">
+              {isMostlyAi && <Settings className="h-4 w-4 shrink-0 text-muted-foreground" />}
               {schema?.title ?? `Configuración: ${configId}`}
             </CardTitle>
             {schema?.description && (
@@ -526,8 +565,29 @@ function SchemaForm({
               {groupOn && group.fields.map((field) => {
                 const value = getByPath(draft, field.path);
                 const defaultValue = getByPath(exampleObj, field.path);
-                const isModified =
-                  JSON.stringify(value) !== JSON.stringify(defaultValue);
+                // For checklist fields with a static option list, isModified
+                // must be scoped to the field's own options — otherwise two
+                // checklists sharing a path (e.g. Privacy/Fidelity halves of
+                // metrics.default.custom) both light up whenever either side
+                // changes.
+                const isModified = (() => {
+                  if (
+                    field.kind === "checklist" &&
+                    field.options &&
+                    field.options.length > 0
+                  ) {
+                    const own = new Set(field.options.map((o) => o.value));
+                    const pickOwn = (v: unknown) =>
+                      Array.isArray(v)
+                        ? v.filter((x) => own.has(String(x))).map(String).sort()
+                        : [];
+                    return (
+                      JSON.stringify(pickOwn(value)) !==
+                      JSON.stringify(pickOwn(defaultValue))
+                    );
+                  }
+                  return JSON.stringify(value) !== JSON.stringify(defaultValue);
+                })();
                 return (
                   <div key={field.path} className="grid grid-cols-[1fr_auto] gap-2">
                     <div>
@@ -609,6 +669,19 @@ function FieldControl({
         label: column,
       }))
       : [];
+
+  if (field.path === "metrics.quasi_identifier_subsets") {
+    return (
+      <QiSubsetsBuilder
+        value={value}
+        onChange={(next) => {
+          const keys = Object.keys(next);
+          onChange(keys.length > 0 ? JSON.stringify(next) : "");
+        }}
+        simulationColumns={simulationColumns}
+      />
+    );
+  }
 
   if (field.kind === "boolean") {
     return (
@@ -757,6 +830,181 @@ function FieldControl({
           Separa los elementos con comas.
         </p>
       )}
+    </div>
+  );
+}
+
+function QiSubsetsBuilder({
+  value,
+  onChange,
+  simulationColumns,
+}: {
+  value: unknown;
+  onChange: (next: Record<string, string[]>) => void;
+  simulationColumns?: SimulationColumns;
+}) {
+  const subsets = useMemo(() => normalizeQiSubsets(value), [value]);
+  const entries = Object.entries(subsets);
+  const tableNames = useMemo(
+    () => Object.keys(simulationColumns ?? {}),
+    [simulationColumns],
+  );
+  const [selectedTable, setSelectedTable] = useState("");
+  const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
+  const activeTable =
+    selectedTable && tableNames.includes(selectedTable)
+      ? selectedTable
+      : tableNames[0] ?? "";
+  const availableColumns = activeTable && simulationColumns
+    ? simulationColumns[activeTable] ?? []
+    : [];
+  const currentColumns = useMemo(
+    () => Array.from(new Set(entries.flatMap(([, columns]) => columns))).sort(),
+    [entries],
+  );
+  const columnOptions = availableColumns.length > 0 ? availableColumns : currentColumns;
+
+  const updateGroupColumns = (name: string, columns: string[]) => {
+    onChange({ ...subsets, [name]: columns });
+  };
+
+  const addGroup = () => {
+    const name = makeUniqueGroupName(`grupo_${entries.length + 1}`, Object.keys(subsets));
+    onChange({ ...subsets, [name]: [] });
+  };
+
+  const removeGroup = (name: string) => {
+    const next = { ...subsets };
+    delete next[name];
+    onChange(next);
+  };
+
+  const commitGroupName = (oldName: string) => {
+    const draft = nameDrafts[oldName];
+    const cleanName = makeUniqueGroupName(
+      (draft ?? oldName).trim(),
+      Object.keys(subsets).filter((name) => name !== oldName),
+    );
+    setNameDrafts((prev) => {
+      const next = { ...prev };
+      delete next[oldName];
+      return next;
+    });
+    if (cleanName === oldName) return;
+    const next: Record<string, string[]> = {};
+    for (const [name, columns] of Object.entries(subsets)) {
+      next[name === oldName ? cleanName : name] = columns;
+    }
+    onChange(next);
+  };
+
+  return (
+    <div className="mt-2 space-y-3">
+      <div className="flex flex-col gap-2 sm:flex-row">
+        {tableNames.length > 0 && (
+          <select
+            value={activeTable}
+            onChange={(e) => setSelectedTable(e.target.value)}
+            className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {tableNames.map((table) => (
+              <option key={table} value={table}>
+                {table}
+              </option>
+            ))}
+          </select>
+        )}
+        <Button type="button" size="sm" variant="outline" onClick={addGroup}>
+          <Plus className="h-3.5 w-3.5" />
+          Añadir grupo
+        </Button>
+      </div>
+
+      {entries.length === 0 && (
+        <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+          Sin grupos definidos.
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {entries.map(([name, columns]) => {
+          const remainingColumns = columnOptions.filter(
+            (column) => !columns.includes(column),
+          );
+          return (
+            <div key={name} className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={nameDrafts[name] ?? name}
+                  onChange={(e) =>
+                    setNameDrafts((prev) => ({ ...prev, [name]: e.target.value }))
+                  }
+                  onBlur={() => commitGroupName(name)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitGroupName(name);
+                    }
+                  }}
+                  className="h-8 min-w-0 flex-1"
+                  aria-label="Nombre del grupo"
+                />
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => removeGroup(name)}
+                  aria-label="Eliminar grupo"
+                  title="Eliminar grupo"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {columns.map((column) => (
+                  <button
+                    key={column}
+                    type="button"
+                    onClick={() =>
+                      updateGroupColumns(
+                        name,
+                        columns.filter((value) => value !== column),
+                      )
+                    }
+                    className="inline-flex h-6 max-w-full items-center gap-1 rounded-full border bg-background px-2 text-xs text-foreground hover:bg-muted"
+                    title="Quitar columna"
+                  >
+                    <span className="truncate">{column}</span>
+                    <X className="h-3 w-3 shrink-0" />
+                  </button>
+                ))}
+                {columns.length === 0 && (
+                  <span className="text-xs text-muted-foreground">Sin columnas</span>
+                )}
+              </div>
+
+              <select
+                value=""
+                disabled={remainingColumns.length === 0}
+                onChange={(e) => {
+                  const column = e.target.value;
+                  if (!column) return;
+                  updateGroupColumns(name, [...columns, column]);
+                }}
+                className="mt-3 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+              >
+                <option value="">Añadir columna...</option>
+                {remainingColumns.map((column) => (
+                  <option key={column} value={column}>
+                    {column}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

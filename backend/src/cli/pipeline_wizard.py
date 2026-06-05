@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import yaml
+
 from backend.src.cli._aliases import _BACK_ALIASES, _QUIT_ALIASES
 from backend.src.config.general import CONFIG_DIR
 

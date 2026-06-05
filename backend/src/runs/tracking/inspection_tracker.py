@@ -23,6 +23,7 @@ import os
 from dataclasses import dataclass
 
 import pandas as pd
+
 from backend.src.config.general import (
     INSPECTION_CARD_FILENAME,
     INSPECTION_RUN_FOLDER_PREFIX,
@@ -30,9 +31,9 @@ from backend.src.config.general import (
     PROCESSED_DATA_DIRNAME,
     refresh_run_timestamp,
 )
-from backend.src.runs.card_io import mark_card_failed, write_json
 from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.progress import INSPECTION_PHASES, initial_progress
+from backend.src.runs.card_io import mark_card_failed, write_json
 from backend.src.runs.tracking.base_tracker import BaseRunTracker
 
 logger = get_logger(__name__)

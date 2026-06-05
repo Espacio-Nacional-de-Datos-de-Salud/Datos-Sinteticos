@@ -43,6 +43,7 @@ import numpy as np
 import pandas as pd
 
 from backend.src.domain.evaluation.statistics import Statistic
+from backend.src.infrastructure.date_parsing import parse_dates
 from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -275,8 +276,8 @@ class AgeStatistic(Statistic):
 
         # Convert both columns to datetime
         try:
-            dob = pd.to_datetime(data[self.dob_col])
-            admit_time = pd.to_datetime(data[self.admit_col])
+            dob = parse_dates(data[self.dob_col], col_name=self.dob_col)
+            admit_time = parse_dates(data[self.admit_col], col_name=self.admit_col)
         except Exception as e:
             logger.debug(f"Error converting columns to datetime: {e}")
             return {"value": np.nan, "ci": (np.nan, np.nan)}

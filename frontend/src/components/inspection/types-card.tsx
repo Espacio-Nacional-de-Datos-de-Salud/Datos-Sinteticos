@@ -11,7 +11,13 @@ import {
 import { CollapseToggle } from "@/components/ui/collapse-toggle";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ENCODING_TYPES, ENCODING_TYPE_LABELS, type Autodetect } from "@/lib/api";
+import { Tooltip } from "@/components/ui/tooltip";
+import { AlertTriangle } from "lucide-react";
+import {
+  ENCODING_TYPES,
+  ENCODING_TYPE_LABELS,
+  type Autodetect,
+} from "@/lib/api";
 import { ColumnExclusionHint } from "./column-exclusion-hint";
 import { typeBadgeClass, type AutodetectQuery } from "./utils";
 
@@ -28,6 +34,8 @@ export function TypesCard({
   isSaving,
   onExcludeColumn,
   isExcluding,
+  onToggleTrainingExclusion,
+  isTogglingExclusion,
 }: {
   query: AutodetectQuery;
   draft: Autodetect | null;
@@ -41,6 +49,12 @@ export function TypesCard({
   isSaving: boolean;
   onExcludeColumn: (table: string, col: string) => void;
   isExcluding: boolean;
+  onToggleTrainingExclusion: (
+    table: string,
+    col: string,
+    excluded: boolean,
+  ) => void;
+  isTogglingExclusion: boolean;
 }) {
   const updateType = (table: string, column: string, type: string) => {
     if (!draft) return;
@@ -51,6 +65,13 @@ export function TypesCard({
 
   const [expanded, setExpanded] = useState(false);
 
+  const warningsByColumn = new Map(
+    (draft?.warnings ?? []).map((w) => [`${w.table}::${w.column}`, w]),
+  );
+  const warningCount = draft?.warnings?.length ?? 0;
+  const isExcludedFromTraining = (table: string, col: string) =>
+    (draft?.excluded_columns?.[table] ?? []).includes(col);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
@@ -58,9 +79,17 @@ export function TypesCard({
           <div className="flex flex-wrap items-center gap-2">
             <CardTitle className="text-base">Tipos de Codificación</CardTitle>
             <ColumnExclusionHint compact immediate />
+            {warningCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/70 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                <AlertTriangle className="h-3 w-3" />
+                {warningCount}{" "}
+                {warningCount === 1 ? "columna marcada" : "columnas marcadas"}
+              </span>
+            )}
           </div>
           <CardDescription>
-            Edita el tipo MostlyAI de cada columna. Usa × para excluir una columna.
+            Edita el tipo MostlyAI de cada columna. Usa × para excluir una
+            columna.
           </CardDescription>
         </div>
         <CollapseToggle
@@ -82,40 +111,85 @@ export function TypesCard({
               <div key={table}>
                 <h3 className="mb-2 font-mono text-sm font-medium">{table}</h3>
                 <div className="flex flex-wrap gap-2">
-                  {Object.entries(columns).map(([col, type]) => (
-                    <label
-                      key={col}
-                      className="flex items-center gap-2 rounded-md border bg-card px-2 py-1 text-xs"
-                    >
-                      <span className="font-mono">{col}</span>
-                      <select
-                        value={type}
-                        onChange={(e) => updateType(table, col, e.target.value)}
+                  {Object.entries(columns).map(([col, type]) => {
+                    const warning = warningsByColumn.get(`${table}::${col}`);
+                    const excluded = isExcludedFromTraining(table, col);
+                    return (
+                      <label
+                        key={col}
                         className={
-                          "rounded border px-1.5 py-0.5 text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-ring " +
-                          typeBadgeClass(type)
+                          "flex items-center gap-2 rounded-md border bg-card px-2 py-1 text-xs " +
+                          (warning
+                            ? "border-amber-500/70 bg-amber-50 dark:bg-amber-950/30 "
+                            : "") +
+                          (excluded ? "opacity-60" : "")
                         }
                       >
-                        {ENCODING_TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {ENCODING_TYPE_LABELS[t] ?? t}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        title={`Excluir '${col}' del esquema y los datos preprocesados`}
-                        disabled={isExcluding}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          onExcludeColumn(table, col);
-                        }}
-                        className="ml-auto rounded p-0.5 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                      >
-                        ×
-                      </button>
-                    </label>
-                  ))}
+                        {warning && (
+                          <Tooltip content={warning.message} side="top">
+                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                          </Tooltip>
+                        )}
+                        <span
+                          className={
+                            "font-mono " + (excluded ? "line-through" : "")
+                          }
+                        >
+                          {col}
+                        </span>
+                        <select
+                          value={type}
+                          disabled={excluded}
+                          onChange={(e) =>
+                            updateType(table, col, e.target.value)
+                          }
+                          className={
+                            "rounded border px-1.5 py-0.5 text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 " +
+                            typeBadgeClass(type)
+                          }
+                        >
+                          {ENCODING_TYPES.map((t) => (
+                            <option key={t} value={t}>
+                              {ENCODING_TYPE_LABELS[t] ?? t}
+                            </option>
+                          ))}
+                        </select>
+                        {warning && (
+                          <span
+                            className="flex items-center gap-1 text-[10px] text-muted-foreground"
+                            title="Excluir esta columna del entreno (reversible)"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={excluded}
+                              disabled={isTogglingExclusion}
+                              onChange={(e) =>
+                                onToggleTrainingExclusion(
+                                  table,
+                                  col,
+                                  e.target.checked,
+                                )
+                              }
+                              className="h-3 w-3 accent-amber-600"
+                            />
+                            Excluir
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          title={`Excluir '${col}' del esquema y los datos preprocesados`}
+                          disabled={isExcluding}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            onExcludeColumn(table, col);
+                          }}
+                          className="ml-auto rounded p-0.5 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                        >
+                          ×
+                        </button>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             ))}

@@ -9,6 +9,7 @@ is identical for both metrics and lives here to avoid duplication.
 from itertools import combinations
 
 import pandas as pd
+
 from backend.src.config.evaluation import QUASI_IDENTIFIER_SUBSETS
 from backend.src.infrastructure.logging_config import get_logger
 

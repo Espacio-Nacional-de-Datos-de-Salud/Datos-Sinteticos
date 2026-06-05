@@ -56,6 +56,13 @@ class EvaluationPhase(StrEnum):
     RUNNING = "Ejecutando evaluación"
 
 
+class BRCPhase(StrEnum):
+    LOADING = "Cargando datos de la carga de datos"
+    APPLYING_RULES = "Aplicando reglas de negocio"
+    SAVING_PROCESSED = "Guardando datos preprocesados"
+    PROFILING_REPORTS = "Generando informes de profiling"
+
+
 class ProfilerPhase(StrEnum):
     """Centralized titles for every ``profiler.phase(...)`` block.
 
@@ -141,6 +148,12 @@ INSPECTION_PHASES_NO_PROFILING: list[str] = [
 TRAINING_PHASES: list[str] = list(TrainingPhase)
 SIMULATION_PHASES: list[str] = list(SimulationPhase)
 EVALUATION_PHASES: list[str] = list(EvaluationPhase)
+BRC_PHASES: list[str] = list(BRCPhase)
+BRC_PHASES_NO_PROFILING: list[str] = [
+    BRCPhase.LOADING,
+    BRCPhase.APPLYING_RULES,
+    BRCPhase.SAVING_PROCESSED,
+]
 
 
 def initial_progress(phases: list[str]) -> dict:

@@ -149,7 +149,7 @@ pipeline:
 	$(CORE_PYTHON) -m backend.src.domain.pipeline --config $(CONFIG)
 
 format:
-	cd backend && $(RUFF) format .
+	cd backend && $(RUFF) check --select I --fix . && $(RUFF) format .
 
 lint:
 	cd backend && $(RUFF) check .

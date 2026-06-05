@@ -27,12 +27,28 @@ metrics:
       - detection_mlp
     privacy:
       - k-anonymization
-      # - distinct l-diversity
+      - distinct l-diversity
       # - DomiasMIA_BNAF  # Membership inference attack - VERY HEAVY
 
-  # Subsets of quasi-identifiers for k-anonymity. If null, uses all pairwise combinations.
-  quasi_identifier_subsets: null
-  sensitive_columns: null
+  # Subsets of quasi-identifiers for k-anonymity and l-diversity.
+  # k-anonymity falls back to pairwise combinations if null.
+  # l-diversity is skipped if this is null, because all-pairs l-diversity is
+  # too expensive and not semantically useful without explicit QI choices.
+  quasi_identifier_subsets:
+    demographics:
+      - GENDER
+      - MARITAL_STATUS
+      - ETHNICITY_GROUPED
+    admission_context:
+      - ADMISSION_TYPE
+      - INSURANCE
+    discharge_context:
+      - ADMISSION_TYPE
+      - INSURANCE
+
+  # Sensitive columns used by l-diversity. If null/empty, l-diversity is skipped.
+  sensitive_columns:
+    - EXPIRE_FLAG
 
   confidence_interval_level: 0.95
   num_bootstrap_samples: 1000

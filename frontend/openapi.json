@@ -617,7 +617,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -749,7 +749,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -791,7 +791,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           },
@@ -852,7 +852,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -896,7 +896,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -940,7 +940,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -970,6 +970,65 @@
       }
     },
     "/inspections/{inspection_id}/rules": {
+      "post": {
+        "tags": [
+          "Inspections"
+        ],
+        "summary": "Apply Rules",
+        "description": "Defines logical rules for a completed inspection.\n\nBuilds and stores the rule manager using the inspection metadata and\nthe resolved rules configuration.",
+        "operationId": "apply_rules_inspections__inspection_id__rules_post",
+        "parameters": [
+          {
+            "name": "inspection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
+              "title": "Inspection Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RulesApplyRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RulesApplyResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "Inspections"
@@ -984,7 +1043,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -1028,7 +1087,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -1082,7 +1141,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -1128,6 +1187,60 @@
         }
       }
     },
+    "/inspections/{inspection_id}/autodetect/training-exclusions": {
+      "put": {
+        "tags": [
+          "Inspections"
+        ],
+        "summary": "Put Inspection Training Exclusions",
+        "description": "Set the **non-destructive** training-time exclusion list.\n\nUnlike ``PUT /autodetect/excluded-columns`` (which physically drops columns\nfrom the cached parquet), this only records which columns training should\nskip. The data stays on disk and the column remains in ``encoding_types``,\nso the choice is fully reversible \u2014 this is how the user opts a flagged\ncolumn back in (by removing it from the list).",
+        "operationId": "put_inspection_training_exclusions_inspections__inspection_id__autodetect_training_exclusions_put",
+        "parameters": [
+          {
+            "name": "inspection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
+              "title": "Inspection Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExcludeColumnsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Autodetect"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/inspections/{inspection_id}/autodetect/excluded-columns": {
       "put": {
         "tags": [
@@ -1143,7 +1256,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -1197,7 +1310,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -1251,7 +1364,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -1291,7 +1404,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -1335,7 +1448,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           },
@@ -1384,7 +1497,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -1432,7 +1545,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           },
@@ -1518,7 +1631,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -1558,7 +1671,7 @@
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^inspection_\\d{8}_\\d{6}$",
+              "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$",
               "title": "Inspection Id"
             }
           }
@@ -2818,6 +2931,54 @@
         }
       }
     },
+    "/simulations/{simulation_id}/synthetic-row-counts": {
+      "get": {
+        "tags": [
+          "Simulations"
+        ],
+        "summary": "Get Simulation Synthetic Row Counts",
+        "description": "Returns the actual generated row count per synthetic table.\n\nThese are the *simulated* row counts (read from the synthetic output files),\nnot the training sizes. Tables whose file cannot be read are omitted. Row\ncounts come cheaply from Parquet footers; CSV files are counted line by line.",
+        "operationId": "get_simulation_synthetic_row_counts_simulations__simulation_id__synthetic_row_counts_get",
+        "parameters": [
+          {
+            "name": "simulation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^simulation_\\d{8}_\\d{6}$",
+              "title": "Simulation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Get Simulation Synthetic Row Counts Simulations  Simulation Id  Synthetic Row Counts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/simulations/{simulation_id}/synthetic/{table}": {
       "get": {
         "tags": [
@@ -4023,11 +4184,30 @@
             "type": "object",
             "title": "Encoding Types",
             "default": {}
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnWarning"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "default": []
+          },
+          "excluded_columns": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Excluded Columns",
+            "default": {}
           }
         },
         "type": "object",
         "title": "Autodetect",
-        "description": "Contents of ``inspection_metadata.json`` \u2014 the editable source of truth\nfor an inspection's schema.\n\n``encoding_types`` maps ``table -> column -> type`` where type is one of\nthe MostlyAI labels (``TABULAR_NUMERIC_AUTO``, ``TABULAR_CATEGORICAL``,\n``TABULAR_DATETIME``, ``TABULAR_CHARACTER``, ...)."
+        "description": "Contents of ``inspection_metadata.json`` \u2014 the editable source of truth\nfor an inspection's schema.\n\n``encoding_types`` maps ``table -> column -> type`` where type is one of\nthe MostlyAI labels (``TABULAR_NUMERIC_AUTO``, ``TABULAR_CATEGORICAL``,\n``TABULAR_DATETIME``, ``TABULAR_CHARACTER``, ...).\n\n``warnings`` lists columns the inspection flagged and excluded by default\n(the user can keep them via ``force_include_columns``)."
       },
       "Body_upload_data_files_files_upload_post": {
         "properties": {
@@ -4099,6 +4279,46 @@
         ],
         "title": "CategoricalCondition",
         "description": "Force a column to follow target proportions over categorical values.\n\n``weights`` are relative \u2014 they need not sum to 100; the server normalizes\nthem and allocates rows proportionally."
+      },
+      "ColumnWarning": {
+        "properties": {
+          "table": {
+            "type": "string",
+            "title": "Table"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "default_excluded": {
+            "type": "boolean",
+            "title": "Default Excluded",
+            "default": false
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "table",
+          "column",
+          "kind",
+          "message"
+        ],
+        "title": "ColumnWarning",
+        "description": "A per-column issue surfaced during inspection (e.g. an incompatible\nnumeric/text mix recommended for exclusion).\n\n``default_excluded`` signals the frontend to pre-select the column for\nexclusion in the type-detection view; the user can toggle it back on."
       },
       "ConditionalConfig": {
         "properties": {
@@ -5645,6 +5865,49 @@
         "title": "Relationships",
         "description": "Primary keys (one per table) and foreign-key edges."
       },
+      "RulesApplyRequest": {
+        "properties": {
+          "rules_config_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules Config Path",
+            "description": "Optional override for the rules config path; when null, the server uses the rules snapshot stored in the inspection folder."
+          }
+        },
+        "type": "object",
+        "title": "RulesApplyRequest",
+        "description": "Optional overrides for defining logical rules on an inspection."
+      },
+      "RulesApplyResult": {
+        "properties": {
+          "inspection_id": {
+            "type": "string",
+            "title": "Inspection Id"
+          },
+          "rules_config_path": {
+            "type": "string",
+            "title": "Rules Config Path"
+          },
+          "rules_count": {
+            "type": "integer",
+            "title": "Rules Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "inspection_id",
+          "rules_config_path"
+        ],
+        "title": "RulesApplyResult",
+        "description": "Result of applying the logical rules definition step."
+      },
       "SimulationCreateRequest": {
         "properties": {
           "name": {
@@ -5744,6 +6007,35 @@
         "title": "SimulationJob",
         "description": "Acknowledgement returned by ``POST /simulations`` (HTTP 202).\n\nClients poll ``GET /simulations/{simulation_id}`` to observe progress via\nthe ``status`` field."
       },
+      "SimulationRelationship": {
+        "properties": {
+          "parent": {
+            "type": "string",
+            "title": "Parent"
+          },
+          "child": {
+            "type": "string",
+            "title": "Child"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "is_context": {
+            "type": "boolean",
+            "title": "Is Context",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "parent",
+          "child",
+          "column"
+        ],
+        "title": "SimulationRelationship",
+        "description": "A foreign-key edge between two tables in a simulation's schema.\n\n``parent`` is the referenced table and ``child`` is the table that holds the\nforeign key column. Used by the UI to draw a simplified schema diagram."
+      },
       "SimulationSummary": {
         "properties": {
           "simulation_id": {
@@ -5805,6 +6097,14 @@
             "type": "object",
             "title": "Training Table Sizes",
             "default": {}
+          },
+          "relationships": {
+            "items": {
+              "$ref": "#/components/schemas/SimulationRelationship"
+            },
+            "type": "array",
+            "title": "Relationships",
+            "default": []
           },
           "model_accuracy": {
             "anyOf": [
@@ -5962,7 +6262,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^inspection_\\d{8}_\\d{6}$"
+                "pattern": "^(inspection|upload)_\\d{8}_\\d{6}$"
               },
               {
                 "type": "null"

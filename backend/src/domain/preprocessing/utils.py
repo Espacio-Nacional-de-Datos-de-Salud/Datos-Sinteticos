@@ -1,8 +1,8 @@
 """Preprocessing utilities for data and metadata transformation."""
 
 import pandas as pd
-from backend.src.infrastructure.logging_config import get_logger
 from backend.src.domain.preprocessing.logical_rules import ForeignKeysConsistencyRule
+from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -97,6 +97,18 @@ def assign_default_context_keys(relationships: dict) -> dict:
 
     for child_fks in fks_by_child.values():
         if not child_fks:
+            continue
+
+        if len(child_fks) == 1 and child_fks[0]["parent"] == child_fks[0]["child"]:
+            fk = child_fks[0]
+            fk["is_context"] = False
+            fk["direct"] = False
+            logger.warning(
+                "Skipping self-referencing-only relationship for table %s: %s.%s",
+                fk["child"],
+                fk["parent"],
+                fk["fk_column"],
+            )
             continue
 
         explicit_context_idx = next(

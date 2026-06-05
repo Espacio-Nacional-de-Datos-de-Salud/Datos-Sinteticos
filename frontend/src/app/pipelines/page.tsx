@@ -62,6 +62,7 @@ import {
   listPipelineConfigs,
   listPipelineRuns,
   savePipelineConfig,
+  type Autodetect,
   type ConfigFile,
   type DataFile,
   type InspectionSummary,
@@ -156,6 +157,33 @@ export default function PipelinesPage() {
       return data;
     },
     enabled: isDev,
+  });
+
+  // To give the rules editor the same table/column autocompletion it has on
+  // the BRC page, derive context from the pipeline doc: union of all training
+  // file paths (drive `/files/preview`-based table discovery) and the
+  // autodetect of the first job that resumes from an existing inspection.
+  const rulesPendingFilePaths = useMemo(() => {
+    const all = doc.jobs.flatMap((j) => j.train?.files ?? []);
+    return Array.from(new Set(all));
+  }, [doc]);
+
+  const rulesInspectionId = useMemo(() => {
+    for (const j of doc.jobs) {
+      if (j.train?.inspection_id) return j.train.inspection_id;
+    }
+    return null;
+  }, [doc]);
+
+  const rulesAutodetectQuery = useQuery({
+    queryKey: ["autodetect", rulesInspectionId],
+    enabled: isDev && !!rulesInspectionId && !!editingRulesConfig,
+    queryFn: async () => {
+      const { data } = await api.get<Autodetect>(
+        `/inspections/${rulesInspectionId}/autodetect`,
+      );
+      return data;
+    },
   });
 
   const completedModels = useMemo(
@@ -554,6 +582,8 @@ export default function PipelinesPage() {
       <RulesEditor
         open={!!editingRulesConfig}
         configId={editingRulesConfig || "rules"}
+        autodetect={rulesAutodetectQuery.data ?? null}
+        pendingFilePaths={rulesPendingFilePaths}
         onClose={() => setEditingRulesConfig(null)}
         onSaved={() => queryClient.invalidateQueries({ queryKey: ["configs", "rules"] })}
       />

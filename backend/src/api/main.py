@@ -3,8 +3,12 @@
 import os
 from contextlib import asynccontextmanager
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from backend.src.api.routers import (
     admin,
+    business_rules_configurations,
     configs,
     evaluations,
     files,
@@ -15,8 +19,6 @@ from backend.src.api.routers import (
     simulations,
 )
 from backend.src.sessions.configs import bootstrap_configs, migrate_real_config_headers
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 
 @asynccontextmanager
@@ -48,6 +50,7 @@ app.include_router(health.router)
 app.include_router(files.router)
 app.include_router(configs.router)
 app.include_router(inspections.router)
+app.include_router(business_rules_configurations.router)
 app.include_router(models.router)
 app.include_router(simulations.router)
 app.include_router(evaluations.router)

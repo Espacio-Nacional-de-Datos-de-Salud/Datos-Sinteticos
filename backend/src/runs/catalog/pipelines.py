@@ -15,6 +15,7 @@ from backend.src.config.general import (
     PIPELINES_DIR,
     SIMULATIONS_DIR,
 )
+from backend.src.infrastructure.logging_config import get_logger
 from backend.src.runs.catalog._base import (
     delete_run_folders,
     folder_has_files,
@@ -22,7 +23,6 @@ from backend.src.runs.catalog._base import (
     parse_folder_start_time,
     read_total_run_duration_seconds,
 )
-from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
 

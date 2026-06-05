@@ -15,6 +15,9 @@ Ejemplos:
   # Inspeccionar datos de entrada
   python -m backend.src.cli --mode i --files data/table1.csv data/table2.csv
 
+    # Definir reglas logicas para una inspeccion
+    python -m backend.src.cli --mode r --inspection-id inspection_20240501_120000
+
   # Entrenar desde una inspeccion existente
   python -m backend.src.cli --mode t --inspection-id inspection_20240501_120000
 
@@ -25,8 +28,10 @@ Ejemplos:
     parser.add_argument(
         "-m",
         "--mode",
-        choices=["i", "t", "s"],
-        help="Modo de ejecucion: 'i' (inspeccionar), 't' (entrenar), 's' (simular).",
+        choices=["i", "r", "t", "s"],
+        help=(
+            "Modo de ejecucion: 'i' (inspeccionar), 'r' (reglas), 't' (entrenar), 's' (simular)."
+        ),
     )
     parser.add_argument(
         "-f",

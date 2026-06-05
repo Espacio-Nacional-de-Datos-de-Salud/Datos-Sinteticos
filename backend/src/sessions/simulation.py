@@ -24,6 +24,7 @@ from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
 from backend.src.domain.preprocessing.metadata_extractor import MetadataExtractor
 from backend.src.domain.preprocessing.metadata_formatter import MetadataFormatter
 from backend.src.domain.synthesis import MostlyAIEngine
+from backend.src.infrastructure.date_parsing import restore_date_format
 from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.progress import (
     SIMULATION_PHASES,
@@ -67,6 +68,27 @@ def _build_relationship_maps(metadata: dict) -> tuple[dict[str, str], dict[str, 
         table_fks[table_name] = list(table.get("foreign_keys", []))
 
     return table_pks, table_fks
+
+
+def _restore_original_date_formats(
+    synthetic_results: dict[str, pd.DataFrame],
+    rule_manager: LogicalRuleManager,
+) -> None:
+    """Re-render datetime columns back to the textual layout detected at inspection.
+
+    Mostly AI emits datetime columns as ISO 8601; without this step a column
+    originally formatted as DD/MM/YYYY would silently switch to YYYY-MM-DD in
+    the synthetic output. Mutates ``synthetic_results`` in place.
+    """
+    date_formats = getattr(rule_manager, "date_formats", None) or {}
+    for table_name, cols in date_formats.items():
+        df = synthetic_results.get(table_name)
+        if df is None:
+            continue
+        for col, fmt in cols.items():
+            if fmt is None or col not in df.columns:
+                continue
+            df[col] = restore_date_format(df[col], fmt)
 
 
 def _cascade_delete_tables(
@@ -187,10 +209,13 @@ def _generate_with_rejection_sampling(
         simulation_config = create_simulation_config(metadata, batch_size)
         runtime_config = attach_sample_seeds(simulation_config, conditional, metadata)
         raw_synthetic_results, last_sd_id = engine.simulate(
-            generator, runtime_config, cancel_event=cancel_event,
+            generator,
+            runtime_config,
+            cancel_event=cancel_event,
             progress_copy_dest=progress_copy_dest,
         )
         synthetic_results = rule_manager.apply_all_post(raw_synthetic_results)
+        _restore_original_date_formats(synthetic_results, rule_manager)
 
         for table_name, df in synthetic_results.items():
             table_columns.setdefault(table_name, list(df.columns))
@@ -497,7 +522,9 @@ def run_simulation_flow(
                             "Rejection sampling requested but sample_size is None; falling back to single-pass simulation."
                         )
                     raw_synthetic_results, _ = engine.simulate(
-                        generator, runtime_config, cancel_event=cancel_event,
+                        generator,
+                        runtime_config,
+                        cancel_event=cancel_event,
                         progress_copy_dest=job_progress_dest,
                     )
                     if session:
@@ -506,6 +533,7 @@ def run_simulation_flow(
                         )
                     with profiler.phase("apply rules"):
                         synthetic_results = rule_manager.apply_all_post(raw_synthetic_results)
+                        _restore_original_date_formats(synthetic_results, rule_manager)
                     if rejection_rules:
                         rejection_indices = rule_manager.collect_rejection_failures(
                             synthetic_results, rejection_rules

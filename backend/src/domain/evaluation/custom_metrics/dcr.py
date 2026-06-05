@@ -7,10 +7,11 @@ to ``dcr.real`` suggests the synthetic data may be memorising real records.
 
 import numpy as np
 import pandas as pd
-from backend.src.infrastructure.logging_config import get_logger
-from backend.src.domain.evaluation.custom_metrics.base import MetricEvaluator
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
+
+from backend.src.domain.evaluation.custom_metrics.base import MetricEvaluator
+from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
 

@@ -72,13 +72,21 @@ PIPELINE_CARD_FILENAME = "pipeline_card.json"
 NO_PIPELINE_ID = "none"
 
 INSPECTIONS_FOLDER_PREFIX = "inspections"
-INSPECTION_RUN_FOLDER_PREFIX = "inspection"
+INSPECTION_RUN_FOLDER_PREFIX = "upload"
 INSPECTIONS_DIR = os.path.join(OUTPUTS_ROOT, INSPECTIONS_FOLDER_PREFIX)
 INSPECTION_CARD_FILENAME = "inspection_card.json"
 INSPECTION_METADATA_FILENAME = "inspection_metadata.json"
 AUTODETECTED_INSPECTION_METADATA_FILENAME = "autodetected_inspection_metadata.json"
 PROCESSED_DATA_DIRNAME = "processed_data"
 PROFILING_REPORTS_DIRNAME = "profiling_reports"
+
+# Business-rules configurations: each run materialises an inspection's
+# preprocessed data after applying the rules' PRE phase, so the user can
+# preview / profile the dataset the model will see before training.
+BRC_FOLDER_PREFIX = "brc"
+BRC_RUN_FOLDER_PREFIX = "brc"
+BRC_DIR = os.path.join(OUTPUTS_ROOT, BRC_FOLDER_PREFIX)
+BRC_CARD_FILENAME = "brc_card.json"
 
 MOSTLY_LOCAL_PORT = 8082
 

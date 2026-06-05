@@ -1,6 +1,7 @@
 "use client";
 
-import { Trash2, XCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Trash2, XCircle, BarChart3 } from "lucide-react";
 import { DownloadMenu } from "@/components/pipeline-step/download-menu";
 import { EditableName } from "@/components/jobs/editable-name";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { InspectionSummary } from "@/lib/api";
+import { API_BASE_URL, type InspectionSummary } from "@/lib/api";
 import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
 import { cn, formatDuration, formatJobDate } from "@/lib/utils";
 
@@ -64,10 +65,10 @@ export function HistoryCard({
     <Card>
       <CardHeader className="flex flex-row items-start justify-between space-y-0">
         <div>
-          <CardTitle className="text-base">Inspecciones previas</CardTitle>
+          <CardTitle className="text-base">Cargas de Datos previas</CardTitle>
           <CardDescription>
-            Catálogo completo de inspecciones del servidor. Haz click para cargar
-            una inspección pasada y ver su esquema y profiling.
+            Catálogo completo de cargas de datos del servidor. Haz click para cargar
+            una carga de datos pasada y ver su esquema y profiling.
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
@@ -97,12 +98,12 @@ export function HistoryCard({
           {isLoading && <Skeleton className="h-24 w-full" />}
           {isError && (
             <p className="text-sm text-destructive">
-              No se pudo cargar el catálogo de inspecciones.
+              No se pudo cargar el catálogo de cargas de datos.
             </p>
           )}
           {!isLoading && !isError && inspections.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              Todavía no hay inspecciones.
+              Todavía no hay cargas de datos.
             </p>
           )}
           {inspections.length > 0 && (
@@ -188,24 +189,30 @@ export function HistoryCard({
                       >
                         <div className="flex items-center justify-end gap-1">
                           {i.status === "completed" && (
-                            <DownloadMenu
-                              ariaLabel="Descargar inspección"
-                              options={[
-                                {
-                                  label: "Dataset preprocesado",
-                                  href: `/inspections/${i.inspection_id}/download/preprocessed`,
-                                },
-                                {
-                                  label: "Carpeta completa",
-                                  href: `/inspections/${i.inspection_id}/download`,
-                                },
-                              ]}
-                            />
+                            <>
+                              <ProfilingMenu
+                                inspectionId={i.inspection_id}
+                                tableNames={tableNames}
+                              />
+                              <DownloadMenu
+                                ariaLabel="Descargar carga de datos"
+                                options={[
+                                  {
+                                    label: "Dataset preprocesado",
+                                    href: `/inspections/${i.inspection_id}/download/preprocessed`,
+                                  },
+                                  {
+                                    label: "Carpeta completa",
+                                    href: `/inspections/${i.inspection_id}/download`,
+                                  },
+                                ]}
+                              />
+                            </>
                           )}
                           {i.status === "in_progress" ? (
                             <button
                               type="button"
-                              aria-label="Cancelar inspección"
+                              aria-label="Cancelar carga de datos"
                               disabled={isCancelling}
                               onClick={() => onCancel(i.inspection_id)}
                               className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
@@ -215,7 +222,7 @@ export function HistoryCard({
                           ) : (
                             <button
                               type="button"
-                              aria-label="Eliminar inspección"
+                              aria-label="Eliminar carga de datos"
                               disabled={isDeleting}
                               onClick={() => onDelete(i.inspection_id)}
                               className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
@@ -233,5 +240,89 @@ export function HistoryCard({
           )}
         </CardContent>
     </Card>
+  );
+}
+
+// Inline component to select which profiling report to open if there are
+// multiple tables, or directly open the ydata-profiling HTML in a new tab if
+// there's only one.
+export function ProfilingMenu({
+  inspectionId,
+  tableNames,
+}: {
+  inspectionId: string;
+  tableNames: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (tableNames.length === 0) return null;
+
+  if (tableNames.length === 1) {
+    const url = `${API_BASE_URL}/inspections/${inspectionId}/profiling/${encodeURIComponent(tableNames[0])}`;
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Ver informe de profiling"
+        aria-label="Ver profiling"
+        className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+      >
+        <BarChart3 className="h-3.5 w-3.5" />
+      </a>
+    );
+  }
+
+  return (
+    <div ref={rootRef} className="relative inline-block text-left">
+      <button
+        type="button"
+        aria-label="Seleccionar informe de profiling"
+        title="Ver informe de profiling (seleccionar tabla)"
+        onClick={() => setOpen((v) => !v)}
+        className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+      >
+        <BarChart3 className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-50 mt-1 min-w-[12rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md">
+          <div className="border-b px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase text-center">
+            Seleccionar Tabla
+          </div>
+          {tableNames.map((table) => {
+            const url = `${API_BASE_URL}/inspections/${inspectionId}/profiling/${encodeURIComponent(table)}`;
+            return (
+              <a
+                key={table}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setOpen(false)}
+                className="block px-3 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+              >
+                {table}
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

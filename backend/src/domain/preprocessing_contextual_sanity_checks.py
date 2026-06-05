@@ -1,6 +1,7 @@
 """Module with helper functions for contextual sanity checks."""
 
 import pandas as pd
+
 from backend.src.domain.preprocessing.logical_rules import (
     ForeignKeysConsistencyRule,
     LogicalRuleManager,

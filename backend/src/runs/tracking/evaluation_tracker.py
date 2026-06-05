@@ -10,8 +10,9 @@ import json
 import os
 from pathlib import Path
 
-import backend.src.config.general as general_config
 import pandas as pd
+
+import backend.src.config.general as general_config
 from backend.src.config.general import (
     EVAL_CARD_FILENAME,
     EVALUATION_RUN_FOLDER_PREFIX,

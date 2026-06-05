@@ -9,7 +9,7 @@
 //      artifact, fall back to the most recent completed one.
 //   3. Otherwise keep the user's explicit choice.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useUpstreamSelection<T>(
   items: T[],
@@ -20,7 +20,7 @@ export function useUpstreamSelection<T>(
   setSelectedId: (id: string) => void;
   hydrated: boolean;
 } {
-  const [selectedId, setSelectedId] = useState<string>("");
+  const [selectedId, setSelectedIdState] = useState<string>("");
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -28,21 +28,39 @@ export function useUpstreamSelection<T>(
     // "" so React doesn't bail out of hydration; we replay from localStorage
     // on the client right after.
     const stored = window.localStorage.getItem(storageKey);
-    if (stored) setSelectedId(stored); // eslint-disable-line react-hooks/set-state-in-effect
+    if (stored) setSelectedIdState(stored); // eslint-disable-line react-hooks/set-state-in-effect
     setHydrated(true);
   }, [storageKey]);
 
-  // Default to the first completed item once items load, unless the user's
-  // existing selection is still valid. Rerunning when items change is
-  // intentional — a hidden completed → not-completed transition (e.g. delete)
-  // should also bump the selection forward.
+  // Persisting wrapper: callers (and the default-pick effect below) write
+  // through to localStorage so a newly selected upstream artefact survives
+  // a reload. Without this, the stored value drifts from the in-memory
+  // selection and `useUpstreamSelection` snaps back to the old id on mount.
+  const setSelectedId = useCallback(
+    (id: string) => {
+      if (id) window.localStorage.setItem(storageKey, id);
+      else window.localStorage.removeItem(storageKey);
+      setSelectedIdState(id);
+    },
+    [storageKey],
+  );
+
+  // Default-pick: fall back to the first item only ONCE — on initial load,
+  // when nothing valid was hydrated from localStorage. Re-running on every
+  // items change would race against optimistic selections: a caller that
+  // `setSelectedId(newId)` then invalidates the list query would see the
+  // selection snap back to items[0] in the brief window before the new id
+  // appears in the refetched list.
+  const settledOnce = useRef(false);
   useEffect(() => {
-    if (!hydrated || items.length === 0) return;
+    if (settledOnce.current || !hydrated || items.length === 0) return;
     if (selectedId && items.some((item) => item[idField] === selectedId)) {
+      settledOnce.current = true;
       return;
     }
     setSelectedId(String(items[0][idField])); // eslint-disable-line react-hooks/set-state-in-effect
-  }, [hydrated, items, idField, selectedId]);
+    settledOnce.current = true;
+  }, [hydrated, items, idField, selectedId, setSelectedId]);
 
   return { selectedId, setSelectedId, hydrated };
 }

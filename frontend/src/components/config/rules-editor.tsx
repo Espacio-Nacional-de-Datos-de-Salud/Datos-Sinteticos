@@ -37,6 +37,13 @@ import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
+
+// "derived" = column-creation rules (date_to_age, numeric_threshold,
+// numeric_bucket). "logical" = relationship / business rules (date/numeric
+// inequality, semantic consistency, FK consistency). "all" keeps the legacy
+// behavior — every rule type is visible/addable in the same panel.
+export type RuleMode = "all" | "derived" | "logical";
 
 type DrawerProps = {
   open: boolean;
@@ -51,6 +58,7 @@ type DrawerProps = {
   configId?: string;
   // Callback when rules are successfully saved
   onSaved?: () => void;
+  mode?: RuleMode;
 };
 
 type BodyProps = {
@@ -59,6 +67,7 @@ type BodyProps = {
   pendingFilePaths?: string[];
   configId: string;
   onSaved?: () => void;
+  mode?: RuleMode;
 };
 
 type PanelProps = {
@@ -67,6 +76,9 @@ type PanelProps = {
   configId?: string;
   className?: string;
   defaultOpen?: boolean;
+  mode?: RuleMode;
+  title?: string;
+  description?: string;
 };
 
 export type RuleType =
@@ -98,6 +110,8 @@ type Rule = {
   // date_to_age
   reference_date?: string;
   reference_date_col?: string;
+  reference_date_table?: string;
+  unit?: "years" | "months" | "days";
   // numeric_threshold
   threshold?: number | null;
   operator?: ">=" | ">" | "<=" | "<";
@@ -108,17 +122,21 @@ type Rule = {
   labels?: string[];
   include_lowest?: boolean;
   right?: boolean;
+  // Per-rule generation mode. When true the rule is enforced via rejection
+  // sampling (re-draw rows that violate it) rather than the default "forced"
+  // application during preprocessing/post-processing.
+  rejection_sampling?: boolean;
 };
 
 type RulesFile = { rules: Rule[] };
 
 const RULE_TYPE_LABELS: Record<RuleType, string> = {
-  date_inequality: "Desigualdad de fechas",
-  numeric_inequality: "Desigualdad numérica",
+  date_inequality: "Relación entre fechas",
+  numeric_inequality: "Relación entre números",
   semantic_ranking_consistency: "Consistencia semántica (ranking)",
   semantic_proportional_consistency: "Consistencia semántica (proporcional)",
   foreign_keys_consistency_rule: "Consistencia de claves foráneas",
-  date_to_age: "Columna derivada: edad a partir de fecha",
+  date_to_age: "Derivar edad o lapso desde fecha",
   numeric_threshold: "Columna derivada: umbral numérico",
   numeric_bucket: "Columna estratificada: buckets numéricos",
 };
@@ -135,7 +153,7 @@ const RULE_TYPE_HELP: Record<RuleType, string> = {
   foreign_keys_consistency_rule:
     "Reconstruye una FK redundante copiando el valor desde la tabla padre marcada como contexto.",
   date_to_age:
-    "Crea una columna de edad (en años) a partir de una columna de fecha y una fecha de referencia (constante u otra columna).",
+    "Crea una columna derivada con el lapso (en años, meses o días) entre una columna de fecha y una referencia (constante u otra columna). Usa «días» para duraciones cortas como estancias o episodios.",
   numeric_threshold:
     "Crea una columna booleana comparando una columna numérica con un umbral (≥, >, ≤, <).",
   numeric_bucket:
@@ -147,6 +165,26 @@ const DERIVED_RULE_TYPES: RuleType[] = [
   "numeric_threshold",
   "numeric_bucket",
 ];
+
+const LOGICAL_RULE_TYPES: RuleType[] = [
+  "date_inequality",
+  "numeric_inequality",
+  "semantic_ranking_consistency",
+  "semantic_proportional_consistency",
+  "foreign_keys_consistency_rule",
+];
+
+function ruleTypesForMode(mode: RuleMode): RuleType[] {
+  if (mode === "derived") return DERIVED_RULE_TYPES;
+  if (mode === "logical") return LOGICAL_RULE_TYPES;
+  return Object.keys(RULE_TYPE_LABELS) as RuleType[];
+}
+
+function ruleMatchesMode(rule: Rule, mode: RuleMode): boolean {
+  if (mode === "all") return true;
+  if (mode === "derived") return DERIVED_RULE_TYPES.includes(rule.type);
+  return LOGICAL_RULE_TYPES.includes(rule.type);
+}
 
 // Whitelist of fields per rule type — must match the backend dataclass
 // constructors in `backend/src/domain/preprocessing/logical_rules.py`. Any
@@ -162,6 +200,7 @@ const RULE_TYPE_FIELDS: Record<RuleType, (keyof Rule)[]> = {
     "constraint",
     "constraint_operator",
     "enforce_non_negative",
+    "rejection_sampling",
   ],
   numeric_inequality: [
     "table_origin",
@@ -171,18 +210,21 @@ const RULE_TYPE_FIELDS: Record<RuleType, (keyof Rule)[]> = {
     "aux_col",
     "constraint",
     "constraint_operator",
+    "rejection_sampling",
   ],
   semantic_ranking_consistency: [
     "table_origin",
     "origin_col",
     "table_target",
     "target_col",
+    "rejection_sampling",
   ],
   semantic_proportional_consistency: [
     "table_origin",
     "origin_col",
     "table_target",
     "target_col",
+    "rejection_sampling",
   ],
   foreign_keys_consistency_rule: [
     "table_origin",
@@ -190,6 +232,7 @@ const RULE_TYPE_FIELDS: Record<RuleType, (keyof Rule)[]> = {
     "target_col",
     "source_col",
     "referenced_table",
+    "rejection_sampling",
   ],
   date_to_age: [
     "table_origin",
@@ -198,6 +241,9 @@ const RULE_TYPE_FIELDS: Record<RuleType, (keyof Rule)[]> = {
     "aux_col",
     "reference_date",
     "reference_date_col",
+    "reference_date_table",
+    "unit",
+    "enforce_non_negative",
     "drop_origin",
     "reconstruct_origin",
   ],
@@ -267,9 +313,15 @@ function RulesEditorBody({
   pendingFilePaths,
   configId,
   onSaved,
+  mode = "all",
 }: BodyProps) {
   const queryClient = useQueryClient();
+  // Visible rules (those matching the panel's mode) — these are the ones the
+  // user edits. Hidden rules (not matching the mode) are preserved verbatim
+  // and merged back in on save so a derived-mode panel never clobbers logical
+  // rules in the same file (and vice versa).
   const [rules, setRules] = useState<Rule[]>([]);
+  const [hiddenRules, setHiddenRules] = useState<Rule[]>([]);
   const [draftYaml, setDraftYaml] = useState<string>("");
   const [yamlMode, setYamlMode] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -313,8 +365,10 @@ function RulesEditorBody({
       const parsed = (yaml.load(configQuery.data.content) as RulesFile) ?? {
         rules: [],
       };
+      const all = parsed.rules ?? [];
       queueMicrotask(() => {
-        setRules(parsed.rules ?? []);
+        setRules(all.filter((r) => ruleMatchesMode(r, mode)));
+        setHiddenRules(all.filter((r) => !ruleMatchesMode(r, mode)));
         setDraftYaml(configQuery.data.content);
         setParseError(null);
       });
@@ -323,7 +377,7 @@ function RulesEditorBody({
         setParseError(e instanceof Error ? e.message : String(e));
       });
     }
-  }, [active, configQuery.data]);
+  }, [active, configQuery.data, mode]);
 
   // Merge autodetect (inspected) and file previews (uploaded but pending).
   // Autodetect wins on column ordering for tables present in both, since
@@ -370,7 +424,7 @@ function RulesEditorBody({
   const buildYaml = (rs: Rule[]): string =>
     yaml.dump(
       {
-        rules: rs.map((r) => {
+        rules: [...hiddenRules, ...rs].map((r) => {
           // Only emit fields relevant to this rule type. The backend rule
           // dataclasses reject unknown kwargs (TypeError), and
           // `rules_config.extract_rules_and_rejection_config` then skips the
@@ -396,7 +450,9 @@ function RulesEditorBody({
   const switchToForm = () => {
     try {
       const parsed = (yaml.load(draftYaml) as RulesFile) ?? { rules: [] };
-      setRules(parsed.rules ?? []);
+      const all = parsed.rules ?? [];
+      setRules(all.filter((r) => ruleMatchesMode(r, mode)));
+      setHiddenRules(all.filter((r) => !ruleMatchesMode(r, mode)));
       setYamlMode(false);
       setParseError(null);
     } catch (e) {
@@ -446,87 +502,89 @@ function RulesEditorBody({
   return (
     <>
       <div className="flex items-center justify-between border-b px-4 py-2 text-xs">
-          <button
-            type="button"
-            onClick={yamlMode ? switchToForm : switchToYaml}
-            className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            {yamlMode ? "Volver al editor visual" : "Editar como YAML"}
-          </button>
-          {tableNames.length === 0 && !yamlMode && (
-            <span className="text-muted-foreground">
-              Ejecuta una inspección para autocompletar tablas y columnas.
-            </span>
-          )}
-          {parseError && (
-            <span className="text-destructive">YAML inválido: {parseError}</span>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={yamlMode ? switchToForm : switchToYaml}
+          className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          {yamlMode ? "Volver al editor visual" : "Editar como YAML"}
+        </button>
+        {tableNames.length === 0 && !yamlMode && (
+          <span className="text-muted-foreground">
+            Ejecuta una inspección para autocompletar tablas y columnas.
+          </span>
+        )}
+        {parseError && (
+          <span className="text-destructive">YAML inválido: {parseError}</span>
+        )}
+      </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
-          {configQuery.isLoading && <Skeleton className="h-64 w-full" />}
-          {configQuery.isError && (
-            <p className="text-sm text-destructive">
-              No se pudo cargar rules.yaml: {extractDetail(configQuery.error)}
-            </p>
-          )}
-          {configQuery.data && yamlMode && (
-            <textarea
-              value={draftYaml}
-              onChange={(e) => setDraftYaml(e.target.value)}
-              spellCheck={false}
-              className="h-[60vh] w-full rounded-md border bg-muted/30 p-3 font-mono text-xs"
-            />
-          )}
-          {configQuery.data && !yamlMode && (
-            <div className="space-y-3">
-              {rules.length === 0 && !adding && (
-                <p className="text-sm text-muted-foreground">
-                  No hay reglas definidas todavía.
-                </p>
-              )}
-              {rules.map((r, idx) =>
-                editingIndex === idx ? (
-                  <RuleForm
-                    key={idx}
-                    initial={r}
-                    tableNames={tableNamesWithDerived}
-                    columnsByTable={columnsByTableWithDerived}
-                    onCancel={() => setEditingIndex(null)}
-                    onSubmit={(rule) => onUpdateRule(idx, rule)}
-                  />
-                ) : (
-                  <RuleCard
-                    key={idx}
-                    rule={r}
-                    onEdit={() => setEditingIndex(idx)}
-                    onDelete={() => onDeleteRule(idx)}
-                  />
-                ),
-              )}
-              {adding && (
+      <div className="flex-1 overflow-y-auto p-4">
+        {configQuery.isLoading && <Skeleton className="h-64 w-full" />}
+        {configQuery.isError && (
+          <p className="text-sm text-destructive">
+            No se pudo cargar rules.yaml: {extractDetail(configQuery.error)}
+          </p>
+        )}
+        {configQuery.data && yamlMode && (
+          <textarea
+            value={draftYaml}
+            onChange={(e) => setDraftYaml(e.target.value)}
+            spellCheck={false}
+            className="h-[60vh] w-full rounded-md border bg-muted/30 p-3 font-mono text-xs"
+          />
+        )}
+        {configQuery.data && !yamlMode && (
+          <div className="space-y-3">
+            {rules.length === 0 && !adding && (
+              <p className="text-sm text-muted-foreground">
+                No hay reglas definidas todavía.
+              </p>
+            )}
+            {rules.map((r, idx) =>
+              editingIndex === idx ? (
                 <RuleForm
+                  key={idx}
+                  initial={r}
                   tableNames={tableNamesWithDerived}
                   columnsByTable={columnsByTableWithDerived}
-                  onCancel={() => setAdding(false)}
-                  onSubmit={onAddRule}
+                  mode={mode}
+                  onCancel={() => setEditingIndex(null)}
+                  onSubmit={(rule) => onUpdateRule(idx, rule)}
                 />
-              )}
-              {!adding && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAdding(true)}
-                  disabled={editingIndex !== null}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Añadir regla
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
+              ) : (
+                <RuleCard
+                  key={idx}
+                  rule={r}
+                  onEdit={() => setEditingIndex(idx)}
+                  onDelete={() => onDeleteRule(idx)}
+                />
+              ),
+            )}
+            {adding && (
+              <RuleForm
+                tableNames={tableNamesWithDerived}
+                columnsByTable={columnsByTableWithDerived}
+                mode={mode}
+                onCancel={() => setAdding(false)}
+                onSubmit={onAddRule}
+              />
+            )}
+            {!adding && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAdding(true)}
+                disabled={editingIndex !== null}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Añadir regla
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
 
       <footer className="flex items-center justify-between gap-2 border-t p-4">
         <Button
@@ -572,6 +630,7 @@ export function RulesEditor({
   pendingFilePaths,
   configId = "rules",
   onSaved,
+  mode = "all",
 }: DrawerProps) {
   if (!open) return null;
   return (
@@ -615,6 +674,7 @@ export function RulesEditor({
           autodetect={autodetect}
           pendingFilePaths={pendingFilePaths}
           configId={configId}
+          mode={mode}
           onSaved={() => {
             onSaved?.();
             onClose();
@@ -631,8 +691,25 @@ export function RulesPanel({
   configId = "rules",
   className,
   defaultOpen = false,
+  mode = "all",
+  title,
+  description,
 }: PanelProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const resolvedTitle =
+    title ??
+    (mode === "derived"
+      ? "Crear columnas derivadas"
+      : mode === "logical"
+        ? "Reglas lógicas / de negocio"
+        : "Reglas de preprocesamiento");
+  const resolvedDescription =
+    description ??
+    (mode === "derived"
+      ? "Define columnas nuevas a partir de columnas existentes (edad a partir de fecha, umbral booleano, estratificación por buckets)."
+      : mode === "logical"
+        ? "Define restricciones entre columnas o entre una columna y un valor (orden de fechas, consistencia semántica, claves foráneas). Para cada regla, elige si se aplica forzada o por muestreo por rechazo."
+        : "Definen restricciones que el modelo debe respetar (orden de fechas, consistencia entre categóricas, etc.). Se aplican durante la inspección y la generación.");
   return (
     <Card className={className}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
@@ -643,14 +720,8 @@ export function RulesPanel({
               {configId.split("/").pop() || "rules.yaml"}
             </span>
           </div>
-          <CardTitle className="text-base">
-            Reglas de preprocesamiento
-          </CardTitle>
-          <CardDescription>
-            Definen restricciones que el modelo debe respetar (orden de
-            fechas, consistencia entre categóricas, etc.). Se aplican durante
-            la inspección y la generación.
-          </CardDescription>
+          <CardTitle className="text-base">{resolvedTitle}</CardTitle>
+          <CardDescription>{resolvedDescription}</CardDescription>
         </div>
         <CollapseToggle
           open={open}
@@ -665,6 +736,7 @@ export function RulesPanel({
             autodetect={autodetect}
             pendingFilePaths={pendingFilePaths}
             configId={configId}
+            mode={mode}
           />
         </CardContent>
       )}
@@ -681,21 +753,43 @@ function RuleCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const isDerived = DERIVED_RULE_TYPES.includes(rule.type);
   return (
-    <div className="rounded-md border bg-card p-3">
+    <div className={"rounded-md border p-3 " + (isDerived ? "bg-blue-50/40 dark:bg-blue-950/20" : "bg-card")}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-[10px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="secondary"
+              className={
+                "text-[10px] " +
+                (isDerived
+                  ? "border-blue-400/50 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+                  : "")
+              }
+            >
               {RULE_TYPE_LABELS[rule.type] ?? rule.type}
             </Badge>
+            {LOGICAL_RULE_TYPES.includes(rule.type) && (
+              <Badge
+                variant="outline"
+                className={
+                  "text-[10px] " +
+                  (rule.rejection_sampling
+                    ? "border-amber-500/70 text-amber-700 dark:text-amber-400"
+                    : "")
+                }
+              >
+                {rule.rejection_sampling ? "Muestreo por rechazo" : "Forzado"}
+              </Badge>
+            )}
+            {isDerived && rule.aux_col && (
+              <span className="text-[11px] text-blue-700 dark:text-blue-400">
+                nueva col.: <span className="font-mono">{rule.aux_col}</span>
+              </span>
+            )}
           </div>
-          <p className="mt-1 truncate font-mono text-xs">{summarizeRule(rule)}</p>
-          {rule.aux_col && (
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              col. auxiliar: <span className="font-mono">{rule.aux_col}</span>
-            </p>
-          )}
+          <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{summarizeRule(rule)}</p>
         </div>
         <div className="flex shrink-0 gap-1">
           <button
@@ -724,20 +818,23 @@ function RuleForm({
   initial,
   tableNames,
   columnsByTable,
+  mode = "all",
   onCancel,
   onSubmit,
 }: {
   initial?: Rule;
   tableNames: string[];
   columnsByTable: Record<string, string[]>;
+  mode?: RuleMode;
   onCancel: () => void;
   onSubmit: (rule: Rule) => void;
 }) {
+  const allowedTypes = useMemo(() => ruleTypesForMode(mode), [mode]);
   const [draft, setDraft] = useState<Rule>(
-    initial ?? {
-      type: "date_inequality",
-      constraint_operator: ">=",
-    },
+    initial ??
+    (mode === "derived"
+      ? { type: "numeric_bucket" }
+      : { type: "date_inequality", constraint_operator: ">=" }),
   );
 
   const update = (patch: Partial<Rule>) =>
@@ -760,9 +857,17 @@ function RuleForm({
       (draft.threshold !== undefined && draft.threshold !== null)) &&
     (draft.type !== "numeric_bucket" || (draft.bins?.length ?? 0) >= 2);
 
+  const hasConstraint =
+    draft.constraint !== undefined &&
+    draft.constraint !== null &&
+    String(draft.constraint).trim() !== "";
   const valid = showDerived
     ? derivedValid
-    : !!draft.table_target &&
+    : showInequality
+      ? !!draft.table_target &&
+      !!draft.target_col &&
+      ((!!draft.table_origin && !!draft.origin_col) || hasConstraint)
+      : !!draft.table_target &&
       !!draft.target_col &&
       (showFK
         ? !!draft.table_origin
@@ -782,7 +887,7 @@ function RuleForm({
           }
           className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
         >
-          {(Object.keys(RULE_TYPE_LABELS) as RuleType[]).map((t) => (
+          {allowedTypes.map((t) => (
             <option key={t} value={t}>
               {RULE_TYPE_LABELS[t]}
             </option>
@@ -885,11 +990,16 @@ function RuleForm({
           </div>
 
           {draft.type === "date_inequality" && (
-            <div className="col-span-3">
+            <div
+              className={
+                "col-span-3 " + (draft.rejection_sampling ? "opacity-50" : "")
+              }
+            >
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   className="h-4 w-4"
+                  disabled={!!draft.rejection_sampling}
                   checked={draft.enforce_non_negative !== false}
                   onChange={(e) =>
                     update({ enforce_non_negative: e.target.checked })
@@ -898,8 +1008,9 @@ function RuleForm({
                 <span>Forzar duraciones no negativas</span>
               </label>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                Limita las duraciones a valores ≥ 0. Desactiva para permitir
-                duraciones negativas (p. ej., edades futuras).
+                {draft.rejection_sampling
+                  ? "No aplica en muestreo por rechazo: no se reconstruye nada, las filas se resimulan."
+                  : "Limita las duraciones a valores ≥ 0. Desactiva para permitir duraciones negativas (p. ej., edades futuras)."}
               </p>
             </div>
           )}
@@ -959,6 +1070,56 @@ function RuleForm({
         </div>
       )}
 
+      {LOGICAL_RULE_TYPES.includes(draft.type) && (
+        <div className="rounded-md border bg-background p-2 text-xs">
+          <Label className="text-xs">Modo de aplicación</Label>
+          <div className="mt-1 flex flex-col gap-1">
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                name="rejection-mode"
+                className="mt-0.5"
+                checked={!draft.rejection_sampling}
+                onChange={() => update({ rejection_sampling: false })}
+              />
+              <span className="flex flex-1 items-start gap-1.5">
+                <span>
+                  <span className="font-medium">Forzado</span>
+                  <span className="ml-1 text-muted-foreground">
+                    — aplicar la regla durante el preprocesado/postprocesado.
+                  </span>
+                </span>
+                <Tooltip
+                  side="right"
+                  content="Eficiente computacionalmente: la regla se aplica de forma determinista. Riesgo: si los datos reales no cumplen la regla, al forzarla se distorsionan las distribuciones para que se cumpla por construcción — los datos sintéticos dejan de reflejar la realidad."
+                />
+              </span>
+            </label>
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                name="rejection-mode"
+                className="mt-0.5"
+                checked={!!draft.rejection_sampling}
+                onChange={() => update({ rejection_sampling: true })}
+              />
+              <span className="flex flex-1 items-start gap-1.5">
+                <span>
+                  <span className="font-medium">Muestreo por rechazo</span>
+                  <span className="ml-1 text-muted-foreground">
+                    — descartar filas que la incumplan y volver a muestrear.
+                  </span>
+                </span>
+                <Tooltip
+                  side="right"
+                  content="Más seguro: no fuerza la regla, sino que resimula la fila entera hasta que cumpla, de modo que toda la fila queda coherente entre sí. Costoso computacionalmente y, si se alcanza el nº máximo de intentos, puede no llegarse al total de filas solicitado."
+                />
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-end gap-2 pt-1">
         <Button type="button" variant="outline" size="sm" onClick={onCancel}>
           Cancelar
@@ -1005,6 +1166,7 @@ function DerivedRuleFields({
                   table_target: e.target.value,
                   origin_col: undefined,
                   reference_date_col: undefined,
+                  reference_date_table: undefined,
                 })
               }
               className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
@@ -1026,7 +1188,19 @@ function DerivedRuleFields({
           )}
         </div>
         <div>
-          <Label className="text-xs">Columna origen</Label>
+          <Label className="text-xs">
+            {draft.type === "date_to_age" ? (
+              <>
+                Fecha origen (la más reciente)
+                <Tooltip
+                  side="top"
+                  content="Convención: la fecha origen es la MÁS RECIENTE (admisión, fin de episodio, fecha de la consulta…). El cálculo es origen − referencia, así que la referencia de abajo debe ser la MÁS ANTIGUA (DOB, inicio del episodio…). Si activas «forzar lapso ≥ 0», los negativos se truncan a 0; desactiva para conservar el signo."
+                />
+              </>
+            ) : (
+              "Columna objetivo"
+            )}
+          </Label>
           {hasSchema && targetCols.length > 0 ? (
             <select
               value={draft.origin_col ?? ""}
@@ -1052,70 +1226,68 @@ function DerivedRuleFields({
       </div>
 
       <div>
-        <Label className="text-xs">Columna derivada (aux_col)</Label>
+        <Label className="text-xs">
+          Nombre de la nueva columna <span className="text-destructive">*</span>
+        </Label>
         <Input
           value={draft.aux_col ?? ""}
           onChange={(e) => update({ aux_col: e.target.value || undefined })}
-          placeholder="nombre de la nueva columna"
+          placeholder="p. ej. edad, is_adult, age_group"
           className="mt-1"
         />
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Obligatorio. Debe ser distinto del nombre de la columna objetivo.
+        </p>
       </div>
 
       {draft.type === "date_to_age" && (
-        <div className="grid grid-cols-2 gap-2">
+        <>
+          <DateToAgeReferenceFields
+            draft={draft}
+            update={update}
+            tableNames={tableNames}
+            columnsByTable={columnsByTable}
+          />
           <div>
-            <Label className="text-xs">Fecha de referencia (constante)</Label>
-            <Input
-              value={draft.reference_date ?? ""}
-              onChange={(e) =>
-                update({
-                  reference_date: e.target.value || undefined,
-                  reference_date_col: e.target.value
-                    ? undefined
-                    : draft.reference_date_col,
-                })
-              }
-              placeholder="p. ej. 2020-01-01"
-              className="mt-1"
-            />
-          </div>
-          <div>
-            <Label className="text-xs">o columna de referencia</Label>
-            {hasSchema && targetCols.length > 0 ? (
-              <select
-                value={draft.reference_date_col ?? ""}
-                onChange={(e) =>
-                  update({
-                    reference_date_col: e.target.value || undefined,
-                    reference_date: e.target.value
-                      ? undefined
-                      : draft.reference_date,
-                  })
-                }
-                className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
-              >
-                <option value="">— ninguna —</option>
-                {targetCols.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <Input
-                value={draft.reference_date_col ?? ""}
-                onChange={(e) =>
-                  update({ reference_date_col: e.target.value || undefined })
-                }
-                placeholder="nombre de columna"
-                className="mt-1"
+            <Label className="text-xs">
+              Unidad del lapso
+              <Tooltip
+                side="top"
+                content="Granularidad del valor derivado. «Años» es la opción clásica para edad. Usa «Días» o «Meses» para duraciones cortas (estancias, episodios) — de lo contrario un episodio de 5 días redondea a 0 años."
               />
-            )}
+            </Label>
+            <select
+              value={draft.unit ?? "years"}
+              onChange={(e) =>
+                update({ unit: e.target.value as "years" | "months" | "days" })
+              }
+              className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+            >
+              <option value="years">Años</option>
+              <option value="months">Meses</option>
+              <option value="days">Días</option>
+            </select>
           </div>
-          <p className="col-span-2 text-[11px] text-muted-foreground">
-            Indica una fecha constante o una columna de referencia (no ambas).
-          </p>
-        </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={draft.enforce_non_negative !== false}
+                onChange={(e) =>
+                  update({ enforce_non_negative: e.target.checked })
+                }
+              />
+              <span>Forzar lapso no negativo</span>
+            </label>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Limita el lapso a valores ≥ 0 (truncando los negativos). Desactiva
+              si el origen puede ser posterior a la referencia y quieres
+              conservar el signo (p. ej. fechas futuras frente a una referencia
+              pasada).
+            </p>
+          </div>
+        </>
       )}
 
       {draft.type === "numeric_threshold" && (
@@ -1261,7 +1433,11 @@ function DerivedRuleFields({
               })
             }
           />
-          Eliminar columna origen (drop_origin)
+          Eliminar columna objetivo
+          <Tooltip
+            side="top"
+            content="Tras crear la nueva columna, descarta la columna objetivo de los datos preprocesados para que el modelo solo aprenda la versión derivada. Activa cuando la derivada resume todo lo útil de la original (p. ej. te basta «is_adult» y no quieres que el modelo aprenda «age») y para evitar redundancia/colinealidad. Desactiva si quieres conservar la columna objetivo en el entrenamiento."
+          />
         </label>
         <label className="flex items-center gap-2 text-xs">
           <input
@@ -1272,9 +1448,203 @@ function DerivedRuleFields({
               update({ reconstruct_origin: e.target.checked })
             }
           />
-          Reconstruir en POST (reconstruct_origin)
+          Reconstruir en POST
+          <Tooltip
+            side="top"
+            content="Solo aplica si has marcado «Eliminar columna objetivo». En la fase POST, recompone la columna objetivo a partir de la derivada (cuando es invertible: p. ej. de «edad» se puede reconstruir una fecha de nacimiento aproximada usando la fecha de referencia). Activa si quieres que la columna objetivo aparezca también en los datos sintéticos finales sin que el modelo la haya aprendido directamente. Desactiva si solo necesitas la columna derivada en el output."
+          />
         </label>
       </div>
+    </div>
+  );
+}
+
+// Reference-date picker for date_to_age. The user picks ONE of two modes:
+//   - Constante: free-text date string (e.g. 2020-01-01)
+//   - Columna: tabla + columna; when tabla != table_target the backend
+//     joins them via the FK path and the column is read from the joined
+//     view in apply_pre.
+//
+// Switching modes clears the inactive fields so the rule only ever
+// carries one source of truth, matching the backend's __post_init__
+// validation (`reference_date` XOR `reference_date_col` + optional
+// `reference_date_table`).
+function DateToAgeReferenceFields({
+  draft,
+  update,
+  tableNames,
+  columnsByTable,
+}: {
+  draft: Rule;
+  update: (patch: Partial<Rule>) => void;
+  tableNames: string[];
+  columnsByTable: Record<string, string[]>;
+}) {
+  // The mode (constant vs. column) is tracked locally rather than derived from
+  // draft truthiness: clearing the inactive side leaves both fields empty, so a
+  // derived-only mode would snap back to its default the moment the user
+  // toggled. Keep local state in sync when the draft is replaced from outside
+  // (loading an existing rule).
+  const [mode, setModeState] = useState<"constant" | "column">(
+    draft.reference_date_col ? "column" : "constant",
+  );
+  useEffect(() => {
+    if (draft.reference_date_col) setModeState("column");
+    else if (draft.reference_date) setModeState("constant");
+  }, [draft.reference_date_col, draft.reference_date]);
+
+  const hasSchema = tableNames.length > 0;
+  const refTable = draft.reference_date_table || draft.table_target || "";
+  const refTableCols = refTable ? (columnsByTable[refTable] ?? []) : [];
+
+  const setMode = (next: "constant" | "column") => {
+    setModeState(next);
+    if (next === "constant") {
+      update({
+        reference_date_col: undefined,
+        reference_date_table: undefined,
+      });
+    } else {
+      update({ reference_date: undefined });
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border bg-background p-2">
+      <Label className="text-xs">
+        Fecha de referencia (la más antigua)
+        <Tooltip
+          side="top"
+          content="La fecha contra la que se resta el origen (DOB para edad, inicio del episodio para duración). Puede ser una fecha fija o una columna. El cálculo es origen − referencia."
+        />
+      </Label>
+      <div className="flex flex-col gap-1 text-xs">
+        <label className="flex items-start gap-2">
+          <input
+            type="radio"
+            name="date-to-age-ref"
+            className="mt-0.5"
+            checked={mode === "constant"}
+            onChange={() => setMode("constant")}
+          />
+          <span>
+            <span className="font-medium">Fecha constante</span>
+            <span className="ml-1 text-muted-foreground">
+              — un valor fijo para todas las filas (p. ej. fecha del estudio).
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input
+            type="radio"
+            name="date-to-age-ref"
+            className="mt-0.5"
+            checked={mode === "column"}
+            onChange={() => setMode("column")}
+          />
+          <span>
+            <span className="font-medium">Columna de referencia</span>
+            <span className="ml-1 text-muted-foreground">
+              — usar otra columna fecha como referencia por fila (puede estar
+              en otra tabla relacionada).
+            </span>
+          </span>
+        </label>
+      </div>
+
+      {mode === "constant" ? (
+        <div>
+          <Input
+            value={draft.reference_date ?? ""}
+            onChange={(e) =>
+              update({ reference_date: e.target.value || undefined })
+            }
+            placeholder="p. ej. 2020-01-01"
+            className="mt-1"
+          />
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Formato parseable por pandas (ISO 8601 funciona bien).
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <div>
+            <Label className="text-xs">Tabla</Label>
+            {hasSchema ? (
+              <select
+                value={refTable}
+                onChange={(e) => {
+                  const t = e.target.value;
+                  update({
+                    reference_date_table:
+                      t && t !== draft.table_target ? t : undefined,
+                    reference_date_col: undefined,
+                  });
+                }}
+                className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+              >
+                {tableNames.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                    {t === draft.table_target ? " (misma tabla)" : ""}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <Input
+                value={refTable}
+                onChange={(e) =>
+                  update({
+                    reference_date_table:
+                      e.target.value && e.target.value !== draft.table_target
+                        ? e.target.value
+                        : undefined,
+                    reference_date_col: undefined,
+                  })
+                }
+                placeholder="nombre de tabla"
+                className="mt-1"
+              />
+            )}
+          </div>
+          <div>
+            <Label className="text-xs">Columna</Label>
+            {hasSchema && refTableCols.length > 0 ? (
+              <select
+                value={draft.reference_date_col ?? ""}
+                onChange={(e) =>
+                  update({ reference_date_col: e.target.value || undefined })
+                }
+                className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+              >
+                <option value="">— elegir —</option>
+                {refTableCols.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <Input
+                value={draft.reference_date_col ?? ""}
+                onChange={(e) =>
+                  update({ reference_date_col: e.target.value || undefined })
+                }
+                placeholder="nombre de columna"
+                className="mt-1"
+              />
+            )}
+          </div>
+          {draft.reference_date_table && (
+            <p className="col-span-2 text-[11px] text-muted-foreground">
+              La columna está en otra tabla; el motor unirá{" "}
+              <span className="font-mono">{draft.table_target}</span> con{" "}
+              <span className="font-mono">{draft.reference_date_table}</span>{" "}
+              usando las claves foráneas detectadas en la carga de datos.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

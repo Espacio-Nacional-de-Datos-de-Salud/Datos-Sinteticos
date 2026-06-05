@@ -9,22 +9,24 @@ class is purely about computing the report.
 
 import os
 
-import backend.src.config.general as general_config
 import pandas as pd
 import synthcity.logger as synthcity_log
+
+import backend.src.config.general as general_config
 from backend.src.config.evaluation import (
     DROP_ID_COLUMNS_FROM_METRICS,
     EVAL_DEFAULT_METRICS,
 )
-from backend.src.infrastructure.logging_config import get_logger
-from backend.src.infrastructure.progress import ProfilerPhase
-from backend.src.infrastructure.time_profiling import profiler
 from backend.src.domain.evaluation._custom_metrics import run_custom_metrics
 from backend.src.domain.evaluation._synthcity_metrics import (
     build_data_loaders,
     evaluate_synthcity_metrics,
 )
+from backend.src.domain.evaluation.dtype_alignment import align_dtypes
 from backend.src.domain.evaluation.utils import filter_id_columns
+from backend.src.infrastructure.logging_config import get_logger
+from backend.src.infrastructure.progress import ProfilerPhase
+from backend.src.infrastructure.time_profiling import profiler
 
 logger = get_logger(__name__)
 
@@ -115,7 +117,7 @@ class EvaluationRunner:
         synthetic_data_dict: dict[str, pd.DataFrame],
         metadata_path: str | None,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """Pick the single table evaluated and optionally strip ID columns."""
+        """Pick the single table evaluated, strip ID columns, and align dtypes."""
         real_data = next(iter(real_data_dict.values()))
         synthetic_data = next(iter(synthetic_data_dict.values()))
 
@@ -123,6 +125,7 @@ class EvaluationRunner:
             real_data = filter_id_columns(real_data, metadata_path)
             synthetic_data = filter_id_columns(synthetic_data, metadata_path)
 
+        real_data, synthetic_data = align_dtypes(real_data, synthetic_data)
         return real_data, synthetic_data
 
     def _partition_requested_metrics(
@@ -133,8 +136,8 @@ class EvaluationRunner:
         Also handles two project-specific overrides:
 
         - ``performance`` is dropped when no target column is provided.
-        - ``k-anonymization`` (synthcity's built-in) is replaced by our
-          subset-aware ``k_anonymity`` custom metric.
+        - ``k-anonymization`` and ``distinct l-diversity`` are replaced by
+          project custom metrics that use configured quasi-identifier subsets.
         """
         synthcity_metrics = {k: list(v) for k, v in self.metrics.items()}
         custom_metric_names = list(synthcity_metrics.pop("custom", []))
@@ -150,6 +153,20 @@ class EvaluationRunner:
                 "Replacing synthcity 'k-anonymization' with custom subset-aware k_anonymity."
             )
             privacy_metrics.remove("k-anonymization")
-            custom_metric_names.append("k_anonymity")
+            if "k_anonymity" not in custom_metric_names:
+                custom_metric_names.append("k_anonymity")
+
+        if "distinct l-diversity" in privacy_metrics:
+            logger.info("Running 'distinct l-diversity' with custom PyCanon l_diversity.")
+            privacy_metrics.remove("distinct l-diversity")
+            if "l_diversity_pycanon" not in custom_metric_names:
+                custom_metric_names.append("l_diversity_pycanon")
+
+        sanity_metrics = synthcity_metrics.get("sanity", [])
+        if "exact_match_rows" in sanity_metrics:
+            logger.info("Replacing synthcity 'exact_match_rows' with custom ExactMatchRows.")
+            sanity_metrics.remove("exact_match_rows")
+            if "exact_match_rows" not in custom_metric_names:
+                custom_metric_names.append("exact_match_rows")
 
         return synthcity_metrics, custom_metric_names

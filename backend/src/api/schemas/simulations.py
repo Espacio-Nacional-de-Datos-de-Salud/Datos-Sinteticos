@@ -94,6 +94,19 @@ class ConditionalConfig(BaseModel):
     conditions: list[Condition] = Field(default_factory=list)
 
 
+class SimulationRelationship(BaseModel):
+    """A foreign-key edge between two tables in a simulation's schema.
+
+    ``parent`` is the referenced table and ``child`` is the table that holds the
+    foreign key column. Used by the UI to draw a simplified schema diagram.
+    """
+
+    parent: str
+    child: str
+    column: str
+    is_context: bool = False
+
+
 class SimulationSummary(BaseModel):
     """Summary of a simulation run returned by the catalog."""
 
@@ -105,6 +118,7 @@ class SimulationSummary(BaseModel):
     sample_size: int | None = None
     tables: str = ""
     training_table_sizes: dict[str, int] = {}
+    relationships: list[SimulationRelationship] = []
     model_accuracy: float | None = None
     progress: JobProgress | None = None
     duration_seconds: float | None = None

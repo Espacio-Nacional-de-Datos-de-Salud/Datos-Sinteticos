@@ -15,8 +15,9 @@ export type PipelineStep = {
 };
 
 export const PIPELINE_STEPS: PipelineStep[] = [
-  { slug: "inspeccion", label: "Inspección", implemented: true },
+  { slug: "inspeccion", label: "Carga de Datos", implemented: true },
   { slug: "profiling", label: "Profiling", implemented: true },
+  { slug: "configuracion", label: "Reglas de negocio", implemented: true },
   { slug: "entrenamiento", label: "Entrenamiento", implemented: true },
   { slug: "generacion", label: "Generación", implemented: true },
   { slug: "auditoria", label: "Auditoría", implemented: true },

@@ -3,6 +3,7 @@ import { type NextRequest } from "next/server";
 const API_PROXY_TARGET = process.env.API_PROXY_TARGET ?? "http://localhost:8000";
 
 const BACKEND_COLLECTION_ENDPOINTS = new Set([
+  "business-rules-configurations",
   "configs",
   "evaluations",
   "files",

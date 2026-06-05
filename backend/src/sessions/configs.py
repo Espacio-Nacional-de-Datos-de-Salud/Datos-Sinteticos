@@ -24,6 +24,7 @@ import json
 from pathlib import Path
 
 import yaml
+
 from backend.src.api.schemas.configs import ConfigFile, ConfigScope
 from backend.src.config.general import CONFIG_DIR
 

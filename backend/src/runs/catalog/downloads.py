@@ -16,6 +16,7 @@ import zipfile
 from dataclasses import dataclass
 
 from backend.src.config.general import (
+    BRC_DIR,
     EVALUATIONS_DIR,
     GENERATOR_ZIP_NAME,
     INSPECTIONS_DIR,
@@ -26,7 +27,6 @@ from backend.src.config.general import (
     PROFILING_REPORTS_DIRNAME,
     SIMULATIONS_DIR,
 )
-from backend.src.runs.catalog.pipelines import get_pipeline_artifact_ids
 from backend.src.infrastructure.errors import (
     EvaluationNotFoundError,
     GeneratorEssentialsIncompleteError,
@@ -38,6 +38,7 @@ from backend.src.infrastructure.errors import (
     SimulationNotFoundError,
     SyntheticDataNotFoundError,
 )
+from backend.src.runs.catalog.pipelines import get_pipeline_artifact_ids
 
 RULE_MANAGER_FILENAME = "rule_manager.json"
 SYNTHETIC_DATA_DIRNAME = "synthetic_data"
@@ -261,6 +262,42 @@ def build_inspection_processed_data_bundle(inspection_id: str) -> DownloadBundle
         archive_name=f"{inspection_id}_processed_data.zip",
         members=members,
     )
+
+
+def build_brc_full_bundle(brc_id: str) -> DownloadBundle:
+    """Bundle the entire BRC run folder."""
+    folder = os.path.join(BRC_DIR, brc_id)
+    if not os.path.isdir(folder):
+        raise FileNotFoundError(f"BRC run folder not found: {folder}")
+    return DownloadBundle(
+        archive_name=f"{brc_id}.zip",
+        members=_walk_folder_members(folder, brc_id),
+    )
+
+
+def build_brc_dataset_bundle(brc_id: str) -> DownloadBundle:
+    """Bundle just the preprocessed-data parquets of a BRC run."""
+    folder = os.path.join(BRC_DIR, brc_id, PROCESSED_DATA_DIRNAME)
+    if not os.path.isdir(folder):
+        raise FileNotFoundError(f"BRC preprocessed data not found for '{brc_id}'.")
+    members = _walk_folder_members(folder, PROCESSED_DATA_DIRNAME)
+    if not members:
+        raise FileNotFoundError(f"BRC preprocessed data folder is empty for '{brc_id}'.")
+    return DownloadBundle(archive_name=f"{brc_id}_processed_data.zip", members=members)
+
+
+def build_brc_profiling_bundle(brc_id: str) -> DownloadBundle:
+    """Bundle just the profiling-reports of a BRC run."""
+    folder = os.path.join(BRC_DIR, brc_id, PROFILING_REPORTS_DIRNAME)
+    if not os.path.isdir(folder):
+        raise FileNotFoundError(
+            f"BRC profiling reports not found for '{brc_id}'. "
+            "Was the run launched with profiling on?"
+        )
+    members = _walk_folder_members(folder, PROFILING_REPORTS_DIRNAME)
+    if not members:
+        raise FileNotFoundError(f"BRC profiling reports folder is empty for '{brc_id}'.")
+    return DownloadBundle(archive_name=f"{brc_id}_profiling_reports.zip", members=members)
 
 
 def build_inspection_profiling_bundle(inspection_id: str) -> DownloadBundle:

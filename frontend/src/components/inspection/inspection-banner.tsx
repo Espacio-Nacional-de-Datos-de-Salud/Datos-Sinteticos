@@ -40,7 +40,7 @@ export function InspectionBanner({
       )}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Inspección</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Carga de Datos</h1>
           {inspectionId && inspection ? (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Nombre:</span>
@@ -56,7 +56,7 @@ export function InspectionBanner({
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Aún no has iniciado una inspección en esta sesión.
+              Aún no has iniciado una carga de datos en esta sesión.
             </p>
           )}
         </div>
@@ -70,7 +70,7 @@ export function InspectionBanner({
             />
             {inspection.file_paths.length > 0 && (
               <p className="text-xs text-muted-foreground">
-                {inspection.file_paths.length} fichero(s) en la inspección.
+                {inspection.file_paths.length} fichero(s) en la carga de datos.
               </p>
             )}
             {tables.length > 0 && (
@@ -88,7 +88,7 @@ export function InspectionBanner({
       )}
       {inspectionId && isError && (
         <p className="mt-2 text-xs text-destructive">
-          No se pudo cargar el estado de la inspección.
+          No se pudo cargar el estado de la carga de datos.
         </p>
       )}
     </div>

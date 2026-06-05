@@ -190,13 +190,17 @@ class DistributionComparisonReport(MetricEvaluator):
         real_dist = self._distribution_for_labels(real_bins, labels)
         syn_dist = self._distribution_for_labels(syn_bins, labels)
 
-        return real_bins, syn_bins, {
-            "column": column,
-            "kind": kind,
-            "labels": labels,
-            "real": real_dist,
-            "synthetic": syn_dist,
-        }
+        return (
+            real_bins,
+            syn_bins,
+            {
+                "column": column,
+                "kind": kind,
+                "labels": labels,
+                "real": real_dist,
+                "synthetic": syn_dist,
+            },
+        )
 
     def _bin_numeric(
         self, real: pd.Series, syn: pd.Series
@@ -396,12 +400,8 @@ class DistributionComparisonReport(MetricEvaluator):
         takes part in."""
         rows: list[dict[str, Any]] = []
         for column in columns:
-            bivariate = [
-                score for cols, score in bivariate_scores.items() if column in cols
-            ]
-            trivariate = [
-                score for cols, score in trivariate_scores.items() if column in cols
-            ]
+            bivariate = [score for cols, score in bivariate_scores.items() if column in cols]
+            trivariate = [score for cols, score in trivariate_scores.items() if column in cols]
             rows.append(
                 {
                     "column": column,
@@ -410,9 +410,7 @@ class DistributionComparisonReport(MetricEvaluator):
                     "trivariate": _mean(trivariate),
                 }
             )
-        rows.sort(
-            key=lambda item: item["univariate"] if item["univariate"] is not None else 1.0
-        )
+        rows.sort(key=lambda item: item["univariate"] if item["univariate"] is not None else 1.0)
         return rows
 
     @staticmethod
@@ -440,8 +438,10 @@ class DistributionComparisonReport(MetricEvaluator):
         try:
             real_processed, syn_processed = self._encode_for_correlation(real, syn)
             real_corr = real_processed.corr().fillna(0.0)
-            syn_corr = syn_processed.corr().fillna(0.0).reindex(
-                index=real_corr.index, columns=real_corr.columns, fill_value=0.0
+            syn_corr = (
+                syn_processed.corr()
+                .fillna(0.0)
+                .reindex(index=real_corr.index, columns=real_corr.columns, fill_value=0.0)
             )
             diff = (real_corr - syn_corr).abs()
             return {
@@ -462,9 +462,8 @@ class DistributionComparisonReport(MetricEvaluator):
         real_processed = pd.DataFrame(index=real.index)
         syn_processed = pd.DataFrame(index=syn.index)
         for column in real.columns:
-            if (
-                pd.api.types.is_numeric_dtype(real[column])
-                and pd.api.types.is_numeric_dtype(syn[column])
+            if pd.api.types.is_numeric_dtype(real[column]) and pd.api.types.is_numeric_dtype(
+                syn[column]
             ):
                 real_processed[column] = pd.to_numeric(real[column], errors="coerce")
                 syn_processed[column] = pd.to_numeric(syn[column], errors="coerce")

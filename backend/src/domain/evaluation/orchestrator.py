@@ -8,15 +8,16 @@ configured metric via ``EvaluationRunner``, and persists the report through
 """
 
 import pandas as pd
+
 from backend.src.config.evaluation import TSTR_TARGET_COLUMN, TSTR_TASK_TYPE
+from backend.src.domain.evaluation.runner import EvaluationRunner
+from backend.src.domain.evaluation.utils import align_datasets_structure_and_types
 from backend.src.domain.loader import FileDataLoader
-from backend.src.infrastructure.logging_config import get_logger
 from backend.src.domain.preprocessing.preprocessor import DataPreprocessor
+from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.progress import ProfilerPhase
 from backend.src.infrastructure.time_profiling import profiler
 from backend.src.runs.tracking import EvaluationTracker
-from backend.src.domain.evaluation.runner import EvaluationRunner
-from backend.src.domain.evaluation.utils import align_datasets_structure_and_types
 
 logger = get_logger(__name__)
 

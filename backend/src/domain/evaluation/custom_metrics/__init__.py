@@ -11,6 +11,7 @@ __all__ = [
     "CorrelationMatrixDistance",
     "DCR",
     "DistributionComparisonReport",
+    "ExactMatchRows",
     "KAnonymity",
     "LDiversityPyCanon",
     "MetricEvaluator",
@@ -42,6 +43,12 @@ def __getattr__(name: str):
         )
 
         return DistributionComparisonReport
+
+    if name == "ExactMatchRows":
+        from backend.src.domain.evaluation.custom_metrics.exact_match_rows import ExactMatchRows
+
+        return ExactMatchRows
+
     if name == "KAnonymity":
         from backend.src.domain.evaluation.custom_metrics.k_anonymity import KAnonymity
 

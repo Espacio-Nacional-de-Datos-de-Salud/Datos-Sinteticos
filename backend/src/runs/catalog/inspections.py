@@ -18,8 +18,8 @@ from backend.src.runs.card_io import read_json, write_json
 from backend.src.runs.catalog._base import (
     delete_run_folders,
     find_run_cleanup_candidates,
-    purge_all_runs,
     folder_started_at_ms,
+    purge_all_runs,
     read_total_run_duration_seconds,
 )
 
@@ -33,10 +33,15 @@ def list_available_inspections() -> list[dict]:
         List of dicts with ``inspection_id``, ``inspection_name``, ``folder``, ``timestamp``,
         ``tables`` (comma-separated with row counts), and ``file_paths``.
     """
-    run_folders = sorted(
-        glob.glob(os.path.join(INSPECTIONS_DIR, INSPECTION_RUN_FOLDER_PREFIX + "_*")),
-        reverse=True,
+    folders = glob.glob(os.path.join(INSPECTIONS_DIR, "upload_*")) + glob.glob(
+        os.path.join(INSPECTIONS_DIR, "inspection_*")
     )
+
+    def get_sort_key(path: str) -> str:
+        parts = os.path.basename(path).split("_", 1)
+        return parts[1] if len(parts) > 1 else parts[0]
+
+    run_folders = sorted(folders, key=get_sort_key, reverse=True)
 
     inspections: list[dict] = []
     for folder in run_folders:

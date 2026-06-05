@@ -15,6 +15,9 @@ import threading
 import pandas as pd
 import psutil
 import yaml
+from mostlyai.sdk import MostlyAI
+from mostlyai.sdk.domain import Generator, ProgressStatus
+
 from backend.src.config.general import (
     GENERATOR_ZIP_NAME,
     LOG_DATE_FORMAT,
@@ -27,11 +30,9 @@ from backend.src.config.general import (
     get_run_timestamp,
 )
 from backend.src.infrastructure.cancellation import JobCancelled
-from backend.src.infrastructure.errors import TableMetadataMissingError
+from backend.src.infrastructure.errors import TableMetadataMissingError, TrainingJobFailedError
 from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.utils import deep_merge
-from mostlyai.sdk import MostlyAI
-from mostlyai.sdk.domain import Generator
 
 
 def _find_free_port() -> int:
@@ -212,7 +213,38 @@ class MostlyAIEngine:
             if cancel_event.is_set():
                 raise JobCancelled("Training cancelled by user")
 
+        self._raise_if_training_failed(generator)
+
         return generator
+
+    @staticmethod
+    def _raise_if_training_failed(generator: Generator) -> None:
+        """Raise a clear error if the training job did not finish successfully.
+
+        Inspects the job progress and includes the failing step's table/model
+        label and engine error message so the failure is actionable instead of
+        surfacing as a downstream export error.
+        """
+        if generator.training_status == ProgressStatus.done:
+            return
+
+        details = ""
+        try:
+            steps = generator.training.progress().steps or []
+            failed = [s for s in steps if s.status == ProgressStatus.failed]
+            if failed:
+                details = "; ".join(
+                    f"{s.model_label or s.step_code} — {s.error_message or 'no error message'}"
+                    for s in failed
+                )
+        except Exception as progress_error:  # pragma: no cover - best-effort detail
+            logger.warning("Could not read training job progress: %s", progress_error)
+
+        message = f"Mostly AI training job ended with status '{generator.training_status.value}'."
+        if details:
+            message += f" Failing step(s): {details}"
+        logger.error(message)
+        raise TrainingJobFailedError(message)
 
     def load_generator_by_id(self, model_id: str) -> tuple[Generator, str]:
         """Loads a trained generator by its model ID (non-interactive).

@@ -20,6 +20,14 @@ class TableMetadataMissingError(Exception):
     """There is no metadata for a required table."""
 
 
+class TrainingJobFailedError(Exception):
+    """The Mostly AI training job finished in a non-successful state.
+
+    Raised when the underlying job reports ``failed``/``canceled`` so callers
+    surface the real failing step instead of a misleading downstream error
+    (e.g. ``HTTP 400: Cannot export generator that is not trained``)."""
+
+
 class RelationshipNotDefinedError(Exception):
     """There is no defined relationship between two tables."""
 

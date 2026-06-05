@@ -7,7 +7,7 @@ single DataFrame consumed by the tracking layer.
 """
 
 import pandas as pd
-from backend.src.infrastructure.logging_config import get_logger
+
 from backend.src.domain.preprocessing.logical_rules import (
     LogicalRuleManager,
 )
@@ -18,6 +18,7 @@ from backend.src.domain.preprocessing_contextual_sanity_checks import (
     _evaluate_single_contextual_fk_check,
     _evaluate_single_referential_integrity_check,
 )
+from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
 

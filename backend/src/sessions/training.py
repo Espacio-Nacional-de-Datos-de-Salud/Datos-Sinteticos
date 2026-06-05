@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from backend.src.config.general import (
     AUTODETECTED_INSPECTION_METADATA_FILENAME,
+    BRC_CARD_FILENAME,
+    BRC_DIR,
     INSPECTIONS_DIR,
     MODEL_CARD_FILENAME,
     MODEL_RUN_FOLDER_PREFIX,
@@ -18,6 +20,10 @@ from backend.src.config.general import (
 )
 from backend.src.domain.loader import FileDataLoader
 from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
+from backend.src.domain.preprocessing.logical_rules_serialization import (
+    reconstruct_logical_rule_manager_from_dict,
+)
+from backend.src.domain.preprocessing.metadata_extractor import MetadataExtractor
 from backend.src.domain.preprocessing.metadata_formatter import MetadataFormatter
 from backend.src.domain.preprocessing.preprocessor import DataPreprocessor
 from backend.src.domain.preprocessing.utils import (
@@ -26,10 +32,6 @@ from backend.src.domain.preprocessing.utils import (
 )
 from backend.src.domain.rules_config import extract_rules_and_rejection_config
 from backend.src.domain.synthesis import MostlyAIEngine
-from backend.src.sessions.inspection import (
-    load_inspection_artifacts,
-    resolve_inspection_rules_config_path,
-)
 from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.progress import (
     TRAINING_PHASES,
@@ -41,6 +43,11 @@ from backend.src.infrastructure.progress import (
 from backend.src.infrastructure.time_profiling import profiler
 from backend.src.runs.card_io import mark_card_failed, read_json, update_card_status, write_json
 from backend.src.runs.tracking import ModelTracker
+from backend.src.sessions.inspection import load_inspection_artifacts
+from backend.src.sessions.rules import (
+    INSPECTION_RULE_MANAGER_FILENAME,
+    resolve_inspection_rules_config_path,
+)
 
 logger = get_logger(__name__)
 
@@ -169,19 +176,27 @@ def run_training_flow(
             with profiler.phase(ProfilerPhase.PREPROCESS_AUTODETECT):
                 preprocessing_result = preprocessor.run(run_data_profiling=enable_data_profiling)
 
+            with profiler.phase(ProfilerPhase.APPLY_RULES):
+                processed_data = preprocessor.rule_manager.apply_all_pre(
+                    preprocessing_result.processed_data,
+                    relationships=format_relationships(preprocessing_result.relationships),
+                )
+            encoding_types = MetadataExtractor(processed_data).extract_encoding_types()
+            metadata = MetadataFormatter(engine_name="mostly").format(
+                data_dfs=processed_data,
+                relationships_data=preprocessing_result.relationships,
+                types_data=encoding_types,
+            )
+
             with profiler.phase(ProfilerPhase.SAVE_METADATA_AND_REPORTS):
-                model_tracker.save_training_table_sizes(preprocessing_result.processed_data)
+                model_tracker.save_training_table_sizes(processed_data)
                 model_tracker.save_rule_manager(preprocessing_result.rule_manager)
-                model_tracker.save_metadata(preprocessing_result.metadata)
+                model_tracker.save_metadata(metadata)
                 if preprocessing_result.data_profiles:
                     model_tracker.save_data_profiles(preprocessing_result.data_profiles)
 
             with profiler.phase(ProfilerPhase.MOSTLYAI_TRAIN):
-                generator = engine.train(
-                    preprocessing_result.processed_data,
-                    preprocessing_result.metadata,
-                    cancel_event=cancel_event,
-                )
+                generator = engine.train(processed_data, metadata, cancel_event=cancel_event)
             with profiler.phase(ProfilerPhase.SAVE_ARTIFACTS):
                 model_tracker.save_generator(generator)
                 model_tracker.save_qa_reports(generator.id)
@@ -190,7 +205,7 @@ def run_training_flow(
             return (
                 model_tracker.model_id,
                 generator,
-                preprocessing_result.metadata,
+                metadata,
                 preprocessing_result.rule_manager,
             )
 
@@ -210,6 +225,51 @@ def run_training_flow(
             profiler.report("Training timing breakdown", output_path=timing_report_path)
 
 
+def _drop_excluded_columns(
+    processed_data: dict,
+    encoding_types: dict,
+    relationships: dict,
+    excluded: dict[str, list[str]] | None,
+) -> tuple[dict, dict, dict]:
+    """Drop training-time excluded columns from the in-memory inputs.
+
+    Mirrors the inspection's column exclusion but never touches disk: it filters
+    the dataframes, the encoding-type map, and any FK/PK relationship that
+    references an excluded column. Used to honor the reversible ``excluded_columns``
+    recorded in the inspection metadata (auto-flagged mixes, opt-out toggles).
+    """
+    drop = {t: set(cols) for t, cols in (excluded or {}).items() if cols}
+    if not drop:
+        return processed_data, encoding_types, relationships
+
+    filtered_data = {}
+    for table_name, df in processed_data.items():
+        cols = [c for c in drop.get(table_name, set()) if c in df.columns]
+        filtered_data[table_name] = df.drop(columns=cols) if cols else df
+
+    filtered_types = {
+        table_name: {c: v for c, v in cols.items() if c not in drop.get(table_name, set())}
+        for table_name, cols in encoding_types.items()
+    }
+
+    fks = [
+        fk
+        for fk in relationships.get("fks", [])
+        if fk.get("fk_column") not in drop.get(fk.get("child", ""), set())
+        and fk.get("pk_column") not in drop.get(fk.get("parent", ""), set())
+    ]
+    pks = {
+        table_name: pk
+        for table_name, pk in relationships.get("pks", {}).items()
+        if pk not in drop.get(table_name, set())
+    }
+    if drop:
+        logger.info(
+            "Dropped training-excluded columns: %s", {t: sorted(c) for t, c in drop.items()}
+        )
+    return filtered_data, filtered_types, {"pks": pks, "fks": fks}
+
+
 def run_training_flow_from_inspection(
     inspection_id: str,
     mostly_ai_overrides: dict | None = None,
@@ -217,6 +277,8 @@ def run_training_flow_from_inspection(
     job_name: str | None = None,
     session: TrainingSession | None = None,
     cancel_event: threading.Event | None = None,
+    brc_id: str | None = None,
+    skip_rules: bool = False,
 ) -> tuple[str | None, object | None, object | None, object | None]:
     """Train directly from a previously produced inspection session.
 
@@ -262,10 +324,59 @@ def run_training_flow_from_inspection(
         )
         rules_config_path = resolve_inspection_rules_config_path(inspection_id, card)
 
+        # When a BRC run is selected as input, swap the inspection's
+        # processed_data with the BRC's already-PRE-applied parquets and
+        # arrange for the rule manager to be loaded from the BRC folder
+        # later in the flow. The inspection metadata (relationships,
+        # encoding types, excluded columns) still drives the rest of the
+        # pipeline, since the BRC is just a materialised PRE on top.
+        brc_dir = None
+        brc_card = None
+        if brc_id:
+            brc_dir = os.path.join(BRC_DIR, brc_id)
+            brc_card_path = os.path.join(brc_dir, BRC_CARD_FILENAME)
+            if not os.path.exists(brc_card_path):
+                raise FileNotFoundError(f"BRC card not found for '{brc_id}'.")
+            brc_card = read_json(brc_card_path)
+            if brc_card.get("inspection_id") != inspection_id:
+                raise ValueError(
+                    f"BRC run '{brc_id}' belongs to inspection "
+                    f"'{brc_card.get('inspection_id')}', not '{inspection_id}'."
+                )
+            brc_processed_dir = os.path.join(brc_dir, PROCESSED_DATA_DIRNAME)
+            if not os.path.isdir(brc_processed_dir):
+                raise FileNotFoundError(
+                    f"BRC processed data not found for '{brc_id}': {brc_processed_dir}"
+                )
+            import pandas as pd
+
+            processed_data = {}
+            for filename in sorted(os.listdir(brc_processed_dir)):
+                if filename.endswith(".parquet"):
+                    table_name = os.path.splitext(filename)[0]
+                    processed_data[table_name] = pd.read_parquet(
+                        os.path.join(brc_processed_dir, filename)
+                    )
+            logger.info(
+                "Training using BRC '%s' (tables=%s).",
+                brc_id,
+                sorted(processed_data),
+            )
+
+        if not card.get("rules_pre_applied"):
+            logger.error(
+                "Inspection %s has no rules_pre_applied flag; rules PRE may be missing.",
+                inspection_id,
+            )
+
         relationships = inspection_metadata.get("relationships", {"pks": {}, "fks": []})
         encoding_types = inspection_metadata.get("encoding_types", {})
+        date_formats = inspection_metadata.get("date_formats", {}) or {}
 
-        if os.path.exists(autodetected_path):
+        # When training from a BRC the parquet already represents the final
+        # state the user picked; do not re-run preprocessing from raw even if
+        # autodetect metadata changed afterwards.
+        if brc_dir is None and os.path.exists(autodetected_path):
             autodetected_metadata = read_json(autodetected_path)
             if autodetected_metadata != inspection_metadata:
                 logger.info("Inspection metadata was modified. Re-running preprocessing.")
@@ -278,9 +389,6 @@ def run_training_flow_from_inspection(
                 rules, rejection_config = extract_rules_and_rejection_config(
                     card["rules_config_path"]
                 )
-                for rule in rules:
-                    preprocessor.rule_manager.add_rule(rule)
-                preprocessor.rule_manager.rejection_sampling_config = rejection_config.as_dict()
 
                 preprocessing_result = preprocessor.run(
                     run_data_profiling=False,
@@ -296,6 +404,16 @@ def run_training_flow_from_inspection(
                 for table_name, df in processed_data.items():
                     df.to_parquet(os.path.join(processed_dir, f"{table_name}.parquet"))
 
+        # Drop columns the user (or the auto-flagger) marked excluded from training.
+        # Non-destructive: the cached parquet keeps them, we only skip them for this
+        # run. Done before rules/encoding so they never reach MostlyAI.
+        processed_data, encoding_types, relationships = _drop_excluded_columns(
+            processed_data,
+            encoding_types,
+            relationships,
+            inspection_metadata.get("excluded_columns", {}),
+        )
+
         mostly_config_path = card["mostly_config_path"]
         effective_overrides = (
             mostly_ai_overrides
@@ -303,20 +421,56 @@ def run_training_flow_from_inspection(
             else card.get("mostly_ai_overrides") or None
         )
 
+        rule_manager = None
+        reapply = True
+        if skip_rules and brc_dir is None:
+            rule_manager = LogicalRuleManager()
+            rule_manager.relationships = format_relationships(relationships)
+            rule_manager.rejection_sampling_config = {}
+            reapply = False
+        elif brc_dir is not None:
+            rule_manager_path = os.path.join(brc_dir, INSPECTION_RULE_MANAGER_FILENAME)
+            if os.path.exists(rule_manager_path):
+                logger.debug("Found existing rule manager for BRC %s. Attempting to load.", brc_id)
+                try:
+                    serialized = read_json(rule_manager_path)
+                    rule_manager = reconstruct_logical_rule_manager_from_dict(serialized)
+                    rule_manager.relationships = format_relationships(relationships)
+                    reapply = False
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to load BRC rule manager '%s': %s. Rebuilding from config.",
+                        rule_manager_path,
+                        exc,
+                    )
+                    rule_manager = None
+
+        if rule_manager is None:
+            logger.debug("Rule manager did not exist. Building from config: %s", rules_config_path)
+            rule_manager = LogicalRuleManager()
+            rule_manager.relationships = format_relationships(relationships)
+            rules, rejection_config = extract_rules_and_rejection_config(rules_config_path)
+            for rule in rules:
+                rule_manager.add_rule(rule)
+            rule_manager.rejection_sampling_config = rejection_config.as_dict()
+
+        if date_formats:
+            rule_manager.date_formats = date_formats
+        for rule in infer_foreign_keys_consistency_rules(relationships):
+            rule_manager.add_rule(rule)
+
+        if reapply:
+            logger.debug("REAPPLY=TRUE; Applying rules PRE to inspection data for training.")
+            processed_data = rule_manager.apply_all_pre(
+                processed_data, relationships=format_relationships(relationships)
+            )
+            encoding_types = MetadataExtractor(processed_data).extract_encoding_types()
+
         metadata = MetadataFormatter(engine_name="mostly").format(
             data_dfs=processed_data,
             relationships_data=relationships,
             types_data=encoding_types,
         )
-
-        rule_manager = LogicalRuleManager()
-        rule_manager.relationships = format_relationships(relationships)
-        rules, rejection_config = extract_rules_and_rejection_config(rules_config_path)
-        for rule in rules:
-            rule_manager.add_rule(rule)
-        rule_manager.rejection_sampling_config = rejection_config.as_dict()
-        for rule in infer_foreign_keys_consistency_rules(relationships):
-            rule_manager.add_rule(rule)
 
         with ModelTracker(
             data_file_paths=card.get("file_paths", []),
@@ -342,6 +496,8 @@ def run_training_flow_from_inspection(
                     output_directory=model_tracker.output_directory,
                     inspection_id=inspection_id,
                     inspection_name=card.get("inspection_name"),
+                    brc_id=brc_id,
+                    brc_name=brc_card.get("brc_name") if brc_card else None,
                 )
 
             if session:
@@ -376,7 +532,11 @@ def run_training_flow_from_inspection(
 
 
 def _stamp_inspection_info_on_model_card(
-    output_directory: str, inspection_id: str, inspection_name: str | None
+    output_directory: str,
+    inspection_id: str,
+    inspection_name: str | None,
+    brc_id: str | None = None,
+    brc_name: str | None = None,
 ) -> None:
     """Record the originating inspection details in the model card.
 
@@ -384,6 +544,8 @@ def _stamp_inspection_info_on_model_card(
         output_directory (str): Path to the model output directory.
         inspection_id (str): ID of the source inspection.
         inspection_name (str | None): Human-readable name of the source inspection.
+        brc_id (str | None): Optional BRC run used as the training input.
+        brc_name (str | None): Human-readable name of the BRC run.
     """
     card_path = os.path.join(output_directory, MODEL_CARD_FILENAME)
     if not os.path.exists(card_path):
@@ -392,4 +554,8 @@ def _stamp_inspection_info_on_model_card(
     card["inspection_id"] = inspection_id
     if inspection_name:
         card["inspection_name"] = inspection_name
+    if brc_id:
+        card["brc_id"] = brc_id
+        if brc_name:
+            card["brc_name"] = brc_name
     write_json(card_path, card, indent=4)

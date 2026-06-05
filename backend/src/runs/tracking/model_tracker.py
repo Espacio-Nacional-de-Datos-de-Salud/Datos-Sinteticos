@@ -11,12 +11,13 @@ import logging
 import os
 import shutil
 import tempfile
-import yaml
 import zipfile
 from pathlib import Path
 
-import backend.src.config.general as general_config
 import pandas as pd
+import yaml
+
+import backend.src.config.general as general_config
 from backend.src.config.general import (
     GENERATOR_ZIP_NAME,
     METADATA_FILENAME,
@@ -28,11 +29,11 @@ from backend.src.config.general import (
     SIMULATIONS_DIR,
     USERPROFILENAME,
 )
-from backend.src.infrastructure.logging_config import get_logger
 from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
 from backend.src.domain.preprocessing.logical_rules_serialization import (
     serialize_logical_rule_manager_to_dict,
 )
+from backend.src.infrastructure.logging_config import get_logger
 from backend.src.runs.tracking.base_tracker import BaseRunTracker
 from backend.src.runs.tracking.helpers import compute_file_sha256
 
@@ -231,6 +232,10 @@ class ModelTracker(BaseRunTracker):
     def save_mostly_statistics(self, generator_id: str) -> None:
         """Pull statistics from ``generator.json`` and persist them on the model card.
 
+        Also detects whether each table was modeled as a FlatModel or SequentialModel
+        by reading Mostly AI's internal stats.json, and persists that in both
+        the model card and the model's metadata.json.
+
         Args:
             generator_id (str): The generator ID (directory name under
                 outputs/mostlyai/generators/).
@@ -248,8 +253,71 @@ class ModelTracker(BaseRunTracker):
         mostly_statistics["tables"] = self._collect_table_statistics(
             generator_data.get("tables", [])
         )
+
+        # Detect the model type (FlatModel vs SequentialModel) for each table
+        tables_model_types: dict[str, str] = {}
+        for table in generator_data.get("tables", []):
+            table_name = table.get("name")
+            if not table_name:
+                continue
+
+            # Tabular or Language statistics path
+            stats_json_path = os.path.join(
+                MOSTLYAI_DIR,
+                "generators",
+                generator_id,
+                "ModelStore",
+                f"{table_name}:tabular",
+                "tgt-stats",
+                "stats.json",
+            )
+            if not os.path.exists(stats_json_path):
+                stats_json_path = os.path.join(
+                    MOSTLYAI_DIR,
+                    "generators",
+                    generator_id,
+                    "ModelStore",
+                    f"{table_name}:language",
+                    "tgt-stats",
+                    "stats.json",
+                )
+
+            if os.path.exists(stats_json_path):
+                try:
+                    with open(stats_json_path, encoding="utf-8") as f:
+                        stats_data = json.load(f)
+                    is_seq = stats_data.get("is_sequential", False)
+                    tables_model_types[table_name] = "SequentialModel" if is_seq else "FlatModel"
+                except Exception as e:
+                    logger.warning("Could not read stats.json for table %s: %s", table_name, e)
+
+        # Inject into mostly_statistics tables map
+        for table_name, model_type in tables_model_types.items():
+            if table_name not in mostly_statistics["tables"]:
+                mostly_statistics["tables"][table_name] = {}
+            mostly_statistics["tables"][table_name]["detected_model_type"] = model_type
+
         self.patch_card(mostly_statistics=mostly_statistics)
         logger.info("Model card updated with mostly statistics.")
+
+        # Update metadata.json with the detected types
+        metadata_path = os.path.join(self.output_directory, METADATA_FILENAME)
+        if os.path.exists(metadata_path) and tables_model_types:
+            try:
+                with open(metadata_path, encoding="utf-8") as file_handle:
+                    metadata = json.load(file_handle)
+
+                if "tables" in metadata and isinstance(metadata["tables"], list):
+                    for table_meta in metadata["tables"]:
+                        t_name = table_meta.get("name")
+                        if t_name in tables_model_types:
+                            table_meta["detected_model_type"] = tables_model_types[t_name]
+
+                with open(metadata_path, "w", encoding="utf-8") as file_handle:
+                    json.dump(metadata, file_handle, indent=4)
+                logger.info("Updated metadata.json with detected model types.")
+            except Exception as e:
+                logger.warning("Could not update metadata.json with model types: %s", e)
 
     # ------------------------------------------------------------------
     # Internal helpers — statistics extraction

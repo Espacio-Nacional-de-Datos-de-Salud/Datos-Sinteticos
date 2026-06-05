@@ -27,9 +27,9 @@ from backend.src.config.general import (
     PIPELINES_DIR,
     refresh_run_timestamp,
 )
-from backend.src.runs.card_io import mark_card_failed, write_json
 from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.progress import INITIAL_LABEL
+from backend.src.runs.card_io import mark_card_failed, write_json
 
 logger = get_logger(__name__)
 

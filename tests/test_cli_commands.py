@@ -118,6 +118,21 @@ def test_main_simulation_mode_loads_artifacts_then_simulates(
     assert sim.call_args.kwargs["sample_size"] == 50
 
 
+def test_main_rules_mode_invokes_rules_flow(
+    stub_resolve: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    apply_rules = MagicMock(return_value={
+        "inspection_id": "insp_1",
+        "rules_config_path": "/cfg/rules.yaml",
+        "rules_count": 1,
+    })
+    monkeypatch.setattr(commands_module, "apply_inspection_rules", apply_rules)
+
+    commands_module.run_workflow(mode="r", file_paths=None, inspection_id="insp_1")
+
+    apply_rules.assert_called_once_with(inspection_id="insp_1")
+
+
 def test_main_simulation_mode_requires_model_id(stub_resolve: None) -> None:
     with pytest.raises(ValueError, match="model_id es obligatorio"):
         commands_module.run_workflow(mode="s", file_paths=None, sample_size=50)

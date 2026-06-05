@@ -4,7 +4,12 @@ import json
 from pathlib import Path
 from typing import Literal
 
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from pydantic import BaseModel
+
 from backend.src.api.schemas import CancelResponse, TimeProfilingReport, load_time_profiling_report
+from backend.src.api.schemas.files import FilePreview
 from backend.src.api.schemas.inspections import (
     Autodetect,
     CleanupResult,
@@ -16,6 +21,8 @@ from backend.src.api.schemas.inspections import (
     ProfilingReports,
     Relationships,
     RenameRequest,
+    RulesApplyRequest,
+    RulesApplyResult,
 )
 from backend.src.config.general import (
     AUTODETECTED_INSPECTION_METADATA_FILENAME,
@@ -26,8 +33,14 @@ from backend.src.config.general import (
     PROFILING_REPORT_PATTERN,
     PROFILING_REPORTS_DIRNAME,
 )
+from backend.src.domain.id_validation import InspectionId
 from backend.src.infrastructure.cancellation import register as register_cancel
 from backend.src.infrastructure.cancellation import request_cancel
+from backend.src.infrastructure.errors import (
+    InspectionNotFoundError,
+    InspectionProcessedDataNotFoundError,
+    InspectionProfilingNotFoundError,
+)
 from backend.src.runs.card_io import update_card_status
 from backend.src.runs.catalog.downloads import (
     build_full_inspection_bundle,
@@ -35,8 +48,6 @@ from backend.src.runs.catalog.downloads import (
     build_inspection_profiling_bundle,
     build_zip_stream,
 )
-from backend.src.api.schemas.files import FilePreview
-from backend.src.sessions.files import FilePreviewError, read_file_preview
 from backend.src.runs.catalog.inspections import (
     cleanup_inspections as cleanup_inspections_catalog,
 )
@@ -52,21 +63,10 @@ from backend.src.runs.catalog.inspections import (
 from backend.src.runs.catalog.inspections import (
     rename_inspection as rename_inspection_catalog,
 )
-from backend.src.infrastructure.errors import (
-    InspectionNotFoundError,
-    InspectionProcessedDataNotFoundError,
-    InspectionProfilingNotFoundError,
-)
-from backend.src.domain.id_validation import InspectionId
 from backend.src.sessions.configs import resolve_config_path
-from backend.src.sessions.inspection import (
-    RULES_SNAPSHOT_FILENAME,
-    initialize_inspection_session,
-    run_inspection_flow,
-)
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
-from pydantic import BaseModel
+from backend.src.sessions.files import FilePreviewError, read_file_preview
+from backend.src.sessions.inspection import initialize_inspection_session, run_inspection_flow
+from backend.src.sessions.rules import RULES_SNAPSHOT_FILENAME, apply_inspection_rules
 
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
@@ -259,6 +259,26 @@ def get_inspection_autodetect_original(inspection_id: InspectionId) -> Autodetec
     return Autodetect.model_validate(data)
 
 
+@router.post("/{inspection_id}/rules", response_model=RulesApplyResult)
+def apply_rules(
+    inspection_id: InspectionId, body: RulesApplyRequest | None = None
+) -> RulesApplyResult:
+    """Defines logical rules for a completed inspection.
+
+    Builds and stores the rule manager using the inspection metadata and
+    the resolved rules configuration.
+    """
+    try:
+        result = apply_inspection_rules(
+            inspection_id=inspection_id,
+            rules_config_path=body.rules_config_path if body else None,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return RulesApplyResult(**result)
+
+
 @router.get("/{inspection_id}/rules", response_class=PlainTextResponse)
 def get_inspection_rules(inspection_id: InspectionId) -> str:
     """Return the rules YAML snapshot captured at inspection time.
@@ -314,7 +334,9 @@ def _write_inspection_metadata(path: Path, payload: Autodetect) -> None:
         None
     """
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload.model_dump(), f, indent=2, ensure_ascii=False, default=str)
+        json.dump(
+            payload.model_dump(exclude_unset=True), f, indent=2, ensure_ascii=False, default=str
+        )
 
 
 def _validate_single_context_per_child(payload: Relationships) -> None:
@@ -383,6 +405,24 @@ class ExcludeColumnsRequest(BaseModel):
     excluded_columns: dict[str, list[str]]
 
 
+@router.put("/{inspection_id}/autodetect/training-exclusions", response_model=Autodetect)
+def put_inspection_training_exclusions(
+    inspection_id: InspectionId, body: ExcludeColumnsRequest
+) -> Autodetect:
+    """Set the **non-destructive** training-time exclusion list.
+
+    Unlike ``PUT /autodetect/excluded-columns`` (which physically drops columns
+    from the cached parquet), this only records which columns training should
+    skip. The data stays on disk and the column remains in ``encoding_types``,
+    so the choice is fully reversible — this is how the user opts a flagged
+    column back in (by removing it from the list).
+    """
+    path, current = _load_inspection_metadata(inspection_id)
+    current.excluded_columns = {t: cols for t, cols in body.excluded_columns.items() if cols}
+    _write_inspection_metadata(path, current)
+    return current
+
+
 @router.put("/{inspection_id}/autodetect/excluded-columns", response_model=Autodetect)
 def put_inspection_excluded_columns(
     inspection_id: InspectionId, body: ExcludeColumnsRequest
@@ -402,6 +442,7 @@ def put_inspection_excluded_columns(
     schema — the parquet files are not restored by that action.
     """
     import pandas as pd
+
     from backend.src.config.general import PROCESSED_DATA_DIRNAME
 
     folder = Path(INSPECTIONS_DIR) / inspection_id
@@ -495,8 +536,7 @@ def delete_inspection(
             status_code=409,
             detail={
                 "message": (
-                    f"La inspección '{inspection_id}' tiene {linked_count} "
-                    "modelo(s) asociado(s)."
+                    f"La inspección '{inspection_id}' tiene {linked_count} modelo(s) asociado(s)."
                 ),
                 "linked_model_ids": outcome.linked_model_ids,
             },

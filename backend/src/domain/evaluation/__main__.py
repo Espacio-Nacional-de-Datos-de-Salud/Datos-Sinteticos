@@ -1,11 +1,13 @@
 """CLI entry point for the evaluation stage."""
 
 import argparse
+import json
 import os
 import sys
-import json
 
 from backend.src.config.execution import get_execution_config
+from backend.src.domain.evaluation.orchestrator import run_evaluation
+from backend.src.domain.evaluation.utils import setup_synthcity_environment
 from backend.src.infrastructure.errors import (
     DataSourceNotFoundError,
     ModelCardNotFoundError,
@@ -14,8 +16,6 @@ from backend.src.infrastructure.errors import (
 )
 from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.time_profiling import profiler
-from backend.src.domain.evaluation.orchestrator import run_evaluation
-from backend.src.domain.evaluation.utils import setup_synthcity_environment
 
 logger = get_logger(__name__)
 
@@ -31,8 +31,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--evaluation-id", default=None)
     parser.add_argument("--pipeline-id", default="none")
     parser.add_argument("--job-name", default=None)
-    parser.add_argument("--simulation-dir", default=None, help="Simulation root directory (for synthcity environment setup).")
-    parser.add_argument("--training-parameters", default=None, help="JSON string with training parameters used to generate the synthetic data.")
+    parser.add_argument(
+        "--simulation-dir",
+        default=None,
+        help="Simulation root directory (for synthcity environment setup).",
+    )
+    parser.add_argument(
+        "--training-parameters",
+        default=None,
+        help="JSON string with training parameters used to generate the synthetic data.",
+    )
     return parser
 
 
@@ -53,7 +61,7 @@ def _run_with_explicit_paths(args: argparse.Namespace) -> None:
         evaluation_id=args.evaluation_id,
         pipeline_id=args.pipeline_id,
         job_name=args.job_name,
-        training_parameters=training_parameters
+        training_parameters=training_parameters,
     )
 
 

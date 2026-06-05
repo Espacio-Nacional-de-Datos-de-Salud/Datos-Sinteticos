@@ -22,6 +22,8 @@ class ModelSummary(BaseModel):
     qa_report_filename: str | None = None
     progress: JobProgress | None = None
     inspection_id: str | None = None
+    brc_id: str | None = None
+    brc_name: str | None = None
     duration_seconds: float | None = None
     started_at_ms: int | None = None
 
@@ -50,6 +52,14 @@ class TrainingCreateRequest(BaseModel):
         default=None,
         description="ID of a completed inspection to train from. Mutually exclusive with file_paths.",
         pattern=INSPECTION_ID_PATTERN,
+    )
+    brc_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional ID of a completed business-rules-configuration run. When "
+            "provided, training reads the already-PRE-applied parquet from the BRC "
+            "folder (instead of re-applying rules in vivo). Requires inspection_id."
+        ),
     )
     mostly_config_path: str | None = Field(
         default=None,

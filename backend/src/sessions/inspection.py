@@ -33,11 +33,11 @@ Session layout under ``outputs/inspections/inspection_<ts>/``:
 """
 
 import os
-import shutil
 import threading
 from dataclasses import dataclass
 
 import pandas as pd
+
 from backend.src.config.general import (
     AUTODETECTED_INSPECTION_METADATA_FILENAME,
     INSPECTION_CARD_FILENAME,
@@ -48,15 +48,15 @@ from backend.src.config.general import (
     PROFILING_REPORTS_DIRNAME,
     TIME_PROFILING_REPORT_FILENAME,
 )
-from backend.src.runs.card_io import mark_card_failed, read_json, update_card_status
+from backend.src.domain.loader import FileDataLoader
+from backend.src.domain.preprocessing.preprocessor import DataPreprocessor
+from backend.src.domain.rules_config import extract_rules_and_rejection_config
 from backend.src.infrastructure.errors import (
     DataLoadError,
     RelationshipNotDefinedError,
     TableMetadataMissingError,
 )
-from backend.src.domain.loader import FileDataLoader
 from backend.src.infrastructure.logging_config import get_logger
-from backend.src.domain.preprocessing.preprocessor import DataPreprocessor
 from backend.src.infrastructure.progress import (
     INSPECTION_PHASES,
     INSPECTION_PHASES_NO_PROFILING,
@@ -64,17 +64,32 @@ from backend.src.infrastructure.progress import (
     ProfilerPhase,
     advance_progress,
 )
-from backend.src.domain.rules_config import extract_rules_and_rejection_config
 from backend.src.infrastructure.time_profiling import profiler
+from backend.src.infrastructure.utils import detect_incompatible_type_mix
+from backend.src.runs.card_io import mark_card_failed, read_json, update_card_status, write_json
 from backend.src.runs.tracking.inspection_tracker import (
     InspectionSession,
     InspectionTracker,
 )
-from backend.src.runs.card_io import write_json
+from backend.src.sessions import rules as rules_session
 
 logger = get_logger(__name__)
 
-RULES_SNAPSHOT_FILENAME = "rules_snapshot.yaml"
+RULES_SNAPSHOT_FILENAME = rules_session.RULES_SNAPSHOT_FILENAME
+INSPECTION_RULE_MANAGER_FILENAME = rules_session.INSPECTION_RULE_MANAGER_FILENAME
+
+
+def apply_inspection_rules(
+    inspection_id: str,
+    rules_config_path: str | None = None,
+) -> dict:
+    """Run the rules stage scoped to this module's inspection directory."""
+    return rules_session.apply_inspection_rules(
+        inspection_id=inspection_id,
+        rules_config_path=rules_config_path,
+        inspections_dir=INSPECTIONS_DIR,
+    )
+
 
 # Re-exported so callers (API layer, tests) can keep importing
 # ``InspectionSession`` from this module.
@@ -82,9 +97,13 @@ __all__ = [
     "InspectionResult",
     "InspectionSession",
     "initialize_inspection_session",
+    "apply_inspection_rules",
+    "extract_rules_and_rejection_config",
     "load_inspection_artifacts",
     "resolve_inspection_rules_config_path",
     "run_inspection_flow",
+    "RULES_SNAPSHOT_FILENAME",
+    "INSPECTION_RULE_MANAGER_FILENAME",
 ]
 
 
@@ -138,7 +157,9 @@ def run_inspection_flow(
     Args:
         file_paths: Paths to input data files or directories.
         mostly_config_path: Path to the Mostly AI configuration file.
-        rules_config_path: Path to the logical rules configuration file.
+        rules_config_path: Path to the logical rules configuration file. The
+            inspection step snapshots it for reproducibility, but logical rule
+            definition happens in a separate step.
         enable_data_profiling: Whether to run data profiling during preprocessing.
         csv_delimiter: Parsing delimiter. Defaults to ",".
         excluded_columns: Optional mapping of ``table_name → [col, …]``. Columns
@@ -174,12 +195,7 @@ def run_inspection_flow(
                     raw_data = FileDataLoader().load(file_paths, sep=csv_delimiter)
                 preprocessor = DataPreprocessor(raw_data, composite_pk_config=composite_pks)
 
-                rules, rejection_config = extract_rules_and_rejection_config(rules_config_path)
-                for rule in rules:
-                    preprocessor.rule_manager.add_rule(rule)
-                preprocessor.rule_manager.rejection_sampling_config = rejection_config.as_dict()
-
-                effective_rules_config_path = _snapshot_rules_file(
+                effective_rules_config_path = rules_session._snapshot_rules_file(
                     rules_config_path, tracker.output_directory
                 )
 
@@ -200,6 +216,26 @@ def run_inspection_flow(
                 }
 
                 with profiler.phase(ProfilerPhase.WRITE_METADATA):
+                    # Flag columns that mix numbers and free text. They have no safe
+                    # encoding (they crash Mostly AI's language-model report generation),
+                    # so we surface them alongside the autodetected types and recommend
+                    # excluding them. This is non-destructive: the column stays in the
+                    # schema so the frontend can render it flagged (pre-selected as
+                    # excluded, toggleable). The physical drop happens later through the
+                    # user-driven excluded-columns flow / training, never here.
+                    flagged_columns = _detect_incompatible_columns(
+                        preprocessing_result.processed_data
+                    )
+                    warnings = _build_incompatible_warnings(flagged_columns)
+                    for warning in warnings:
+                        logger.warning(warning["message"])
+                    # Flagged columns are excluded from training by default. The
+                    # data stays on disk; training drops these in memory. The user
+                    # can opt back in by toggling them off in the autodetect view.
+                    auto_excluded = {
+                        table: sorted(cols.keys()) for table, cols in flagged_columns.items()
+                    }
+
                     encoding_types, relationships = _apply_column_exclusions(
                         encoding_types=preprocessing_result.encoding_types,
                         relationships=preprocessing_result.relationships,
@@ -209,6 +245,9 @@ def run_inspection_flow(
                     inspection_metadata_payload = {
                         "relationships": relationships,
                         "encoding_types": encoding_types,
+                        "date_formats": getattr(preprocessing_result, "date_formats", {}) or {},
+                        "warnings": warnings,
+                        "excluded_columns": auto_excluded,
                     }
                     write_json(
                         os.path.join(tracker.output_directory, INSPECTION_METADATA_FILENAME),
@@ -249,6 +288,7 @@ def run_inspection_flow(
                         "enable_data_profiling": enable_data_profiling,
                         "csv_delimiter": csv_delimiter,
                         "composite_pks": composite_pks or {},
+                        "warnings": warnings,
                     }
                 )
 
@@ -283,20 +323,52 @@ def run_inspection_flow(
         profiler.report("Inspection timing breakdown", output_path=timing_report_path)
 
 
-def _snapshot_rules_file(rules_config_path: str, output_directory: str) -> str:
-    """Freeze the rules YAML inside the inspection folder.
+def _detect_incompatible_columns(
+    processed_data: dict[str, pd.DataFrame],
+) -> dict[str, dict[str, dict]]:
+    """Scan tables for columns mixing numbers and free text.
 
-    Subsequent steps can then show the rules actually applied to the
-    preprocessed dataset, even if the user later edits the global file.
-    Falls back to the original path if the copy fails.
+    See :func:`detect_incompatible_type_mix`. Detection is non-destructive: the
+    flagged columns stay in the schema/data; the result is surfaced as warnings
+    so the frontend can show them alongside the autodetected types (pre-selected
+    as excluded, but toggleable by the user).
+
+    Returns ``{table_name: {column: summary}}`` for every flagged column.
     """
-    snapshot_path = os.path.join(output_directory, RULES_SNAPSHOT_FILENAME)
-    try:
-        shutil.copyfile(rules_config_path, snapshot_path)
-        return snapshot_path
-    except OSError as copy_error:
-        logger.warning("Could not snapshot rules file: %s", copy_error)
-        return rules_config_path
+    flagged: dict[str, dict[str, dict]] = {}
+    for table_name, df in processed_data.items():
+        for col in df.columns:
+            summary = detect_incompatible_type_mix(df[col])
+            if summary is not None:
+                flagged.setdefault(table_name, {})[col] = summary
+    return flagged
+
+
+def _build_incompatible_warnings(
+    flagged_columns: dict[str, dict[str, dict]],
+) -> list[dict]:
+    """Turn flagged columns into user-facing warning records for the card/metadata.
+
+    ``default_excluded`` tells the frontend to pre-select the column for
+    exclusion; the user can still toggle it back on (after splitting/cleaning it).
+    """
+    warnings: list[dict] = []
+    for table_name, cols in flagged_columns.items():
+        for col, summary in cols.items():
+            warnings.append(
+                {
+                    "table": table_name,
+                    "column": col,
+                    "kind": "incompatible_type_mix",
+                    "default_excluded": True,
+                    "message": (
+                        "Mezcla números y texto sin un tipo seguro. Excluida del "
+                        "entreno por defecto; sepárala o límpiala para conservarla."
+                    ),
+                    "details": summary,
+                }
+            )
+    return warnings
 
 
 def _apply_column_exclusions(
@@ -391,35 +463,11 @@ def load_inspection_artifacts(
 def resolve_inspection_rules_config_path(inspection_id: str, card: dict | None = None) -> str:
     """Return the rules YAML that belongs to an inspection.
 
-    New inspections store a frozen ``rules_snapshot.yaml`` inside the
-    inspection folder. Older ones may fallback to the original global path.
-
-    Args:
-        inspection_id (str): ID of the inspection session.
-        card (dict | None): Optional inspection card content. If None, it is loaded.
-
-    Returns:
-        str: Absolute path to the resolved rules configuration file.
-
-    Raises:
-        FileNotFoundError: If no rules config can be resolved for the inspection.
+    Uses the inspection-scoped rules helper but anchors lookups to the
+    inspections directory configured for this module (useful for tests).
     """
-    output_directory = os.path.join(INSPECTIONS_DIR, inspection_id)
-    snapshot_path = os.path.join(output_directory, RULES_SNAPSHOT_FILENAME)
-    if os.path.exists(snapshot_path):
-        return snapshot_path
-
-    if card is None:
-        card_path = os.path.join(output_directory, INSPECTION_CARD_FILENAME)
-        card = read_json(card_path) if os.path.exists(card_path) else {}
-
-    rules_config_path = card.get("rules_config_path")
-    if rules_config_path:
-        logger.warning(
-            "Rules snapshot not found for inspection '%s'; falling back to card path '%s'.",
-            inspection_id,
-            rules_config_path,
-        )
-        return rules_config_path
-
-    raise FileNotFoundError(f"Rules config not found for inspection: {inspection_id}")
+    return rules_session.resolve_inspection_rules_config_path(
+        inspection_id,
+        card=card,
+        inspections_dir=INSPECTIONS_DIR,
+    )

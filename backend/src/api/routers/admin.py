@@ -1,12 +1,13 @@
 """Cross-resource admin endpoints (e.g. global purge)."""
 
-from backend.src.sessions.configs import bootstrap_configs, clean_configs
+from fastapi import APIRouter
+from pydantic import BaseModel
+
 from backend.src.runs.catalog.evaluations import purge_all_evaluations
 from backend.src.runs.catalog.inspections import purge_all_inspections
 from backend.src.runs.catalog.models import purge_all_models
 from backend.src.runs.catalog.simulations import purge_all_simulations
-from fastapi import APIRouter
-from pydantic import BaseModel
+from backend.src.sessions.configs import bootstrap_configs, clean_configs
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 

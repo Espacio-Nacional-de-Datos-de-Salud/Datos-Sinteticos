@@ -10,6 +10,7 @@ import os
 from abc import ABC, abstractmethod
 
 import pandas as pd
+
 from backend.src.config.general import DEFAULT_CSV_DELIMITER
 from backend.src.infrastructure.errors import DataLoadError
 from backend.src.infrastructure.logging_config import get_logger

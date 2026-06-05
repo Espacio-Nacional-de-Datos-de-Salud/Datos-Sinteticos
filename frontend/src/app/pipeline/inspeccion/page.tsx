@@ -25,7 +25,6 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen } from "lucide-react";
 
-import { RulesPanel } from "@/components/config/rules-editor";
 import { DatasetPreviewCard } from "@/components/dataset/dataset-preview-card";
 import { DetectedTablesCard } from "@/components/inspection/detected-tables-card";
 import { FilePickerCard } from "@/components/inspection/file-picker-card";
@@ -44,22 +43,20 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { NamePromptDialog } from "@/components/ui/name-prompt-dialog";
 import { DeleteConflictDialog } from "@/components/pipeline-step/delete-conflict-dialog";
 import { INSPECCION_INSTRUCTIONS } from "@/components/inspection/instructions-content";
-import { api, type FilePreview } from "@/lib/api";
+import { api, API_BASE_URL, type FilePreview, type ProfilingReports } from "@/lib/api";
 import { ALLOW_SERVER_FILES as ALLOW_SERVER_FILES_FLAG } from "@/lib/features";
 import { useIsDev } from "@/lib/mode";
 
 const INSPECCION_OUTLINE = [
   { id: "preparacion", label: "Preparación", level: 1 },
   { id: "seleccion-ficheros", label: "Selección de ficheros", level: 2 },
-  { id: "reglas-negocio", label: "Reglas de negocio", level: 1 },
-  { id: "reglas-preprocesamiento", label: "Reglas de negocio", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
   { id: "tablas-detectadas", label: "Tablas detectadas", level: 2 },
   { id: "relaciones-detectadas", label: "Relaciones detectadas", level: 2 },
   { id: "tipos-codificacion", label: "Tipos de codificación", level: 2 },
   { id: "datos-preprocesados", label: "Datos preprocesados", level: 2 },
   { id: "historial", label: "Historial", level: 1 },
-  { id: "inspecciones-previas", label: "Inspecciones previas", level: 2 },
+  { id: "inspecciones-previas", label: "Cargas de Datos previas", level: 2 },
 ] as const;
 
 export default function InspeccionPage() {
@@ -105,7 +102,6 @@ export default function InspeccionPage() {
   // and the help panel so the two collapse in sync.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     preparacion: true,
-    "reglas-negocio": true,
     resultados: true,
     historial: false,
   });
@@ -258,13 +254,13 @@ export default function InspeccionPage() {
       <div className="space-y-6">
         <div>
           <p className="text-sm text-muted-foreground">
-            La inspección es el primer paso para generar datos sintéticos:
+            La carga de datos es el primer paso para generar datos sintéticos:
             analiza los ficheros de origen para entender su estructura antes de
             entrenar ningún modelo.
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
             Selecciona los ficheros ya disponibles en el servidor o sube los
-            tuyos. Al iniciar la inspección, el sistema detecta automáticamente
+            tuyos. Al iniciar la carga de datos, el sistema detecta automáticamente
             las <span className="font-medium text-foreground">tablas</span> que
             contienen, las{" "}
             <span className="font-medium text-foreground">
@@ -337,28 +333,12 @@ export default function InspeccionPage() {
                     >
                       {insp.isStarting
                         ? "Iniciando…"
-                        : `Iniciar Inspección (${selected.size})`}
+                        : `Iniciar Carga de Datos (${selected.size})`}
                     </Button>
                     <Tooltip content="Analiza los archivos seleccionados para detectar automáticamente tablas, relaciones y tipos de datos. El sistema identificará claves primarias, foráneas y otros patrones en tus datos." side="right" />
                   </div>
                 </div>
               }
-            />
-          </div>
-        </WorkflowGroup>
-
-        <WorkflowGroup
-          id="reglas-negocio"
-          label="Reglas de negocio"
-          open={openSections["reglas-negocio"] ?? true}
-          onOpenChange={(o) => setSectionOpen("reglas-negocio", o)}
-          className="scroll-mt-24"
-          style={helpGap("reglas-negocio")}
-        >
-          <div id="reglas-preprocesamiento" className="scroll-mt-24">
-            <RulesPanel
-            autodetect={insp.autodetectQuery.data ?? null}
-            pendingFilePaths={Array.from(selected)}
             />
           </div>
         </WorkflowGroup>
@@ -373,10 +353,10 @@ export default function InspeccionPage() {
         >
           <div id="tablas-detectadas" className="scroll-mt-24">
             <DetectedTablesCard
-            inspectionId={insp.inspectionId}
-            inspection={insp.inspectionQuery.data}
-            isLoading={insp.inspectionQuery.isLoading}
-            isError={insp.inspectionQuery.isError}
+              inspectionId={insp.inspectionId}
+              inspection={insp.inspectionQuery.data}
+              isLoading={insp.inspectionQuery.isLoading}
+              isError={insp.inspectionQuery.isError}
             />
           </div>
 
@@ -384,20 +364,20 @@ export default function InspeccionPage() {
             <>
               <div id="relaciones-detectadas" className="scroll-mt-24">
                 <RelationshipsCard
-                query={insp.autodetectQuery}
-                draft={insp.draft}
-                setDraft={insp.setDraft}
-                originalAvailable={insp.originalAvailable}
-                {...insp.relationships}
+                  query={insp.autodetectQuery}
+                  draft={insp.draft}
+                  setDraft={insp.setDraft}
+                  originalAvailable={insp.originalAvailable}
+                  {...insp.relationships}
                 />
               </div>
               <div id="tipos-codificacion" className="scroll-mt-24">
                 <TypesCard
-                query={insp.autodetectQuery}
-                draft={insp.draft}
-                setDraft={insp.setDraft}
-                originalAvailable={insp.originalAvailable}
-                {...insp.types}
+                  query={insp.autodetectQuery}
+                  draft={insp.draft}
+                  setDraft={insp.setDraft}
+                  originalAvailable={insp.originalAvailable}
+                  {...insp.types}
                 />
               </div>
               {insp.inspectionId && (
@@ -426,35 +406,35 @@ export default function InspeccionPage() {
         >
           <div id="inspecciones-previas" className="scroll-mt-24">
             <HistoryCard
-            inspections={insp.inspectionsQuery.data ?? []}
-            isLoading={insp.inspectionsQuery.isLoading}
-            isError={insp.inspectionsQuery.isError}
-            activeId={insp.inspectionId}
-            onSelect={insp.selectActive}
-            onDelete={(id) => setConfirmDelete(id)}
-            onRename={insp.renameInspection}
-            onCleanup={() => setConfirmCleanup(true)}
-            onPurge={() => setConfirmPurge(true)}
-            onCancel={insp.cancelInspection}
-            isDeleting={insp.isDeleting}
-            isCleaning={insp.isCleaning}
-            isPurging={insp.isPurging}
-            isCancelling={insp.isCancelling}
+              inspections={insp.inspectionsQuery.data ?? []}
+              isLoading={insp.inspectionsQuery.isLoading}
+              isError={insp.inspectionsQuery.isError}
+              activeId={insp.inspectionId}
+              onSelect={insp.selectActive}
+              onDelete={(id) => setConfirmDelete(id)}
+              onRename={insp.renameInspection}
+              onCleanup={() => setConfirmCleanup(true)}
+              onPurge={() => setConfirmPurge(true)}
+              onCancel={insp.cancelInspection}
+              isDeleting={insp.isDeleting}
+              isCleaning={insp.isCleaning}
+              isPurging={insp.isPurging}
+              isCancelling={insp.isCancelling}
             />
           </div>
         </WorkflowGroup>
 
         <NamePromptDialog
           open={startDialog}
-          title="Iniciar inspección"
-          description="Asigna un nombre funcional a esta inspección para identificarla más fácilmente. Puedes dejarlo en blanco y editarlo después."
-          confirmLabel="Iniciar inspección"
+          title="Iniciar carga de datos"
+          description="Asigna un nombre funcional a esta carga de datos para identificarla más fácilmente. Puedes dejarlo en blanco y editarlo después."
+          confirmLabel="Iniciar carga de datos"
           onConfirm={confirmStart}
           onCancel={() => setStartDialog(false)}
         />
         <ConfirmDialog
           open={confirmDelete !== null}
-          title="¿Eliminar inspección?"
+          title="¿Eliminar carga de datos?"
           description="Se borrarán permanentemente la carpeta y todos sus artefactos (metadatos, profiling, etc.). Esta acción no se puede deshacer."
           confirmLabel="Eliminar"
           onConfirm={() => {
@@ -465,8 +445,8 @@ export default function InspeccionPage() {
         />
         <ConfirmDialog
           open={confirmPurge}
-          title="¿Purgar todas las inspecciones?"
-          description="Se eliminarán TODAS las inspecciones, incluidas las completadas correctamente. Esta acción no se puede deshacer."
+          title="¿Purgar todas las cargas de datos?"
+          description="Se eliminarán TODAS las cargas de datos, incluidas las completadas correctamente. Esta acción no se puede deshacer."
           confirmLabel="Purgar"
           onConfirm={() => {
             insp.purgeInspections();
@@ -476,7 +456,7 @@ export default function InspeccionPage() {
         />
         <ConfirmDialog
           open={confirmCleanup}
-          title="¿Limpiar inspecciones?"
+          title="¿Limpiar cargas de datos?"
           description="Se borrarán permanentemente las carpetas vacías, las ejecuciones huérfanas y los duplicados exactos (mismos ficheros, ejecución más antigua). Esta acción no se puede deshacer."
           confirmLabel="Limpiar"
           onConfirm={() => {
@@ -508,6 +488,26 @@ function PreprocessedDataCard({ inspectionId }: { inspectionId: string }) {
     },
   });
 
+  const profilingQuery = useQuery({
+    queryKey: ["inspections", inspectionId, "profiling"],
+    queryFn: async () => {
+      const { data } = await api.get<ProfilingReports>(
+        `/inspections/${inspectionId}/profiling`,
+      );
+      return data;
+    },
+  });
+
+  const profilingTables = useMemo(
+    () => new Set((profilingQuery.data?.reports ?? []).map((r) => r.table)),
+    [profilingQuery.data],
+  );
+
+  const getProfilingUrl = (table: string) =>
+    profilingTables.has(table)
+      ? `${API_BASE_URL}/inspections/${inspectionId}/profiling/${encodeURIComponent(table)}`
+      : null;
+
   return (
     <DatasetPreviewCard
       title="Datos preprocesados"
@@ -524,7 +524,8 @@ function PreprocessedDataCard({ inspectionId }: { inspectionId: string }) {
         return data;
       }}
       downloadHref={`/inspections/${inspectionId}/download/preprocessed`}
-      emptyMessage="No hay datos preprocesados disponibles para esta inspección."
+      getProfilingUrl={getProfilingUrl}
+      emptyMessage="No hay datos preprocesados disponibles para esta carga de datos."
     />
   );
 }

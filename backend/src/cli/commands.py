@@ -12,6 +12,7 @@ from backend.src.infrastructure.time_profiling import profiler
 from backend.src.sessions.artifacts import load_generator_artifacts
 from backend.src.sessions.configs import resolve_config_path
 from backend.src.sessions.inspection import run_inspection_flow
+from backend.src.sessions.rules import apply_inspection_rules
 from backend.src.sessions.simulation import run_simulation_flow
 from backend.src.sessions.training import run_training_flow, run_training_flow_from_inspection
 
@@ -54,11 +55,34 @@ def run_workflow(
             "  Revisa / edita: inspection_metadata.json "
             "(fuente de verdad para PKs, FKs y tipos de codificacion)\n"
             "  Para asignar un nombre, edita 'inspection_name' en inspection_card.json.\n"
+            "  Para definir reglas: usa --inspection-id %s y --mode r\n"
             "  Para entrenar: usa --inspection-id %s y --mode t",
             result.output_directory,
             result.inspection_id,
+            result.inspection_id,
         )
         print_run_summary("i", result.inspection_id, result.output_directory)
+        return
+
+    if mode == "r":
+        if not inspection_id:
+            raise ValueError(
+                "inspection_id es obligatorio para el modo reglas ('r'). Usa --inspection-id."
+            )
+
+        log_run_header(
+            logger,
+            mode,
+            subtitle="definicion de reglas",
+            inspection_id=inspection_id,
+        )
+        result = apply_inspection_rules(inspection_id=inspection_id)
+        logger.info(
+            "Reglas definidas para '%s': %s reglas (config: %s).",
+            result["inspection_id"],
+            result["rules_count"],
+            result["rules_config_path"],
+        )
         return
 
     if mode == "t":

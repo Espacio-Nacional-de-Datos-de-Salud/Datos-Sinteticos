@@ -13,19 +13,21 @@ attached to the first row only to avoid duplication in the report.
 """
 
 import pandas as pd
-from backend.src.infrastructure.logging_config import get_logger
-from backend.src.infrastructure.progress import custom_metric_phase_label
-from backend.src.infrastructure.time_profiling import profiler
+
 from backend.src.domain.evaluation.custom_metrics import (
     DCR,
     NNDR,
     ConfidenceIntervalOverlap,
     CorrelationMatrixDistance,
     DistributionComparisonReport,
+    ExactMatchRows,
     KAnonymity,
     LDiversityPyCanon,
-    UtilityTests
+    UtilityTests,
 )
+from backend.src.infrastructure.logging_config import get_logger
+from backend.src.infrastructure.progress import custom_metric_phase_label
+from backend.src.infrastructure.time_profiling import profiler
 
 logger = get_logger(__name__)
 
@@ -35,8 +37,9 @@ CUSTOM_METRIC_CLASSES = [
     CorrelationMatrixDistance,
     ConfidenceIntervalOverlap,
     DistributionComparisonReport,
+    ExactMatchRows,
     KAnonymity,
-    UtilityTests
+    UtilityTests,
 ]
 
 if LDiversityPyCanon is not None:

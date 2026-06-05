@@ -339,6 +339,32 @@ def list_simulation_synthetic_tables(simulation_id: SimulationId) -> list[str]:
     return sorted(names)
 
 
+@router.get("/{simulation_id}/synthetic-row-counts", response_model=dict[str, int])
+def get_simulation_synthetic_row_counts(simulation_id: SimulationId) -> dict[str, int]:
+    """Returns the actual generated row count per synthetic table.
+
+    These are the *simulated* row counts (read from the synthetic output files),
+    not the training sizes. Tables whose file cannot be read are omitted. Row
+    counts come cheaply from Parquet footers; CSV files are counted line by line.
+    """
+    folder = Path(SIMULATIONS_DIR) / simulation_id / SYNTHETIC_DATA_DIRNAME
+    if not folder.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Synthetic data not found for simulation '{simulation_id}'.",
+        )
+    counts: dict[str, int] = {}
+    for table in list_simulation_synthetic_tables(simulation_id):
+        try:
+            target = _resolve_synthetic_table_file(simulation_id, table)
+            preview = read_file_preview(target, sample_rows=0, include_total=True)
+        except (FilePreviewError, HTTPException):
+            continue
+        if preview.total_rows is not None:
+            counts[table] = preview.total_rows
+    return counts
+
+
 @router.get("/{simulation_id}/synthetic/{table}", response_model=FilePreview)
 def get_simulation_synthetic_preview(
     simulation_id: SimulationId,

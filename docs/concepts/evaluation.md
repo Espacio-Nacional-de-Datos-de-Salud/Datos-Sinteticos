@@ -171,8 +171,9 @@ The current implementation:
 
 ### 4. Distinct L-Diversity
 
-**SynthCity report name:** `privacy.distinct l-diversity.gt` and `privacy.distinct l-diversity.syn`  
-**Type:** SynthCity metric  
+**Code name:** `distinct l-diversity`  
+**Report rows:** `l_diversity.real`, `l_diversity.syn`  
+**Type:** PyCanon-backed custom metric  
 **Range:** values >= 1  
 **Desired:** Maximize
 
@@ -181,6 +182,12 @@ The current implementation:
 Complements k-anonymity: it not only requires several records per group but also that within each group, there is sufficient diversity in other sensitive columns.
 
 It measures how many distinct values exist in a sensitive column within each group of similar people. It prevents an attacker from guessing a private attribute if everyone in the group has the same value (e.g., the same disease).
+
+The current implementation:
+- Uses `pycanon.anonymity.l_diversity`.
+- Requires explicit `metrics.quasi_identifier_subsets`.
+- Requires explicit `metrics.sensitive_columns`.
+- Skips the metric when either config is missing instead of falling back to all pairwise column combinations.
 
 ---
 

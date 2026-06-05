@@ -60,7 +60,7 @@ class InspectionCreateRequest(BaseModel):
             "heuristic single-column PK detection. Use for datasets whose natural "
             "key spans several columns (e.g. patient_id + year). Falls back to "
             "heuristics if the named columns are missing or do not form a unique key. "
-            "An empty list (``\"TABLE\": []``) requests a surrogate row-index key — "
+            'An empty list (``"TABLE": []``) requests a surrogate row-index key — '
             "use it for event-style tables with no natural unique key."
         ),
     )
@@ -84,6 +84,26 @@ class InspectionJob(BaseModel):
 
     inspection_id: str
     status: str = "in_progress"
+
+
+class RulesApplyRequest(BaseModel):
+    """Optional overrides for defining logical rules on an inspection."""
+
+    rules_config_path: str | None = Field(
+        default=None,
+        description=(
+            "Optional override for the rules config path; when null, the server uses "
+            "the rules snapshot stored in the inspection folder."
+        ),
+    )
+
+
+class RulesApplyResult(BaseModel):
+    """Result of applying the logical rules definition step."""
+
+    inspection_id: str
+    rules_config_path: str
+    rules_count: int = 0
 
 
 class RenameRequest(BaseModel):
@@ -119,6 +139,22 @@ class Relationships(BaseModel):
     fks: list[ForeignKey] = []
 
 
+class ColumnWarning(BaseModel):
+    """A per-column issue surfaced during inspection (e.g. an incompatible
+    numeric/text mix recommended for exclusion).
+
+    ``default_excluded`` signals the frontend to pre-select the column for
+    exclusion in the type-detection view; the user can toggle it back on.
+    """
+
+    table: str
+    column: str
+    kind: str
+    message: str
+    default_excluded: bool = False
+    details: dict = {}
+
+
 class Autodetect(BaseModel):
     """Contents of ``inspection_metadata.json`` — the editable source of truth
     for an inspection's schema.
@@ -126,10 +162,18 @@ class Autodetect(BaseModel):
     ``encoding_types`` maps ``table -> column -> type`` where type is one of
     the MostlyAI labels (``TABULAR_NUMERIC_AUTO``, ``TABULAR_CATEGORICAL``,
     ``TABULAR_DATETIME``, ``TABULAR_CHARACTER``, ...).
+
+    ``warnings`` lists columns the inspection flagged and excluded by default
+    (the user can keep them via ``force_include_columns``).
     """
 
     relationships: Relationships = Relationships()
     encoding_types: dict[str, dict[str, str]] = {}
+    warnings: list[ColumnWarning] = []
+    # Columns dropped at training time (non-destructively): the data stays in the
+    # cached parquet, but training skips these. Initialised with the auto-flagged
+    # incompatible columns; the user toggles membership in the autodetect view.
+    excluded_columns: dict[str, list[str]] = {}
 
 
 class ProfilingReport(BaseModel):

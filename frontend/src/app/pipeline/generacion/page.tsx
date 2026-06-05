@@ -26,6 +26,7 @@ import {
   type ConditionalConfig,
 } from "@/components/generation/conditional-config";
 import { TableSampleSizesEditor } from "@/components/generation/table-sample-sizes-editor";
+import { SimulationSchemaDiagram } from "@/components/generation/simulation-schema-diagram";
 import { EditableName } from "@/components/jobs/editable-name";
 import { ActiveJobCard } from "@/components/pipeline-step/active-job-card";
 import { TimeProfilingPanel } from "@/components/pipeline-step/time-profiling-panel";
@@ -155,7 +156,7 @@ export default function GeneracionPage() {
     {
       key: "name",
       header: "Nombre",
-      width: "28%",
+      width: "22%",
       render: (s) => (
         <div className="space-y-0.5">
           <p
@@ -175,7 +176,7 @@ export default function GeneracionPage() {
     {
       key: "status",
       header: "Estado",
-      width: "12%",
+      width: "10%",
       render: (s) => (
         <Badge
           variant={statusBadgeVariant(s.status)}
@@ -188,7 +189,7 @@ export default function GeneracionPage() {
     {
       key: "model",
       header: "Modelo",
-      width: "30%",
+      width: "22%",
       render: (s) => (
         <span className="block truncate font-mono text-xs" title={s.model_id ?? ""}>
           {labelForModelId(s.model_id)}
@@ -196,9 +197,33 @@ export default function GeneracionPage() {
       ),
     },
     {
+      key: "trainingTables",
+      header: "Tablas de entrenamiento",
+      width: "24%",
+      render: (s) => {
+        const sizes = s.training_table_sizes ?? {};
+        const names = Object.keys(sizes);
+        // Fall back to the synthetic table names when the linked model card no
+        // longer carries training sizes (e.g. the model was deleted).
+        const labels = names.length > 0 ? names : s.tables ? s.tables.split(", ") : [];
+        if (labels.length === 0) {
+          return <span className="text-xs text-muted-foreground">—</span>;
+        }
+        const tooltip = (names.length > 0
+          ? names.map((n) => `${n}: ${sizes[n].toLocaleString()} filas`)
+          : labels
+        ).join("\n");
+        return (
+          <span className="block truncate font-mono text-xs" title={tooltip}>
+            {labels.join(", ")}
+          </span>
+        );
+      },
+    },
+    {
       key: "size",
       header: "Tamaño",
-      width: "18%",
+      width: "12%",
       align: "right",
       render: (s) => (
         <span className="tabular-nums">
@@ -362,6 +387,14 @@ export default function GeneracionPage() {
                       </span>
                     )}
                   </div>
+                  {lc.activeId &&
+                    Object.keys(lc.active.training_table_sizes ?? {}).length > 0 && (
+                      <SimulationSchemaDiagram
+                        simulationId={lc.activeId}
+                        fallbackSizes={lc.active.training_table_sizes}
+                        relationships={lc.active.relationships ?? []}
+                      />
+                    )}
                   {lc.active.status === "completed" && lc.activeId && (
                     <TimeProfilingPanel kind="simulations" id={lc.activeId} />
                   )}

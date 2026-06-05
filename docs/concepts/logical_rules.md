@@ -139,8 +139,7 @@ If your constraint needs to deviate significantly from the training data distrib
 
 > If you want to create a model that is generalistic, will generate any type of value by default, but that can be conditioned to generate specific values for certain columns:
 
-3. **Rejection Sampling (Upcoming Feature)**:
-   *(Note: This is not yet implemented in the current SDK wrapper)*. 
+3. **Rejection Sampling**:
    Rejection sampling allows the engine to generate a record, check it against a rule, and "discard and retry" if it fails. This is the only way to maintain perfect correlations without proxy columns, though it can be significantly slower during generation. See [Rejection Sampling](rejection_sampling.md) for more details.
 
 ---
@@ -181,10 +180,72 @@ It also automatically resolves rules that depend on another table:
 
 ### 4.3 Rule Interaction Detection and Ordering
 
-Logical rules can be **isolated**, **overlapping**, or **concatenated**. The manager enforces
-valid ordering right before applying PRE rules so that no rule references a column that has already been removed. The ordering and validation are driven by column-level dependencies and a directed graph built with the library NetworkX.
+Since most rules will be removing a column during their PRE phase, they must be ordered properly. Logical rules can be **isolated**, **overlapping**, or **concatenated**. The manager enforces valid ordering right before applying PRE rules so that no rule references a column that has already been removed. The ordering and validation are driven by column-level dependencies and a directed graph built with the library NetworkX.
 
-#### 4.3.1 `add_rule()`
+#### 4.3.1 Isolated Rules
+Rules without any interaction with other rules on their referenced columns. No issues at the time of implementation. Ex: All rejection sampling rules are considered isolated, as by definition they cannot create or remove any columns.
+#### 4.3.2 Overlapping/Superimposed Rules
+Overlapping/superimposed rules refers to two or more rules that have the same target. In this case, both rules would try to delete the same column. We detect these interactions as each rule is added to the rule manager. We are able to resolve these in 2 different ways, depending on the type of rule.
+
+For semantic consistency rules: Create a combined group key based on the joining of the source columns. For instance, if we have a semantic rule on Age -> Disease and we attempt to add another on Gender -> Disease, a superimposition will be detected. Instead of creating a new rule, we will add on to the first rule, which will become Age + Gender -> Disease. This way we are able to calculate the valid combinations using both variables.
+
+For number/date inequality rules: We flip the rule. For instance DOB < Visit becomes Visit > DOB. Through this method, rules that share the same target can be changed into rules that share the same origin, which is not an issue as the origin is not deleted. Furthermore, we have implemented the logic to propogate this change through a limitless number of concatenated rules, flipping each pair.
+
+```mermaid
+flowchart TB
+
+  subgraph F[Flipped chain]
+    direction RL
+    F3[X] --> F2[X] --> F1[X]
+    F5[X] --> F4[X]
+    F3 -.-> F5
+  end
+
+  subgraph O[Original chain]
+    direction LR
+    O1[X] --> O2[X] --> O3[X]
+    O4[X] --> O5[X]
+    O5 -.-> O3
+  end
+
+  style O fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#000
+  style F fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+```
+
+However, there are 2 requirements for this process. All rules must be of the same type (no mixing numeric inequality rules with date inequality rules). And there must not exist columns that are already the source for multiple rules before the flip, which would just result in us creating another superimposition at the time of the flip, as shown below.
+
+```mermaid
+flowchart TB
+
+  subgraph F[Invalid Flipped chain]
+    direction RL
+    F3[X] --> F2[X] --> F1[X] --> F0[X]
+    F5[X] --> F4[X]
+    F3 --> F5
+    F4 --> F0
+  end
+
+  subgraph O[Invalid Original chain]
+    direction LR
+    O0[X] --> O1[X] --> O2[X] --> O3[X]
+    O4[X] --> O5[X]
+    O5 --> O3
+    O0 --> O4
+  end
+
+  style O fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#000
+  style F fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+```
+
+#### 4.3.3 Concatenated Rules
+Concatenated rules occur when the source column of a rule (rule A) is the target column of other rule (Rule B). The rule that uses it as the source must be ordered before the rule that uses it as a column. We have chosen to abstract this problem to a directed graph, in which the nodes are the rules. If rule A creates a column that rule B needs, we connect them A -> B. If rule A deletes a column that rule B needs, we connect them B -> A. The direction of the edges represents the each required pairwise ordering. 
+
+By using a graph, we are able to convert this from a convoluted, internally intertwined problem to one with widely studied and implemented solutions. We have chosen to take a solution from the established NetworkX python package, using a topological sort that ensures a valid ordering of the directed graph, as long as no cycles exist. Before performing the sort, we use NetworkX to detect cycles, which would result in us returning an error to the user.
+
+Through providing these algoirthmns for the resolution and correction of user-defined rules, we greatly reduce the complexity for the user. The user does not have to worry about how rules are enacted internally, or any ordering constraints. They can simply define what relations between columns are required, and the program will resolve most issues.
+
+#### 4.3.4 Code
+##### 4.3.4.1 `add_rule()`
 
 Registers a new rule in the manager after checking conflicts (with _detect_rule_interactions).
 
@@ -193,7 +254,7 @@ Registers a new rule in the manager after checking conflicts (with _detect_rule_
 - **Concatenation:** if the rule depends on columns produced or removed by another rule,
   both rules are tracked in `concat_rules` so they can be ordered later.
 
-#### 4.3.2 `_detect_rule_interactions()`
+##### 4.3.4.2 `_detect_rule_interactions()`
 
 Compares the new rule against all registered rules and classifies interactions.
 
@@ -204,7 +265,7 @@ Compares the new rule against all registered rules and classifies interactions.
     creates), and **removed columns** (what it deletes in PRE).
   - If a rule needs a column that another rule produces or removes, they are concatenated.
 
-#### 4.3.3 `_sort_concat_rules()` (NetworkX-based)
+##### 4.3.4.3 `_sort_concat_rules()` (NetworkX-based)
 
 Called in apply_all_pre. Orders concatenated rules so every dependency is respected. Also logs a warning and skips for any rules
 that refer to inexistent columns. This is accomplished through first formatting all rules into a directed graph. The library NetworkX 
@@ -225,7 +286,7 @@ topological sort, ordering all rules into the appropriate positions. There are v
 4. **Topological sorting**: `nx.algorithms.dag.lexicographical_topological_sort()` returns a
    stable, deterministic order for rules in a valid DAG (Directed Acyclic Graph).
 
-#### 4.3.4 `_qualify_col()`
+##### 4.3.4.4 `_qualify_col()`
 
 Utility to produce a consistent qualified column identifier.
 
@@ -233,14 +294,14 @@ Utility to produce a consistent qualified column identifier.
 - **Output:** `"table.column"` (or just `"column"` when the table is not provided)
 - **Purpose:** unify column keys across rules and tables without needing actual DataFrames.
 
-#### 4.3.5 `_get_rule_source_cols()`
+##### 4.3.4.5 `_get_rule_source_cols()`
 
 Returns the set of columns **required** by a rule.
 
 - Includes `origin_col` and `source_col` (if present).
 - Columns are returned in qualified form (e.g., `"patients.age"`).
 
-#### 4.3.6 `_get_rule_produced_cols()`
+##### 4.3.4.6 `_get_rule_produced_cols()`
 
 Returns the set of columns **created** by a rule.
 
@@ -248,7 +309,7 @@ Returns the set of columns **created** by a rule.
 - Includes `target_col` and `aux_col` (if present).
 - This is used to build dependency edges for concatenated rules.
 
-#### 4.3.7 `_get_rule_removed_cols()`
+##### 4.3.4.7 `_get_rule_removed_cols()`
 
 Returns the set of columns **removed in PRE** by a rule.
 

@@ -10,12 +10,14 @@ import re
 from enum import Enum
 
 import pandas as pd
+
 from backend.src.config.general import (
     METADATA_FILENAME,
 )
+from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
+from backend.src.infrastructure.date_parsing import parse_dates
 from backend.src.infrastructure.errors import MetadataNotFoundError, RuleManagerNotFoundError
 from backend.src.infrastructure.logging_config import get_logger
-from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
 
 logger = get_logger(__name__)
 
@@ -63,6 +65,16 @@ def auto_detect_encoding_type(x: pd.Series) -> ModelEncodingType:
         >>> auto_detect_encoding_type(s)
         <ModelEncodingType.tabular_datetime: 'TABULAR_DATETIME'>
     """
+    # Booleans and 2-value binary flags are STATES, not magnitudes — never
+    # treat them as numeric. MostlyAI has no native bool type, so categorical
+    # is the closest semantic match (model uses softmax over the 2 classes
+    # and learns P(state | covariates) instead of optimising L2 distance).
+    if pd.api.types.is_bool_dtype(x):
+        return ModelEncodingType.tabular_categorical
+    non_null = x.dropna()
+    if len(non_null) > 0 and non_null.nunique() <= 2:
+        return ModelEncodingType.tabular_categorical
+
     x = x.astype(str)
     x = x[x.str.strip() != ""]  # filter out empty and whitespace-only strings
 
@@ -71,7 +83,7 @@ def auto_detect_encoding_type(x: pd.Series) -> ModelEncodingType:
         return ModelEncodingType.tabular_categorical
 
     # if all non-null values can be converted to datetime -> datetime encoding
-    if pd.to_datetime(x, errors="coerce").notna().all():
+    if parse_dates(x, errors="coerce").notna().all():
         return ModelEncodingType.tabular_datetime
 
     # if all values match lat/long pattern -> lat_long (geo) encoding
@@ -88,6 +100,54 @@ def auto_detect_encoding_type(x: pd.Series) -> ModelEncodingType:
             return ModelEncodingType.language_text
 
     return ModelEncodingType.tabular_categorical
+
+
+INCOMPATIBLE_MIX_MIN_NUMERIC_FRACTION = 0.2
+
+
+def detect_incompatible_type_mix(
+    x: pd.Series, min_numeric_fraction: float = INCOMPATIBLE_MIX_MIN_NUMERIC_FRACTION
+) -> dict | None:
+    """Flag columns that mix free text and pure numbers in incompatible amounts.
+
+    These columns have no clean encoding. Routed to a language model (which is
+    what :func:`auto_detect_encoding_type` picks for free text) they crash Mostly
+    AI's report generation with a primary-key dtype mismatch
+    (``float64`` vs ``object``) across partitions; routed to numeric/categorical
+    they silently drop half the information. Rather than guess how to split such a
+    column, the caller excludes it and warns the user.
+
+    Detection is intentionally narrow: only columns that would be modeled as free
+    text *and* whose values are numeric in at least ``min_numeric_fraction`` are
+    flagged. Pure-text columns and short-code categoricals are left untouched.
+
+    Args:
+        x: Column to analyse (may contain nulls).
+        min_numeric_fraction: Minimum share of non-null values that must parse as
+            numbers for the column to count as a mix.
+
+    Returns:
+        A summary dict (``numeric_fraction``, ``text_fraction``, ``text_samples``)
+        when the column is an incompatible mix; otherwise ``None``.
+    """
+    if auto_detect_encoding_type(x) != ModelEncodingType.language_text:
+        return None
+
+    values = x.dropna().astype(str).str.strip()
+    values = values[values != ""]
+    if len(values) == 0:
+        return None
+
+    numeric_mask = pd.to_numeric(values, errors="coerce").notna()
+    numeric_fraction = float(numeric_mask.mean())
+    if numeric_fraction < min_numeric_fraction:
+        return None
+
+    return {
+        "numeric_fraction": round(numeric_fraction, 4),
+        "text_fraction": round(1.0 - numeric_fraction, 4),
+        "text_samples": values[~numeric_mask].drop_duplicates().head(5).tolist(),
+    }
 
 
 def load_metadata(path_run_folder: str) -> dict:

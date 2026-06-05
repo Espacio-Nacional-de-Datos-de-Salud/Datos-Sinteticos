@@ -19,8 +19,8 @@ import { cn } from "@/lib/utils";
 
 const PROFILING_OUTLINE = [
   { id: "preparacion", label: "Preparación", level: 1 },
-  { id: "seleccion-inspeccion", label: "Inspección a visualizar", level: 2 },
-  { id: "inspeccion-activa", label: "Inspección activa", level: 2 },
+  { id: "seleccion-inspeccion", label: "Carga de Datos a visualizar", level: 2 },
+  { id: "inspeccion-activa", label: "Carga de datos activa", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
   { id: "informes-profiling", label: "Informes de profiling", level: 2 },
 ] as const;
@@ -66,7 +66,7 @@ export default function ProfilingPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Profiling</h1>
           <p className="text-sm text-muted-foreground">
-            Consulta y descarga los informes de profiling generados para inspecciones completadas.
+            Consulta y descarga los informes de profiling generados para cargas de datos completadas.
           </p>
         </div>
 
@@ -78,12 +78,12 @@ export default function ProfilingPage() {
                 <BarChart3 className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1 space-y-1">
-                <Label htmlFor="profiling-inspection-select">Inspección a visualizar</Label>
+                <Label htmlFor="profiling-inspection-select">Carga de Datos a visualizar</Label>
                 {inspectionsQuery.isLoading ? (
                   <Skeleton className="h-9 w-full" />
                 ) : completedInspections.length === 0 ? (
                   <p className="text-sm text-destructive">
-                    No hay inspecciones completadas con resultados disponibles todavía.
+                    No hay cargas de datos completadas con resultados disponibles todavía.
                   </p>
                 ) : (
                   <select
@@ -113,7 +113,7 @@ export default function ProfilingPage() {
               <Card>
               <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-3 p-4 text-sm">
                 <div>
-                  <span className="text-muted-foreground">Inspección activa: </span>
+                  <span className="text-muted-foreground">Carga de datos activa: </span>
                   <span className="font-medium">
                     {selectedInspection.inspection_name || selectedInspection.inspection_id}
                   </span>

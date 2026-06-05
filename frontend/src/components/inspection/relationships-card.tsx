@@ -113,44 +113,59 @@ export function RelationshipsCard({
     setDraft(next);
   };
 
-  // Collapsed by default — the panel is large and most users only need to
-  // glance at it after autodetect completes. Toggle with the chevron button
-  // in the header.
-  const [expanded, setExpanded] = useState(false);
+  // The autodetected diagram is always visible — it's central to validating the
+  // inspection. The PK/FK editor below it is collapsed by default: most users
+  // only glance at the relationships and never need to edit them, so showing
+  // all the edit controls up-front is just clutter.
+  const [editorOpen, setEditorOpen] = useState(false);
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-        <div>
-          <CardTitle className="text-base">Relaciones Detectadas</CardTitle>
-          <CardDescription>
-            Edita claves primarias y relaciones entre tablas. Los cambios solo
-            se aplican al guardar.
-          </CardDescription>
-        </div>
-        <CollapseToggle
-          open={expanded}
-          onToggle={() => setExpanded((v) => !v)}
-          ariaLabel={expanded ? "Contraer relaciones" : "Expandir relaciones"}
-        />
+      <CardHeader className="space-y-0">
+        <CardTitle className="text-base">Relaciones Detectadas</CardTitle>
+        <CardDescription>
+          Diagrama de claves primarias y relaciones entre tablas detectadas.
+        </CardDescription>
       </CardHeader>
-      {expanded && (
-        <CardContent className="space-y-6">
-          {query.isLoading && <Skeleton className="h-24 w-full" />}
-          {query.isError && (
-            <p className="text-sm text-destructive">
-              No se pudo cargar autodetect.json.
-            </p>
-          )}
-          {draft && (
-            <>
-              <div>
-                <h3 className="mb-2 text-sm font-medium">Diagrama</h3>
-                <RelationshipsGraph autodetect={draft} />
-              </div>
+      <CardContent className="space-y-6">
+        {query.isLoading && <Skeleton className="h-24 w-full" />}
+        {query.isError && (
+          <p className="text-sm text-destructive">
+            No se pudo cargar autodetect.json.
+          </p>
+        )}
+        {draft && (
+          <>
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Diagrama</h3>
+              <RelationshipsGraph autodetect={draft} />
+            </div>
 
-              <div>
-                <h3 className="mb-2 text-sm font-medium">Claves primarias</h3>
+            <div className="rounded-md border">
+              <div className="flex items-center justify-between gap-2 px-3 py-2">
+                <div>
+                  <h3 className="text-sm font-medium">
+                    Editar claves primarias y relaciones
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Los cambios solo se aplican al guardar.
+                    {dirtyVsSaved && (
+                      <span className="ml-1 font-medium text-foreground">
+                        Hay cambios sin guardar.
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <CollapseToggle
+                  open={editorOpen}
+                  onToggle={() => setEditorOpen((v) => !v)}
+                  ariaLabel={editorOpen ? "Contraer editor" : "Expandir editor"}
+                />
+              </div>
+              {editorOpen && (
+                <div className="space-y-6 border-t px-3 py-4">
+                  <div>
+                    <h3 className="mb-2 text-sm font-medium">Claves primarias</h3>
                 {tables.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     No hay tablas para configurar.
@@ -349,11 +364,13 @@ export function RelationshipsCard({
                 >
                   {isSaving ? "Guardando…" : "Guardar relaciones"}
                 </Button>
-              </div>
-            </>
-          )}
-        </CardContent>
-      )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </CardContent>
     </Card>
   );
 }

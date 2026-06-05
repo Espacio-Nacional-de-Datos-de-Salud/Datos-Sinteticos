@@ -248,3 +248,116 @@ def test_resolve_inspection_rules_config_path_raises_when_nothing_resolves(
     (isolated_inspections_dir / "insp_x").mkdir()
     with pytest.raises(FileNotFoundError, match="Rules config not found"):
         inspection_service.resolve_inspection_rules_config_path("insp_x")
+
+
+def test_apply_inspection_rules_writes_rule_manager(
+    isolated_inspections_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.src.domain.rules_config import extract_rules_and_rejection_config
+
+    monkeypatch.setattr(
+        inspection_service,
+        "extract_rules_and_rejection_config",
+        extract_rules_and_rejection_config,
+    )
+    inspection_id = "inspection_1"
+    session_dir = isolated_inspections_dir / inspection_id
+    session_dir.mkdir()
+
+    card_path = session_dir / INSPECTION_CARD_FILENAME
+    card_path.write_text(
+        json.dumps({"inspection_id": inspection_id, "status": "completed"}),
+        encoding="utf-8",
+    )
+
+    metadata_path = session_dir / INSPECTION_METADATA_FILENAME
+    metadata_path.write_text(
+        json.dumps({"relationships": {"pks": {"patients": "id"}, "fks": []}}),
+        encoding="utf-8",
+    )
+
+    processed_dir = session_dir / PROCESSED_DATA_DIRNAME
+    processed_dir.mkdir()
+    df = pd.DataFrame({"id": [1, 2, 3], "age": [10, 20, 30]})
+    df.to_parquet(processed_dir / "patients.parquet")
+
+    rules_file = tmp_path / "rules.yaml"
+    rules_file.write_text(
+        """
+rules:
+  - type: "numeric_threshold"
+    table_target: "patients"
+    table_origin: "patients"
+    origin_col: "age"
+    aux_col: "is_adult"
+    threshold: 18
+    operator: ">="
+        """.lstrip(),
+        encoding="utf-8",
+    )
+
+    result = inspection_service.apply_inspection_rules(
+        inspection_id=inspection_id,
+        rules_config_path=str(rules_file),
+    )
+
+    assert result["rules_count"] == 1
+    snapshot = session_dir / inspection_service.RULES_SNAPSHOT_FILENAME
+    assert snapshot.is_file()
+
+    rule_manager_path = session_dir / inspection_service.INSPECTION_RULE_MANAGER_FILENAME
+    assert rule_manager_path.is_file()
+    payload = json.loads(rule_manager_path.read_text(encoding="utf-8"))
+    assert len(payload.get("rules", [])) == 1
+
+
+def test_apply_inspection_rules_applies_pre_to_cached_data(
+    isolated_inspections_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.src.domain.rules_config import extract_rules_and_rejection_config
+
+    monkeypatch.setattr(
+        inspection_service,
+        "extract_rules_and_rejection_config",
+        extract_rules_and_rejection_config,
+    )
+
+    inspection_id = "inspection_2"
+    session_dir = isolated_inspections_dir / inspection_id
+    processed_dir = session_dir / PROCESSED_DATA_DIRNAME
+    processed_dir.mkdir(parents=True)
+
+    (session_dir / INSPECTION_CARD_FILENAME).write_text(
+        json.dumps({"inspection_id": inspection_id, "status": "completed"}),
+        encoding="utf-8",
+    )
+    (session_dir / INSPECTION_METADATA_FILENAME).write_text(
+        json.dumps({"relationships": {"pks": {"patients": "id"}, "fks": []}}),
+        encoding="utf-8",
+    )
+
+    df = pd.DataFrame({"id": [1, 2, 3], "age": [10, 20, 30]})
+    df.to_parquet(processed_dir / "patients.parquet")
+
+    rules_file = tmp_path / "rules.yaml"
+    rules_file.write_text(
+        """
+rules:
+  - type: "numeric_threshold"
+    table_target: "patients"
+    table_origin: "patients"
+    origin_col: "age"
+    aux_col: "is_adult"
+    threshold: 18
+    operator: ">="
+        """.lstrip(),
+        encoding="utf-8",
+    )
+
+    inspection_service.apply_inspection_rules(
+        inspection_id=inspection_id,
+        rules_config_path=str(rules_file),
+    )
+
+    updated = pd.read_parquet(processed_dir / "patients.parquet")
+    assert "is_adult" in updated.columns

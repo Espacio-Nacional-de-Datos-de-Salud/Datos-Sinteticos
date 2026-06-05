@@ -359,6 +359,46 @@ def test_create_inspection_returns_new_job(
     }
 
 
+def test_apply_inspection_rules_returns_payload(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        inspections_router,
+        "apply_inspection_rules",
+        lambda inspection_id, rules_config_path=None: {
+            "inspection_id": inspection_id,
+            "rules_config_path": rules_config_path or "/tmp/rules.yaml",
+            "rules_count": 2,
+        },
+    )
+
+    response = client.post(
+        "/inspections/inspection_20260101_120000/rules",
+        json={"rules_config_path": "/tmp/rules.yaml"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "inspection_id": "inspection_20260101_120000",
+        "rules_config_path": "/tmp/rules.yaml",
+        "rules_count": 2,
+    }
+
+
+def test_apply_inspection_rules_returns_not_found(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _raise_missing(inspection_id: str, rules_config_path=None):
+        raise FileNotFoundError("Inspection not found: /tmp/inspection_404")
+
+    monkeypatch.setattr(inspections_router, "apply_inspection_rules", _raise_missing)
+
+    response = client.post("/inspections/inspection_20260101_000000/rules")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Inspection not found: /tmp/inspection_404"
+
+
 def test_cleanup_inspections_returns_deleted_ids(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -1,4 +1,4 @@
-// Help content for the Inspección instructions manual.
+// Help content for the Carga de Datos instructions manual.
 //
 // One entry per page section (WorkflowGroup); the `id` matches the section's
 // DOM id. Each entry combines concise prose, the meaning of the available
@@ -35,17 +35,6 @@ function Subtitle({ children }: { children: React.ReactNode }) {
     <h4 className="mt-3.5 text-[13.5px] font-bold uppercase tracking-wide text-[#16386f] underline decoration-[#FFDB00] decoration-2 underline-offset-4 first:mt-0 dark:text-[#dce8ff]">
       {children}
     </h4>
-  );
-}
-
-// A heading for a section nested inside a Subtitle — a tinted pill so it
-// stands out, while staying clearly subordinate to the full Subtitle.
-function InnerSubtitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h5 className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-[#eef3ff] py-1 pl-1.5 pr-2.5 text-[12px] font-bold uppercase tracking-wide text-[#16386f] dark:bg-[#16284d] dark:text-[#dce8ff]">
-      <span className="h-3.5 w-1 rounded-full bg-[#FFDB00]" />
-      {children}
-    </h5>
   );
 }
 
@@ -239,7 +228,7 @@ function OverviewDiagram() {
     <StepFlowH
       steps={[
         ["Carga de", "ficheros"],
-        ["Inspección autom.", "de tablas"],
+        ["Carga de Datos", "automática"],
         ["Vista previa", "de tablas"],
         ["Revisión de", "relaciones"],
         ["Revisión de", "tipos"],
@@ -443,7 +432,7 @@ function EncodingTypeExplorer() {
 function HistorialDiagram() {
   return (
     <svg {...svgBase} width="320" height="120" viewBox="0 0 320 120" role="img"
-      aria-label="Historial de inspecciones con la activa resaltada">
+      aria-label="Historial de cargas de datos con la activa resaltada">
       {[0, 1, 2].map((i) => {
         const y = 6 + i * 38;
         const active = i === 0;
@@ -453,7 +442,7 @@ function HistorialDiagram() {
               fill={active ? "#eef3ff" : "#fff"} stroke={active ? NAVY : SKY}
               strokeWidth={active ? 2.5 : 1.6} />
             <text x={18} y={y + 20} fontSize={13.5} fontWeight={active ? 700 : 400} fill={INK}>
-              Inspección {i + 1}{active ? "  ·  activa" : ""}
+              Carga de Datos {i + 1}{active ? "  ·  activa" : ""}
             </text>
           </g>
         );
@@ -462,183 +451,6 @@ function HistorialDiagram() {
   );
 }
 
-// ── Rule-type reference ─────────────────────────────────────────────────────
-// Mirrors the rule types offered by the rules editor on the page. Each entry
-// describes how the rule is configured (its parameters) and a health-domain
-// example.
-type RuleTypeInfo = {
-  value: string;
-  label: string;
-  desc: string;
-  /** Configurable parameters and what each one means. */
-  params: Array<{ name: string; meaning: string }>;
-  /** Opt-in / opt-out toggle options of this rule, shown as callouts. */
-  toggles?: Array<{ name: string; state: string; desc: string }>;
-  example: React.ReactNode;
-};
-
-const RULE_TYPES: readonly RuleTypeInfo[] = [
-  {
-    value: "date_inequality",
-    label: "Desigualdad de fechas",
-    desc: "Garantiza que una fecha objetivo cumpla un orden respecto a una fecha origen o a una fecha constante.",
-    params: [
-      { name: "Tabla / columna objetivo", meaning: "la fecha que debe respetar la restricción." },
-      { name: "Tabla / columna origen", meaning: "la fecha de referencia con la que se compara." },
-      { name: "Constante (opcional)", meaning: "una fecha fija (p. ej. 2020-01-01) que sustituye a la columna origen." },
-      { name: "Operador (≥ / ≤)", meaning: "indica si la objetivo debe ser posterior o anterior al origen." },
-      { name: "Columna auxiliar (opcional)", meaning: "nombre de la columna de duración que se genera; se autogenera si se deja vacío." },
-    ],
-    toggles: [
-      {
-        name: "Forzar duraciones no negativas",
-        state: "Activada por defecto",
-        desc: "Limita la duración resultante a valores ≥ 0. Desactívala si los datos reales contienen inconsistencias temporales que quieras replicar fielmente en los datos sintéticos. En ambos casos, configurar esta regla es útil porque transforma el par de fechas en una duración —un valor numérico directamente interpretable— que el modelo puede aprender con mucha más facilidad que dos fechas absolutas mezcladas entre decenas de columnas del dataset.",
-      },
-    ],
-    example:
-      "fecha_alta_hospitalaria ≥ fecha_ingreso: ningún paciente puede recibir el alta antes de haber ingresado.",
-  },
-  {
-    value: "numeric_inequality",
-    label: "Desigualdad numérica",
-    desc: "Garantiza que un valor numérico objetivo cumpla un orden respecto a un valor origen o a una constante.",
-    params: [
-      { name: "Tabla / columna objetivo", meaning: "el valor numérico que debe respetar la restricción." },
-      { name: "Tabla / columna origen", meaning: "el valor numérico de referencia." },
-      { name: "Constante (opcional)", meaning: "un número fijo que sustituye a la columna origen." },
-      { name: "Operador (≥ / ≤)", meaning: "indica si la objetivo debe ser mayor o menor que el origen." },
-      { name: "Columna auxiliar (opcional)", meaning: "nombre de la columna de diferencia generada; se autogenera si se deja vacío." },
-    ],
-    example:
-      "tension_sistolica ≥ tension_diastolica: la presión sistólica nunca es inferior a la diastólica.",
-  },
-  {
-    value: "semantic_ranking_consistency",
-    label: "Consistencia semántica (ranking)",
-    desc: "Restringe qué combinaciones de dos columnas categóricas son válidas, asumiendo que ambas tienen un orden de niveles equiespaciados.",
-    params: [
-      { name: "Tabla / columna origen", meaning: "la categórica que actúa como condición." },
-      { name: "Tabla / columna objetivo", meaning: "la categórica cuyos valores se restringen según el origen." },
-    ],
-    example:
-      "Un paciente clasificado como triaje «leve» no puede tener a la vez nivel de gravedad «crítico».",
-  },
-  {
-    value: "semantic_proportional_consistency",
-    label: "Consistencia semántica (proporcional)",
-    desc: "Como la consistencia de ranking, pero los intervalos válidos respetan la frecuencia real de cada categoría en los datos.",
-    params: [
-      { name: "Tabla / columna origen", meaning: "la categórica que actúa como condición." },
-      { name: "Tabla / columna objetivo", meaning: "la categórica cuyos valores se restringen, ponderada por su frecuencia real." },
-    ],
-    example:
-      "Relaciona el servicio hospitalario con el tipo de ingreso respetando cuántos ingresos reales tiene cada servicio.",
-  },
-  {
-    value: "foreign_keys_consistency_rule",
-    label: "Consistencia de claves foráneas",
-    desc: "Reconstruye una clave foránea redundante copiando su valor desde la tabla padre marcada como contexto, evitando referencias inválidas.",
-    params: [
-      { name: "Tabla origen", meaning: "la tabla padre que aporta el valor de referencia (contexto)." },
-      { name: "Tabla / columna objetivo", meaning: "la tabla hija y la columna FK que se reconstruye." },
-      { name: "Columna fuente (opcional)", meaning: "columna de la tabla padre de la que se copia; por defecto, la misma que la objetivo." },
-      { name: "Tabla referenciada (opcional)", meaning: "tabla a la que apunta la FK, si difiere de la de origen." },
-    ],
-    example:
-      "episodios.id_paciente se rellena desde la tabla pacientes para que todo episodio apunte a un paciente existente.",
-  },
-  {
-    value: "date_to_age",
-    label: "Columna derivada: edad a partir de fecha",
-    desc: "Crea una columna de edad (en años) a partir de una columna de fecha y una fecha de referencia.",
-    params: [
-      { name: "Tabla / columna origen", meaning: "la columna de fecha de la que se calcula la edad." },
-      { name: "Columna derivada (aux_col)", meaning: "nombre de la nueva columna de edad que se crea." },
-      { name: "Fecha de referencia (constante)", meaning: "fecha fija respecto a la que se calcula la edad." },
-      { name: "o columna de referencia", meaning: "otra columna de fecha como referencia (alternativa a la constante)." },
-      { name: "Eliminar columna origen", meaning: "descarta la fecha original tras derivar la edad." },
-      { name: "Reconstruir en POST", meaning: "vuelve a generar la fecha original tras la generación, si se eliminó." },
-    ],
-    example:
-      "Genera pacientes.edad a partir de fecha_nacimiento y la fecha de ingreso, para modelar la edad al ingresar.",
-  },
-  {
-    value: "numeric_threshold",
-    label: "Columna derivada: umbral numérico",
-    desc: "Crea una columna booleana comparando una columna numérica con un umbral.",
-    params: [
-      { name: "Tabla / columna origen", meaning: "la columna numérica que se compara." },
-      { name: "Columna derivada (aux_col)", meaning: "nombre de la nueva columna booleana." },
-      { name: "Operador (≥ > ≤ <)", meaning: "la comparación que se aplica frente al umbral." },
-      { name: "Umbral", meaning: "el valor numérico contra el que se compara." },
-      { name: "Valor si verdadero / falso", meaning: "valores personalizados para cada resultado de la comparación." },
-      { name: "Eliminar / reconstruir origen", meaning: "descarta la columna numérica original y, opcionalmente, la recupera tras la generación." },
-    ],
-    example:
-      "Crea fiebre = (temperatura ≥ 38) para marcar qué pacientes presentan fiebre.",
-  },
-  {
-    value: "numeric_bucket",
-    label: "Columna estratificada: buckets numéricos",
-    desc: "Crea una columna categórica agrupando una columna numérica en intervalos (bins). Útil para generalizar el modelo.",
-    params: [
-      { name: "Tabla / columna origen", meaning: "la columna numérica que se agrupa por intervalos." },
-      { name: "Columna derivada (aux_col)", meaning: "nombre de la nueva columna categórica." },
-      { name: "Bordes de bins", meaning: "los límites de los intervalos (se necesitan al menos 2; admite «Infinity»)." },
-      { name: "Etiquetas (opcional)", meaning: "nombre de cada intervalo; deben ser N−1 para N bordes." },
-      { name: "include_lowest / right", meaning: "controlan si el borde inferior se incluye y si los intervalos son cerrados por la derecha." },
-      { name: "Eliminar / reconstruir origen", meaning: "descarta la columna numérica original y, opcionalmente, la recupera tras la generación." },
-    ],
-    example:
-      "Agrupa edad en [0, 18, 65, ∞) con etiquetas «pediátrico», «adulto», «geriátrico».",
-  },
-];
-
-// Interactive rule-type explorer for the manual: an always-available selector
-// (independent from the page's transient Add/Edit form) that shows, for the
-// chosen rule type, how it is configured (each parameter) and an example.
-function RuleTypeExplorer() {
-  const [value, setValue] = useState(RULE_TYPES[0].value);
-  const info = RULE_TYPES.find((r) => r.value === value) ?? RULE_TYPES[0];
-  return (
-    <div className="space-y-2.5">
-      <div>
-        <label className="mb-1 block text-[12px] font-bold uppercase tracking-wide text-[#26467a] dark:text-[#9db4dc]">
-          Tipo de regla
-        </label>
-        <SelectMenu
-          value={value}
-          onChange={setValue}
-          options={RULE_TYPES.map((r) => ({ value: r.value, label: r.label }))}
-        />
-      </div>
-      <p>{info.desc}</p>
-      <div>
-        <InnerSubtitle>Cómo se configura</InnerSubtitle>
-        <ul className="mt-1.5 space-y-1">
-          {info.params.map((p) => (
-            <li key={p.name} className="flex gap-2">
-              <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-sm bg-[#5f83be]" />
-              <span>
-                <span className="font-semibold text-[#16386f] dark:text-[#dce8ff]">
-                  {p.name}
-                </span>{" "}
-                — {p.meaning}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-      {info.toggles?.map((t) => (
-        <OptionCallout key={t.name} name={t.name} state={t.state}>
-          {t.desc}
-        </OptionCallout>
-      ))}
-      <Example>{info.example}</Example>
-    </div>
-  );
-}
 
 // ── Entries — an overview plus one per page section (WorkflowGroup) ─────────
 export const INSPECCION_INSTRUCTIONS: readonly InstructionsEntry[] = [
@@ -658,7 +470,7 @@ export const INSPECCION_INSTRUCTIONS: readonly InstructionsEntry[] = [
     content: (
       <>
         <Lead>
-          Elige los datos de partida y lanza la inspección, que detectará
+          Elige los datos de partida y lanza la carga de datos, que detectará
           automáticamente tablas, columnas y relaciones. Sigue estos pasos:
         </Lead>
         <StepTable
@@ -681,10 +493,10 @@ export const INSPECCION_INSTRUCTIONS: readonly InstructionsEntry[] = [
             },
             {
               name: "Eliminar columnas no deseadas",
-              desc: "Pulsa una columna en la vista previa para excluirla de la inspección — útil para datos personales o irrelevantes.",
+              desc: "Pulsa una columna en la vista previa para excluirla de la carga de datos — útil para datos personales o irrelevantes.",
             },
             {
-              name: "Iniciar inspección",
+              name: "Iniciar carga de datos",
               desc: "Lanza el análisis. Al terminar verás las tablas, relaciones y tipos detectados.",
             },
           ]}
@@ -696,33 +508,8 @@ export const INSPECCION_INSTRUCTIONS: readonly InstructionsEntry[] = [
           Genera un informe que describe las principales características de cada
           tabla (distribuciones, valores faltantes, correlaciones, etc.) usando
           la librería de Python <code>ydata-profiling</code>. Puedes
-          desactivarla si prefieres una inspección más rápida.
+          desactivarla si prefieres una carga de datos más rápida.
         </OptionCallout>
-      </>
-    ),
-  },
-  {
-    id: "reglas-negocio",
-    title: "Reglas de negocio",
-    content: (
-      <>
-        <Lead>
-          Restricciones propias de tu dominio que los datos deben cumplir. Se
-          aplican antes de entrenar para que el modelo aprenda solo de datos
-          coherentes, y se reutilizan en los pasos posteriores.
-        </Lead>
-        <p>
-          Pulsa <span className="font-semibold">«Añadir regla»</span>, elige el
-          tipo de regla, indica las tablas y columnas a las que se aplica,
-          ajusta sus parámetros y guarda. Puedes definir varias reglas; se
-          aplican todas en orden de dependencia.
-        </p>
-        <Subtitle>Tipos de regla y su configuración</Subtitle>
-        <p>
-          Selecciona un tipo para ver qué hace, qué significa cada parámetro
-          configurable y un ejemplo de uso:
-        </p>
-        <RuleTypeExplorer />
       </>
     ),
   },
@@ -732,7 +519,7 @@ export const INSPECCION_INSTRUCTIONS: readonly InstructionsEntry[] = [
     content: (
       <>
         <Lead>
-          Tras la inspección, revisa y corrige lo que el sistema ha detectado:
+          Tras la carga de datos, revisa y corrige lo que el sistema ha detectado:
           las relaciones entre tablas y el tipo de cada columna.
         </Lead>
 
@@ -795,7 +582,7 @@ export const INSPECCION_INSTRUCTIONS: readonly InstructionsEntry[] = [
     content: (
       <>
         <Lead>
-          Todas las inspecciones de la sesión. Permite retomar trabajo previo
+          Todas las cargas de datos de la sesión. Permite retomar trabajo previo
           sin repetir la configuración.
         </Lead>
         <Diagram>
@@ -803,10 +590,10 @@ export const INSPECCION_INSTRUCTIONS: readonly InstructionsEntry[] = [
         </Diagram>
         <OptionList
           items={[
-            { name: "Seleccionar", desc: "recarga los resultados de una inspección anterior." },
+            { name: "Seleccionar", desc: "recarga los resultados de una carga de datos anterior." },
             { name: "Renombrar", desc: "asigna un nombre funcional para identificarla." },
             { name: "Limpiar", desc: "elimina carpetas vacías, huérfanas y duplicados." },
-            { name: "Purgar", desc: "borra TODAS las inspecciones — úsalo con cuidado." },
+            { name: "Purgar", desc: "borra TODAS las cargas de datos — úsalo con cuidado." },
           ]}
         />
       </>

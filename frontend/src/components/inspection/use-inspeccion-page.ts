@@ -219,6 +219,37 @@ export function useInspeccionPage() {
     },
   });
 
+  // Non-destructive training-time exclusion (used by the auto-flagged-column
+  // toggle). Unlike excludeColumnsMutation it never drops the cached data, so a
+  // column can be opted back in.
+  const trainingExclusionMutation = useMutation({
+    mutationFn: async (payload: Record<string, string[]>) => {
+      const { data } = await api.put<Autodetect>(
+        `/inspections/${inspectionId}/autodetect/training-exclusions`,
+        { excluded_columns: payload },
+      );
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["autodetect", inspectionId], data);
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      toast.error(`No se pudo actualizar la exclusión: ${msg}`);
+    },
+  });
+
+  const toggleTrainingExclusion = (table: string, col: string, excluded: boolean) => {
+    if (!draft) return;
+    const current: Record<string, string[]> = { ...(draft.excluded_columns ?? {}) };
+    const set = new Set(current[table] ?? []);
+    if (excluded) set.add(col);
+    else set.delete(col);
+    if (set.size > 0) current[table] = [...set];
+    else delete current[table];
+    trainingExclusionMutation.mutate(current);
+  };
+
   const saveRelationships = () => {
     if (!draft) return;
     saveRelationshipsMutation.mutate(draft.relationships);
@@ -451,6 +482,8 @@ export function useInspeccionPage() {
       onExcludeColumn: (table: string, col: string) =>
         excludeColumnsMutation.mutate({ [table]: [col] }),
       isExcluding: excludeColumnsMutation.isPending,
+      onToggleTrainingExclusion: toggleTrainingExclusion,
+      isTogglingExclusion: trainingExclusionMutation.isPending,
     },
     originalAvailable: !!original,
 

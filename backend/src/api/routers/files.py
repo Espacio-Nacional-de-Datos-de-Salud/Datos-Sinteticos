@@ -6,6 +6,8 @@ actual filesystem walk lives in ``services.files``; this router just
 translates query params and delegates.
 """
 
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+
 from backend.src.api.schemas.files import DataFile, FilePreview, FilePreviewRequest
 from backend.src.sessions.files import (
     ALLOWED_EXTENSIONS,
@@ -22,7 +24,6 @@ from backend.src.sessions.files import (
     preview_file,
     save_uploaded_file,
 )
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 
 router = APIRouter(prefix="/files", tags=["Files"])
 

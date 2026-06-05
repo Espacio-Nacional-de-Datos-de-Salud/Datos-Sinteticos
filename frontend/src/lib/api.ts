@@ -43,6 +43,7 @@ export type InspectionSummary = Schemas["InspectionSummary"];
 export type InspectionJob = Schemas["InspectionJob"];
 export type ForeignKey = Schemas["ForeignKey"];
 export type Autodetect = Schemas["Autodetect"];
+export type ColumnWarning = Schemas["ColumnWarning"];
 
 export type ProfilingReport = Schemas["ProfilingReport"];
 export type ProfilingReports = Schemas["ProfilingReports"];
@@ -51,6 +52,7 @@ export type ModelSummary = Schemas["ModelSummary"];
 export type TrainingJob = Schemas["TrainingJob"];
 
 export type SimulationSummary = Schemas["SimulationSummary"];
+export type SimulationRelationship = Schemas["SimulationRelationship"];
 export type SimulationJob = Schemas["SimulationJob"];
 
 export type EvaluationSummary = Schemas["EvaluationSummary"];

@@ -44,7 +44,7 @@ type Panel = {
 const PANELS: Panel[] = [
   {
     href: "/pipeline/inspeccion",
-    title: "Inspección",
+    title: "Carga de Datos",
     description: "Detección de claves, tipos y estructura de los datos crudos.",
     stage: "Etapa 1",
     queryKey: "inspections",
@@ -56,7 +56,7 @@ const PANELS: Panel[] = [
   {
     href: "/pipeline/profiling",
     title: "Profiling",
-    description: "Exploración visual y descarga de informes de profiling por inspección.",
+    description: "Exploración visual y descarga de informes de profiling por carga de datos.",
     stage: "Etapa 2",
     queryKey: "inspections",
     endpoint: "/inspections/",
@@ -67,7 +67,7 @@ const PANELS: Panel[] = [
   {
     href: "/pipeline/entrenamiento",
     title: "Entrenamiento",
-    description: "Entrenamiento del generador a partir de una inspección.",
+    description: "Entrenamiento del generador a partir de una carga de datos.",
     stage: "Etapa 3",
     queryKey: "models",
     endpoint: "/models/",
@@ -231,7 +231,7 @@ export default function Home() {
               <span className="text-[19px] font-bold text-foreground">Flujo de trabajo</span>
             </div>
             <p className="ml-[42px] mt-1 text-[13px] text-muted-foreground">
-              Cinco etapas: inspección, profiling, entrenamiento, generación y auditoría.
+              Cinco etapas: carga de datos, profiling, entrenamiento, generación y auditoría.
             </p>
           </div>
           <Button
@@ -256,7 +256,7 @@ export default function Home() {
       <ConfirmDialog
         open={confirmOpen}
         title="¿Limpiar toda la sesión?"
-        description="Esto elimina TODAS las inspecciones, modelos, generaciones y evaluaciones (incluidas las completadas correctamente) y reinicia los archivos de configuración. Esta acción no se puede deshacer."
+        description="Esto elimina TODAS las cargas de datos, modelos, generaciones y evaluaciones (incluidas las completadas correctamente) y reinicia los archivos de configuración. Esta acción no se puede deshacer."
         confirmLabel="Limpiar todo"
         onConfirm={() => {
           setConfirmOpen(false);

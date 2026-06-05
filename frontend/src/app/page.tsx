@@ -6,6 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   ArrowDown,
   ArrowRight,
+  ArrowUp,
   BookOpen,
   Brain,
   ChevronDown,
@@ -120,7 +121,7 @@ const CONTENT_SECTIONS: SectionData[] = [
           },
         ].map(({ term, def }) => (
           <li key={term} className="flex gap-2">
-            <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#00215C]" />
+            <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#00215C] dark:bg-[#FFDB00]" />
             <span>
               <strong>{term}:</strong> {def}
             </span>
@@ -160,7 +161,7 @@ const CONTENT_SECTIONS: SectionData[] = [
           },
         ].map(({ title, desc }) => (
           <li key={title} className="flex gap-2">
-            <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#00215C]" />
+            <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#00215C] dark:bg-[#FFDB00]" />
             <span>
               <strong>{title}:</strong> {desc}
             </span>
@@ -200,7 +201,7 @@ const CONTENT_SECTIONS: SectionData[] = [
           },
         ].map(({ title, desc }) => (
           <li key={title} className="flex gap-2">
-            <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#00215C]" />
+            <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#00215C] dark:bg-[#FFDB00]" />
             <span>
               <strong>{title}:</strong> {desc}
             </span>
@@ -240,7 +241,7 @@ const CONTENT_SECTIONS: SectionData[] = [
           },
         ].map(({ title, desc }) => (
           <li key={title} className="flex gap-2">
-            <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#00215C]" />
+            <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#00215C] dark:bg-[#FFDB00]" />
             <span>
               <strong>{title}:</strong> {desc}
             </span>
@@ -276,7 +277,7 @@ const CONTENT_SECTIONS: SectionData[] = [
           },
         ].map(({ title, desc }) => (
           <li key={title} className="flex gap-2">
-            <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#00215C]" />
+            <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#00215C] dark:bg-[#FFDB00]" />
             <span>
               <strong>{title}:</strong> {desc}
             </span>
@@ -290,7 +291,7 @@ const CONTENT_SECTIONS: SectionData[] = [
 
 const WORKFLOW_STEPS = [
   {
-    title: "Inspección",
+    title: "Carga de Datos",
     text: "Análisis inicial de tablas, claves, tipos y estructura de los datos de entrada.",
     Icon: Database,
   },
@@ -301,7 +302,7 @@ const WORKFLOW_STEPS = [
   },
   {
     title: "Entrenamiento",
-    text: "Configuración y entrenamiento del generador a partir de una inspección validada.",
+    text: "Configuración y entrenamiento del generador a partir de una carga de datos validada.",
     Icon: Brain,
   },
   {
@@ -366,11 +367,17 @@ export default function LandingPage() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const scrollToTop = () => {
+    lockUntilRef.current = Date.now() + 800;
+    setActiveId(CONTENT_SECTIONS[0].id);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   return (
     <div
       ref={scrollRef}
       data-landing-scroll
-      className="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(9,187,217,0.10),_transparent_28%),linear-gradient(180deg,#f7fbff_0%,#eff5fb_48%,#e8effa_100%)]"
+      className="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(9,187,217,0.10),_transparent_28%),linear-gradient(180deg,#f7fbff_0%,#eff5fb_48%,#e8effa_100%)] dark:bg-background dark:bg-none"
     >
       {/* ── Hero ── */}
       <section className="relative flex min-h-[calc(100vh-3.5rem)] items-center overflow-hidden border-b-4 border-[#FFDB00] bg-[#00215C] px-8 pt-14 pb-44 text-white">
@@ -461,7 +468,7 @@ export default function LandingPage() {
               <section
                 key={section.id}
                 id={section.id}
-                className="scroll-mt-28 rounded-3xl border border-[#d8e3f4] bg-white/92 shadow-[0_18px_48px_rgba(0,33,92,0.08)] backdrop-blur"
+                className="scroll-mt-28 rounded-3xl border border-[#d8e3f4] bg-white/92 shadow-[0_18px_48px_rgba(0,33,92,0.08)] backdrop-blur dark:border-border dark:bg-card dark:shadow-[0_18px_48px_rgba(0,0,0,0.4)]"
               >
                 <button
                   type="button"
@@ -476,18 +483,18 @@ export default function LandingPage() {
                   className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left"
                 >
                   <div className="flex min-w-0 items-center gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#00215C] text-[#FFDB00]">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#00215C] text-[#FFDB00] dark:bg-[#FFDB00] dark:text-[#00215C]">
                       <Icon className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <h2 className="text-2xl font-bold text-[#00215C]">{section.title}</h2>
-                      <p className="mt-1 text-sm text-slate-600">{section.summary}</p>
+                      <h2 className="text-2xl font-bold text-[#00215C] dark:text-white">{section.title}</h2>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-muted-foreground">{section.summary}</p>
                     </div>
                   </div>
                   {isOpen ? (
-                    <ChevronDown className="h-5 w-5 shrink-0 text-[#114da6]" />
+                    <ChevronDown className="h-5 w-5 shrink-0 text-[#114da6] dark:text-[#FFDB00]" />
                   ) : (
-                    <ChevronRight className="h-5 w-5 shrink-0 text-[#114da6]" />
+                    <ChevronRight className="h-5 w-5 shrink-0 text-[#114da6] dark:text-[#FFDB00]" />
                   )}
                 </button>
 
@@ -498,7 +505,7 @@ export default function LandingPage() {
                         {/* Desktop: numbered nodes on a connecting track */}
                         <div className="relative hidden lg:flex">
                           {/* Solid connecting line behind the circles */}
-                          <div className="absolute left-[10%] right-[10%] top-6 h-0.5 bg-[#c9d7ec]" />
+                          <div className="absolute left-[10%] right-[10%] top-6 h-0.5 bg-[#c9d7ec] dark:bg-border" />
                           {WORKFLOW_STEPS.map((step, index) => {
                             const StepIcon = step.Icon;
                             return (
@@ -506,16 +513,16 @@ export default function LandingPage() {
                                 key={step.title}
                                 className="relative flex flex-1 flex-col items-center px-3 text-center"
                               >
-                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#00215C] text-base font-bold text-white ring-4 ring-white">
+                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#00215C] text-base font-bold text-white ring-4 ring-white dark:bg-[#FFDB00] dark:text-[#00215C] dark:ring-card">
                                   {index + 1}
                                 </div>
-                                <div className="mt-3 flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef3ff] text-[#114da6]">
+                                <div className="mt-3 flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef3ff] text-[#114da6] dark:bg-accent dark:text-[#FFDB00]">
                                   <StepIcon className="h-4 w-4" />
                                 </div>
-                                <h3 className="mb-1 mt-2 text-sm font-semibold text-[#00215C]">
+                                <h3 className="mb-1 mt-2 text-sm font-semibold text-[#00215C] dark:text-white">
                                   {step.title}
                                 </h3>
-                                <p className="text-xs leading-relaxed text-slate-500">{step.text}</p>
+                                <p className="text-xs leading-relaxed text-slate-500 dark:text-muted-foreground">{step.text}</p>
                               </div>
                             );
                           })}
@@ -527,15 +534,15 @@ export default function LandingPage() {
                             const StepIcon = step.Icon;
                             return (
                               <div key={step.title} className="flex items-start gap-3">
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#00215C] text-sm font-bold text-white">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#00215C] text-sm font-bold text-white dark:bg-[#FFDB00] dark:text-[#00215C]">
                                   {index + 1}
                                 </span>
-                                <div className="flex-1 rounded-xl border border-[#d7e1f0] bg-white p-3 shadow-sm">
+                                <div className="flex-1 rounded-xl border border-[#d7e1f0] bg-white p-3 shadow-sm dark:border-border dark:bg-card">
                                   <div className="mb-1 flex items-center justify-between">
-                                    <h3 className="text-sm font-semibold text-[#00215C]">{step.title}</h3>
-                                    <StepIcon className="h-4 w-4 shrink-0 text-[#114da6]" />
+                                    <h3 className="text-sm font-semibold text-[#00215C] dark:text-white">{step.title}</h3>
+                                    <StepIcon className="h-4 w-4 shrink-0 text-[#114da6] dark:text-[#FFDB00]" />
                                   </div>
-                                  <p className="text-xs leading-relaxed text-slate-500">{step.text}</p>
+                                  <p className="text-xs leading-relaxed text-slate-500 dark:text-muted-foreground">{step.text}</p>
                                 </div>
                               </div>
                             );
@@ -543,7 +550,7 @@ export default function LandingPage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="rounded-2xl border border-[#d8e3f4] bg-[#f7fbff] p-5 text-sm leading-7 text-slate-700">
+                      <div className="rounded-2xl border border-[#d8e3f4] bg-[#f7fbff] p-5 text-sm leading-7 text-slate-700 dark:border-border dark:bg-accent/40 dark:text-muted-foreground">
                         {section.content}
                       </div>
                     )}
@@ -552,6 +559,19 @@ export default function LandingPage() {
               </section>
             );
           })}
+
+        {/* Back-to-top: closes the page so the user doesn't have to scroll
+            all the way back up the long content column by hand. */}
+        <div className="flex justify-center pt-2">
+          <button
+            type="button"
+            onClick={scrollToTop}
+            className="inline-flex items-center gap-2 rounded-full border border-[#114da6]/30 bg-white px-5 py-2.5 text-sm font-semibold text-[#00215C] shadow-sm transition-colors hover:bg-[#eef3ff] dark:border-border dark:bg-card dark:text-white dark:hover:bg-accent"
+          >
+            <ArrowUp className="h-4 w-4" />
+            Volver arriba
+          </button>
+        </div>
       </div>
     </div>
   );

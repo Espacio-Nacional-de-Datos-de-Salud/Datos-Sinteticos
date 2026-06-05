@@ -1,8 +1,8 @@
 from typing import Any
 
 import pandas as pd
-from backend.src.infrastructure.logging_config import get_logger
 from backend.src.domain.preprocessing.utils import validate_referential_integrity
+from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.utils import ModelEncodingType, auto_detect_encoding_type
 
 logger = get_logger(__name__)
@@ -68,11 +68,15 @@ class MetadataExtractor:
         df[self.SURROGATE_PK_COL] = range(len(df))
         logger.info(
             "Table '%s': surrogate PK synthesized -> '%s' (%d rows)",
-            name, self.SURROGATE_PK_COL, len(df),
+            name,
+            self.SURROGATE_PK_COL,
+            len(df),
         )
         return self.SURROGATE_PK_COL
 
-    def _synthesize_composite_pk(self, name: str, df: pd.DataFrame, columns: list[str]) -> str | None:
+    def _synthesize_composite_pk(
+        self, name: str, df: pd.DataFrame, columns: list[str]
+    ) -> str | None:
         """Build a single PK column for ``name`` by concatenating ``columns``.
 
         Adds the new column to the table in-place and returns its name, or
@@ -96,19 +100,22 @@ class MetadataExtractor:
             logger.error(
                 "Composite PK for table '%s' references missing columns %s "
                 "(available: %s); falling back to heuristic detection.",
-                name, missing, list(df.columns),
+                name,
+                missing,
+                list(df.columns),
             )
             return None
 
         pk_col = self.COMPOSITE_PK_SEP.join(resolved)
-        synthesized = (
-            df[resolved].astype(str).agg(self.COMPOSITE_PK_SEP.join, axis=1)
-        )
+        synthesized = df[resolved].astype(str).agg(self.COMPOSITE_PK_SEP.join, axis=1)
         if not synthesized.is_unique:
             dup = int(synthesized.duplicated().sum())
             logger.error(
                 "Composite PK %s for table '%s' is not unique (%d duplicate rows); "
-                "falling back to heuristic detection.", resolved, name, dup
+                "falling back to heuristic detection.",
+                resolved,
+                name,
+                dup,
             )
             return None
 
@@ -298,15 +305,28 @@ class MetadataExtractor:
         """
         col_types = {}
         for col in df.columns:
-            # Default heuristic
-            if pd.api.types.is_numeric_dtype(df[col]):
+            series = df[col]
+
+            # Binary flags (bool dtype, or any column with at most 2 distinct
+            # non-null values) are STATES, not magnitudes. Force categorical
+            # so MostlyAI uses softmax-over-vocab instead of L2 regression and
+            # preserves the original encoding through the round-trip.
+            non_null = series.dropna()
+            if pd.api.types.is_bool_dtype(series) or (
+                len(non_null) > 0 and non_null.nunique() <= 2
+            ):
+                col_types[col] = ModelEncodingType.tabular_categorical
+                continue
+
+            # Default heuristic for the rest
+            if pd.api.types.is_numeric_dtype(series):
                 ctype = ModelEncodingType.tabular_numeric_auto
             else:
                 ctype = ModelEncodingType.tabular_categorical
 
             # Refinement: If it's categorical and NOT the PK, inspect deeper
             if ctype == ModelEncodingType.tabular_categorical and col != pk_col:
-                ctype = auto_detect_encoding_type(df[col])
+                ctype = auto_detect_encoding_type(series)
 
             col_types[col] = ctype
         return col_types

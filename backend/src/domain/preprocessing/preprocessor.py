@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
-from backend.src.infrastructure.logging_config import get_logger
 from backend.src.domain.preprocessing.data_cleaner import DataCleaner
 from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
 from backend.src.domain.preprocessing.metadata_extractor import MetadataExtractor
@@ -22,6 +21,9 @@ from backend.src.domain.preprocessing.utils import (
     format_relationships,
     infer_foreign_keys_consistency_rules,
 )
+from backend.src.infrastructure.date_parsing import detect_date_pattern
+from backend.src.infrastructure.logging_config import get_logger
+from backend.src.infrastructure.utils import ModelEncodingType
 
 logger = get_logger(__name__)
 
@@ -42,15 +44,16 @@ class PreprocessResult:
     encoding_types: dict
     rule_manager: LogicalRuleManager
     data_profiles: Any | None
+    date_formats: dict[str, dict[str, str | None]]
 
 
 class DataPreprocessor:
     """Prepares raw data for training through cleaning and metadata extraction.
 
     Encapsulates the whole transformation flow: initial data cleaning, detection of
-    relationships and column types, optional interactive metadata validation,
-    application of logical rules, and data profile generation. Coordinates multiple
-    components to ensure data is ready for the synthesis engine.
+    relationships and column types, optional interactive metadata validation, and 
+    data profile generation. Coordinates multiple components to ensure data is ready 
+    for the synthesis engine. Does not enact PRE logical rules.
 
     Args:
         data_dict (dict[str, pd.DataFrame]): Dictionary of raw tables
@@ -125,9 +128,11 @@ class DataPreprocessor:
 
         self.add_automatic_contextual_fk_propagation_rules(relationships)
 
-        engineered_data = self.rule_manager.apply_all_pre(
-            data_dict=cleaned_data, relationships=format_relationships(relationships)
-        )
+        self.rule_manager.relationships = relationships
+        #engineered_data = self.rule_manager.apply_all_pre(
+        #    data_dict=cleaned_data, relationships=format_relationships(relationships)
+        #)
+        engineered_data = cleaned_data
 
         if user_defined_types is not None:
             encoding_types = user_defined_types
@@ -142,6 +147,9 @@ class DataPreprocessor:
 
         data_profiles = generate_profile_report(engineered_data) if run_data_profiling else None
 
+        date_formats = _detect_date_formats(engineered_data, encoding_types)
+        self.rule_manager.date_formats = date_formats
+
         return PreprocessResult(
             processed_data=engineered_data,
             metadata=metadata,
@@ -149,6 +157,7 @@ class DataPreprocessor:
             encoding_types=encoding_types,
             rule_manager=self.rule_manager,
             data_profiles=data_profiles,
+            date_formats=date_formats,
         )
 
     def add_automatic_contextual_fk_propagation_rules(self, relationships: dict) -> None:
@@ -183,3 +192,47 @@ class DataPreprocessor:
                 continue
             if self.rule_manager.add_rule(inferred_rule):
                 existing_rule_keys.add(inferred_key)
+
+
+_DATETIME_ENCODINGS = {
+    ModelEncodingType.tabular_datetime,
+    ModelEncodingType.tabular_datetime_relative,
+    ModelEncodingType.language_datetime,
+}
+
+
+def _detect_date_formats(
+    data: dict[str, pd.DataFrame],
+    encoding_types: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, str | None]]:
+    """For every datetime-encoded column, identify the strftime pattern.
+
+    Columns whose textual layout can't be matched against a recognized pattern
+    get a None entry and a warning so the user knows synthetic output for that
+    column will be ISO 8601 instead of the original layout.
+    """
+    out: dict[str, dict[str, str | None]] = {}
+    for table_name, types in encoding_types.items():
+        df = data.get(table_name)
+        if df is None:
+            continue
+        table_formats: dict[str, str | None] = {}
+        for col, enc in types.items():
+            if enc not in _DATETIME_ENCODINGS or col not in df.columns:
+                continue
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                table_formats[col] = None
+                continue
+            info = detect_date_pattern(df[col], col_name=f"{table_name}.{col}")
+            table_formats[col] = info.format_str
+            if info.format_str is None:
+                logger.warning(
+                    "Column '%s.%s' parses as datetime but its textual format is unrecognised; "
+                    "synthetic output will use ISO 8601 (YYYY-MM-DD). "
+                    "Set the format manually if you need the original layout preserved.",
+                    table_name,
+                    col,
+                )
+        if table_formats:
+            out[table_name] = table_formats
+    return out

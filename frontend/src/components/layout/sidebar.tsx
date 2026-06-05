@@ -10,6 +10,7 @@ import {
   Home,
   LayoutDashboard,
   LoaderCircle,
+  Settings,
   ShieldCheck,
   Sparkles,
   Workflow,
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 const STEP_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   inspeccion: Folder,
   profiling: BarChart3,
+  configuracion: Settings,
   entrenamiento: Brain,
   generacion: Sparkles,
   auditoria: ShieldCheck,
@@ -75,6 +77,7 @@ export function Sidebar() {
   const runningBySlug = {
     inspeccion: (inspectionsQuery.data ?? []).some((item) => item.status === "in_progress"),
     profiling: false,
+    configuracion: false,
     entrenamiento: (modelsQuery.data ?? []).some((item) => item.status === "in_progress"),
     generacion: (simulationsQuery.data ?? []).some((item) => item.status === "in_progress"),
     auditoria: (evaluationsQuery.data ?? []).some((item) => item.status === "in_progress"),

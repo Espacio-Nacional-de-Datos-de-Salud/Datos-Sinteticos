@@ -20,9 +20,13 @@ from typing import Any
 import networkx as nx
 import numpy as np
 import pandas as pd
-from backend.src.infrastructure.errors import RelationshipNotDefinedError
+from backend.src.infrastructure.date_parsing import parse_dates
+from backend.src.infrastructure.errors import (
+    RelationshipNotDefinedError,
+    RuleConcatenationError,
+    RuleSuperimpositionError,
+)
 from backend.src.infrastructure.logging_config import get_logger
-from backend.src.infrastructure.errors import RuleSuperimpositionError, RuleConcatenationError
 
 logger = get_logger(__name__)
 
@@ -31,7 +35,6 @@ class InteractionType(Enum):
     ISOLATED = auto()
     CONCATENATED = auto()
     SUPERIMPOSED = auto()
-
 
 
 @dataclass
@@ -178,6 +181,7 @@ class LogicalRuleManager:
     rules: list[LogicalRule] = field(default_factory=list)
     relationships: dict[tuple[str, str], list[tuple[str, str]]] | None = field(default=None)
     rejection_sampling_config: dict[str, Any] = field(default_factory=dict)
+    date_formats: dict[str, dict[str, str | None]] = field(default_factory=dict)
 
     def add_rule(self, rule: LogicalRule) -> bool:
         """Checks rule conflicts. If no superimpositions exist,
@@ -189,7 +193,9 @@ class LogicalRuleManager:
             bool: True if the rule was added successfully, False if it was rejected
         """
         try:
-            should_add = self._detect_rule_interactions(rule)  # throws error if superimposition detected
+            should_add = self._detect_rule_interactions(
+                rule
+            )  # throws error if superimposition detected
         except RuleSuperimpositionError:
             logger.error("Failed to add rule: Rule Superimposition not allowed. Skipping")
             return False
@@ -197,6 +203,99 @@ class LogicalRuleManager:
             return True
         self.rules.append(rule)
         return True
+
+    def _is_inequality_rule(self, rule: LogicalRule) -> bool:
+        return isinstance(rule, (DateInequalityRule, NumericInequalityRule))
+
+    def _get_qualified_target(self, rule: LogicalRule) -> str | None:
+        return self._qualify_col(rule.table_target, getattr(rule, "target_col", None))
+
+    def _get_qualified_origin(self, rule: LogicalRule) -> str | None:
+        return self._qualify_col(
+            rule.table_origin or rule.table_target, getattr(rule, "origin_col", None)
+        )
+
+    def _collect_inequality_component(
+        self, rules: list[LogicalRule], start_rule: LogicalRule
+    ) -> list[LogicalRule]:
+        adjacency: dict[int, set[int]] = {idx: set() for idx in range(len(rules))}
+
+        for idx, left in enumerate(rules):
+            left_target = self._get_qualified_target(left)
+            left_origin = self._get_qualified_origin(left)
+            for right_idx in range(idx + 1, len(rules)):
+                right = rules[right_idx]
+                right_target = self._get_qualified_target(right)
+                right_origin = self._get_qualified_origin(right)
+
+                shares_target = left_target and right_target and left_target == right_target
+                left_depends_on_right = left_target and right_origin and left_target == right_origin
+                right_depends_on_left = right_target and left_origin and right_target == left_origin
+
+                if shares_target or left_depends_on_right or right_depends_on_left:
+                    adjacency[idx].add(right_idx)
+                    adjacency[right_idx].add(idx)
+
+        component: list[LogicalRule] = []
+        start_idx = rules.index(start_rule)
+        queue = [start_idx]
+        seen: set[int] = set()
+        while queue:
+            current = queue.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            component.append(rules[current])
+            queue.extend(adjacency.get(current, set()) - seen)
+
+        return component
+
+    def _apply_inequality_chain_flip(self, component: list[LogicalRule]) -> None:
+        if any(rule.interaction_type == InteractionType.CONCATENATED for rule in component):
+            raise RuleSuperimpositionError(
+                "Cannot resolve superimposition by flipping: already concatenated rule in chain."
+            )
+        prospective_targets: list[str] = []
+        for rule in component:
+            if getattr(rule, "_flipped", False):
+                qualified_target = self._get_qualified_target(rule)
+                if not qualified_target:
+                    raise RuleSuperimpositionError(
+                        f"Cannot resolve superimposition by flipping: rule {type(rule).__name__} "
+                        f"on '{rule.table_target}' has no target column."
+                    )
+                prospective_targets.append(qualified_target)
+                continue
+
+            origin = self._get_qualified_origin(rule)
+            if not origin:
+                raise RuleSuperimpositionError(
+                    f"Cannot resolve superimposition by flipping: rule {type(rule).__name__} "
+                    f"on '{rule.table_target}' has no origin column."
+                )
+            prospective_targets.append(origin)
+
+        if len(prospective_targets) != len(set(prospective_targets)):
+            raise RuleSuperimpositionError(
+                "Cannot resolve superimposition by flipping: origin fan-out would be created."
+            )
+
+        for rule in component:
+            rule.interaction_type = InteractionType.SUPERIMPOSED
+            if not getattr(rule, "_flipped", False):
+                rule.flip()
+
+        ordered = sorted(
+            component,
+            key=lambda rule: (
+                rule.table_target or "",
+                getattr(rule, "target_col", "") or "",
+                getattr(rule, "origin_col", "") or "",
+                type(rule).__name__,
+            ),
+        )
+        for idx, rule in enumerate(ordered, start=1):
+            rule.aux_col = f"{rule.target_col}_flipped_{idx}"
 
     def _detect_rule_interactions(self, new_rule: LogicalRule) -> bool:
         """Checks for both superimposition and concatenation rule conflicts/interactions.
@@ -222,57 +321,57 @@ class LogicalRuleManager:
 
         for existing_rule in self.rules:
             if (
-                existing_rule.table_target == new_rule.table_target and
-                getattr(existing_rule, "target_col", None) is not None and
-                getattr(new_rule, "target_col", None) is not None and
-                existing_rule.target_col == new_rule.target_col
+                existing_rule.table_target == new_rule.table_target
+                and getattr(existing_rule, "target_col", None) is not None
+                and getattr(new_rule, "target_col", None) is not None
+                and existing_rule.target_col == new_rule.target_col
             ):
                 # superimposition detected
 
                 if (
                     isinstance(existing_rule, SemanticConsistencyRule)
                     and isinstance(new_rule, SemanticConsistencyRule)
-                    and type(existing_rule) is type(new_rule) # make sure they use the same semantic consistency logic
+                    and type(existing_rule)
+                    is type(new_rule)  # make sure they use the same semantic consistency logic
                 ):
                     for group_col in new_rule._get_group_cols():
                         existing_rule.add_group_key(group_col)
-                    
+
                     # we dont need to mark as superimposed since they will be merged
-                    #existing_rule.interaction_type = InteractionType.SUPERIMPOSED
+                    # existing_rule.interaction_type = InteractionType.SUPERIMPOSED
                     logger.info(
                         "Semantic rule superimposition detected for '%s'; merged group keys into existing rule.",
                         new_rule.target_col,
                     )
                     return False
 
-                # not allowed EXCEPT for edge case: 2 NumericInequalityRules or 2 DateInequalityRules
-                # these can be solved by "flipping" one of the rules
-                
-                # first check if both same type and not already superimposed with another
+                # not allowed EXCEPT for numeric/date inequality rules, which can be flipped
                 if (
-                    (isinstance(existing_rule, NumericInequalityRule) and isinstance(new_rule, NumericInequalityRule)) 
-                    or (isinstance(existing_rule, DateInequalityRule) and isinstance(new_rule, DateInequalityRule))
+                    isinstance(existing_rule, DateInequalityRule)
+                    and isinstance(new_rule, DateInequalityRule)
+                ) or (
+                    isinstance(existing_rule, NumericInequalityRule)
+                    and isinstance(new_rule, NumericInequalityRule)
                 ):
-                    if (
-                        existing_rule.interaction_type != InteractionType.ISOLATED or
-                        new_rule.interaction_type != InteractionType.ISOLATED
-                    ):
+                    if existing_rule.rejection_sampling or new_rule.rejection_sampling:
                         raise RuleSuperimpositionError(
-                            f"Rule superimposition detected: New rule {type(new_rule).__name__} on "
-                            f"'{new_rule.table_target}' column '{new_rule.target_col}' overlaps with existing "
-                            f"rule {type(existing_rule).__name__} on the same target, and one of them is already interacting with another rule. "
-                            f"Cannot resolve superimposition by flipping in this case."
+                            f"Rule superimposition detected: {type(new_rule).__name__} on "
+                            f"'{new_rule.table_target}' cannot be flipped with rejection sampling rules."
                         )
-                
-                    # Try to flip the new rule to resolve the issue
-                    existing_rule.interaction_type = InteractionType.SUPERIMPOSED
-                    new_rule.interaction_type = InteractionType.SUPERIMPOSED
 
-                    new_rule.flip()
-                    # also have to set aux column so they dont have same name
-                    new_rule.aux_col = f"{new_rule.target_col}_flipped"
+                    rule_type = type(new_rule)
+                    candidates = [rule for rule in self.rules if isinstance(rule, rule_type)] + [
+                        new_rule
+                    ]
+                    component = self._collect_inequality_component(candidates, new_rule)
+
+                    if any(rule.rejection_sampling for rule in component):
+                        raise RuleSuperimpositionError(
+                            "Cannot resolve superimposition by flipping: rejection sampling rule in chain."
+                        )
+
+                    self._apply_inequality_chain_flip(component)
                     return True
-
 
                 raise RuleSuperimpositionError(
                     f"Rule superimposition detected: New rule {type(new_rule).__name__} on "
@@ -296,8 +395,11 @@ class LogicalRuleManager:
                 )
                 existing_rule.interaction_type = InteractionType.CONCATENATED
                 new_rule.interaction_type = InteractionType.CONCATENATED
-        
-        if new_rule.interaction_type != InteractionType.CONCATENATED and new_rule.interaction_type != InteractionType.SUPERIMPOSED:
+
+        if (
+            new_rule.interaction_type != InteractionType.CONCATENATED
+            and new_rule.interaction_type != InteractionType.SUPERIMPOSED
+        ):
             logger.info(
                 f"No interactions detected for new rule {type(new_rule).__name__} on "
                 f"'{new_rule.table_target}'. Registered as an independent rule."
@@ -315,8 +417,16 @@ class LogicalRuleManager:
                 tables in the form "table_name.column_name", used to validate rule dependencies.
         """
         # Build a mutable working list in the same order as provided.
-        rules = [rule for rule in self.rules if rule.interaction_type != InteractionType.ISOLATED and not rule.rejection_sampling]
-        rejection_rules = [rule for rule in self.rules if rule.interaction_type != InteractionType.ISOLATED and rule.rejection_sampling]
+        rules = [
+            rule
+            for rule in self.rules
+            if rule.interaction_type != InteractionType.ISOLATED and not rule.rejection_sampling
+        ]
+        rejection_rules = [
+            rule
+            for rule in self.rules
+            if rule.interaction_type != InteractionType.ISOLATED and rule.rejection_sampling
+        ]
 
         if not rules:
             return []
@@ -338,7 +448,9 @@ class LogicalRuleManager:
                     if source_col not in original_cols and source_col not in produced_cols
                 }
                 target_col = getattr(rule, "target_col", None)
-                qualified_target = self._qualify_col(rule.table_target, target_col) if target_col else None
+                qualified_target = (
+                    self._qualify_col(rule.table_target, target_col) if target_col else None
+                )
                 missing_target = (
                     qualified_target is not None
                     and qualified_target not in original_cols
@@ -717,7 +829,9 @@ class LogicalRuleManager:
         # filter out isolated rules that reference non-existant source or target columns
         # concat and superimposed rules are handled within sorting function
         filtered_isolated_rules: list[LogicalRule] = []
-        for rule in [rule for rule in self.rules if rule.interaction_type == InteractionType.ISOLATED]:
+        for rule in [
+            rule for rule in self.rules if rule.interaction_type == InteractionType.ISOLATED
+        ]:
             if rule.table_target in data_dict:
                 target_col = getattr(rule, "target_col", None)
                 if target_col and target_col not in data_dict[rule.table_target].columns:
@@ -728,9 +842,21 @@ class LogicalRuleManager:
                         target_col,
                     )
                     continue
-            if rule.table_origin and rule.table_origin in data_dict:
-                origin_col = getattr(rule, "origin_col", None)
-                if origin_col and origin_col not in data_dict[rule.table_origin].columns:
+            # ``origin_col`` may live in either ``table_origin`` or
+            # ``table_target``: ``DerivedColumnRule`` subclasses (e.g.
+            # ``DateToAgeRule``) repurpose ``table_origin`` to point at the
+            # table that owns the *reference* column in some cross-table
+            # layouts, in which case ``origin_col`` actually lives in
+            # ``table_target``. Accept either to avoid dropping otherwise-valid
+            # rules.
+            origin_col = getattr(rule, "origin_col", None)
+            if origin_col:
+                candidate_tables = [
+                    t for t in (rule.table_origin, rule.table_target) if t and t in data_dict
+                ]
+                if candidate_tables and all(
+                    origin_col not in data_dict[t].columns for t in candidate_tables
+                ):
                     logger.warning(
                         "Removing isolated rule %s on '%s' due to missing origin column '%s'.",
                         type(rule).__name__,
@@ -740,7 +866,9 @@ class LogicalRuleManager:
                     continue
             filtered_isolated_rules.append(rule)
 
-        existsConcatRules = any(rule.interaction_type != InteractionType.ISOLATED for rule in self.rules)
+        existsConcatRules = any(
+            rule.interaction_type != InteractionType.ISOLATED for rule in self.rules
+        )
         if existsConcatRules:
             logger.info("Sorting concatenation rules based on detected dependencies.")
             # put column names into form {table_name.column_name}
@@ -1060,27 +1188,61 @@ class LogicalRuleManager:
         return rejected
 
 
+_UNIT_SECONDS = {
+    "years": 365.25 * 86400.0,
+    "months": (365.25 / 12.0) * 86400.0,
+    "days": 86400.0,
+}
+
+
 @dataclass
 class DateToAgeRule(DerivedColumnRule):
-    """Derive age in years from a date of birth column.
-    A reference date can be provided as a constant, or another column can be used.
-    Ex. create column age from columns dob & admission_date
+    """Derive a span (age / duration) between two dates.
+
+    Convention (matches the UI):
+        * ``origin_col`` is the **more recent** date (admission, episode end, ...).
+        * ``reference_date`` / ``reference_date_col`` is the **older** date
+          (date of birth, episode start, ...).
+        * The derived value is ``floor((origin - reference) / unit)``; if
+          ``enforce_non_negative`` is True (default), negative spans are
+          clipped to 0.
+
+    Default unit is years (classic age-from-DoB use case); set ``unit`` to
+    ``"days"`` or ``"months"`` to compute a duration at finer granularity. The
+    chosen unit is also appended to ``aux_col`` (e.g. ``duracion`` →
+    ``duracion_days``) so the derived column makes its scale obvious in the
+    output table; if the user already typed the suffix, it is not duplicated.
+
     Arguments:
-        reference_date (str, optional): Constant reference date to compute age (e.g., "2020-01-01").
-            Required if reference_date_col is not provided.
-            IMPORTANT: Uses pd.to_datetime, so much use a date format parseable by pandas.
-                Examples: "2020-01-01", "2020/01/01", "January 1, 2020", etc.
-        reference_date_col (str, optional): Column name to use as reference date for age calculation.
-            Required if reference_date is not provided.
-        origin_col (str): Column name of the date of birth (or similar) to compute age from.
-        aux_col (str): Column name where the derived age will be stored.
-        table_origin (str): Name of the reference table for sanity checks.
-        table_target (str): Name of the target table where the age column is created and validated.
+        reference_date (str, optional): Constant older date to subtract from
+            ``origin_col`` (e.g., "2020-01-01"). Required if reference_date_col
+            is not provided.
+            IMPORTANT: Uses pd.to_datetime, so it must be a date format parseable by pandas.
+        reference_date_col (str, optional): Column name to use as the older date
+            per row. Required if reference_date is not provided.
+        reference_date_table (str, optional): Table that owns ``reference_date_col`` when it
+            lives outside ``table_target``. When set, the rule manager joins ``table_target``
+            with this table via the existing PK/FK path so the column is available in the
+            view passed to :meth:`_compute_derived`. Defaults to ``table_target`` (same table).
+        origin_col (str): Column name of the more recent date.
+        aux_col (str): Column name where the derived span will be stored. The
+            ``_<unit>`` suffix is appended automatically if not already present.
+        unit (str): One of ``"years"`` (default), ``"months"``, ``"days"``. Controls the
+            unit of the derived integer.
+        enforce_non_negative (bool): If True (default), values below 0 are
+            clipped to 0. Disable to keep the sign when ``origin`` may be older
+            than the reference.
+        table_origin (str): Set internally to ``reference_date_table`` when cross-table mode
+            is in use so the join orchestrator routes correctly. Do not pass directly.
+        table_target (str): Name of the target table where the column is created and validated.
 
     """
 
     reference_date: str = None
     reference_date_col: str = None
+    reference_date_table: str = None
+    unit: str = "years"
+    enforce_non_negative: bool = True
     table_origin: str = None
     table_target: str = None
 
@@ -1096,28 +1258,65 @@ class DateToAgeRule(DerivedColumnRule):
             )
             logger.info("Defaulting to 'reference_date_col' and ignoring 'reference_date'.")
             self.reference_date = None
+        if self.reference_date_table is not None and self.reference_date_col is None:
+            raise ValueError(
+                "DateToAgeRule: 'reference_date_table' requires "
+                "'reference_date_col' to also be set."
+            )
+        if self.unit not in _UNIT_SECONDS:
+            raise ValueError(
+                f"DateToAgeRule: unit must be one of {sorted(_UNIT_SECONDS)}, got '{self.unit}'."
+            )
+        # Append the unit suffix so the derived column self-documents its scale
+        # in downstream tables (e.g. ``duracion`` → ``duracion_days``). Skip if
+        # the user already typed it, so renaming with a unit change doesn't
+        # stack suffixes.
+        suffix = f"_{self.unit}"
+        if not self.aux_col.endswith(suffix):
+            self.aux_col = f"{self.aux_col}{suffix}"
+        # When the reference column lives in a different table, point
+        # ``table_origin`` at it so :meth:`LogicalRuleManager._get_joined_view`
+        # joins it with ``table_target`` and ``_compute_derived`` sees both
+        # columns in the same dataframe. For DerivedColumnRule subclasses
+        # ``table_origin`` is not consulted for column qualification beyond
+        # the join orchestrator, so this overload is safe.
+        if self.reference_date_table is not None and self.reference_date_table != self.table_target:
+            self.table_origin = self.reference_date_table
 
     def _compute_derived(self, df: pd.DataFrame) -> pd.Series:
         if self.reference_date_col is not None:
-            reference_dt = pd.to_datetime(df[self.reference_date_col], utc=True)
+            reference_dt = parse_dates(
+                df[self.reference_date_col], col_name=self.reference_date_col, utc=True
+            )
         else:
             reference_dt = pd.to_datetime(self.reference_date, utc=True)
-        origin_dt = pd.to_datetime(df[self.origin_col], utc=True)
-        age_years = (reference_dt - origin_dt).dt.days / 365.25
-        return np.floor(age_years).clip(lower=0)
+        origin_dt = parse_dates(df[self.origin_col], col_name=self.origin_col, utc=True)
+        seconds_per_unit = _UNIT_SECONDS[self.unit]
+        # Convention: origin is the more recent date, reference the older one,
+        # so the span is origin - reference. With enforce_non_negative=True we
+        # still clip negatives to 0 (kept for backwards compatibility with
+        # rules that omit the flag).
+        span = (origin_dt - reference_dt).dt.total_seconds() / seconds_per_unit
+        span = np.floor(span)
+        if self.enforce_non_negative:
+            span = span.clip(lower=0)
+        return span
 
     def _reconstruct_origin(self, df: pd.DataFrame) -> pd.Series | None:
         if self.aux_col not in df.columns:
             return None
 
         if self.reference_date_col is not None:
-            reference_dt = pd.to_datetime(df[self.reference_date_col], utc=True)
+            reference_dt = parse_dates(
+                df[self.reference_date_col], col_name=self.reference_date_col, utc=True
+            )
         else:
             reference_dt = pd.to_datetime(self.reference_date, utc=True)
 
-        age_years = pd.to_numeric(df[self.aux_col], errors="coerce")
-        offset_days = age_years * 365.25
-        return reference_dt - pd.to_timedelta(offset_days, unit="D")
+        span = pd.to_numeric(df[self.aux_col], errors="coerce")
+        offset_seconds = span * _UNIT_SECONDS[self.unit]
+        # span = origin - reference  ⇒  origin = reference + span
+        return reference_dt + pd.to_timedelta(offset_seconds, unit="s")
 
     def sanity_check(self, df: pd.DataFrame) -> pd.DataFrame:
         if self.aux_col not in df.columns or self.origin_col not in df.columns:
@@ -1436,6 +1635,8 @@ class DateInequalityRule(LogicalRule):
         origin_col (str, optional): Reference date column (alternative to constraint).
         target_col (str): Target date column (will be removed in PRE).
         aux_col (str, optional): Name for the auxiliary column. Default: auto-generated.
+            A ``_days`` suffix is appended automatically (the duration is always in
+            days) so the column self-documents its scale.
         constraint (str, optional): Constant limit date (alternative to origin_col).
                                     Format: string parseable by pd.to_datetime (e.g.: "2020-01-01").
         constraint_operator (str): Relationship between target and constraint. Values: ">=" (default) or "<=".
@@ -1454,6 +1655,7 @@ class DateInequalityRule(LogicalRule):
     table_origin: str = None
     table_target: str = None
     _constraint_dt: pd.Timestamp = field(default=None, init=False, repr=False)
+    _flipped: bool = False
 
     def __post_init__(self):
         if self.origin_col is None and self.constraint is None:
@@ -1468,6 +1670,11 @@ class DateInequalityRule(LogicalRule):
             self._constraint_dt = pd.to_datetime(self.constraint, utc=True)
         if self.aux_col is None:
             self.aux_col = f"duration_{self.target_col}"
+        # Diffs are always integer days; append the unit so the derived column
+        # self-documents its scale (mirrors DateToAgeRule). Skip if the user
+        # already typed it to avoid stacking suffixes on renames.
+        if not self.aux_col.endswith("_days"):
+            self.aux_col = f"{self.aux_col}_days"
 
     def _get_bound(self, df: pd.DataFrame):
         """Returns the bound: origin_col column or constant date.
@@ -1481,48 +1688,55 @@ class DateInequalityRule(LogicalRule):
         if self._constraint_dt is not None:
             return self._constraint_dt
         return df[self.origin_col]
-    
-    def flip(self):
-        """Flips the inequality direction and swaps origin and target columns.
 
-        """
+    def flip(self):
+        """Flips the inequality direction and swaps origin and target columns."""
         self.constraint_operator = ">=" if self.constraint_operator == "<=" else "<="
         self.origin_col, self.target_col = self.target_col, self.origin_col
         self.table_origin, self.table_target = self.table_target, self.table_origin
         logger.debug(
             f"Flipped DateInequalityRule: now '{self.target_col}' {self.constraint_operator} '{self.origin_col}'"
         )
+        self._flipped = True
 
     def apply_pre(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
-        df[self.target_col] = pd.to_datetime(df[self.target_col], utc=True)
+        df[self.target_col] = parse_dates(df[self.target_col], col_name=self.target_col, utc=True)
         if self.origin_col is not None:
-            df[self.origin_col] = pd.to_datetime(df[self.origin_col], utc=True)
+            df[self.origin_col] = parse_dates(
+                df[self.origin_col], col_name=self.origin_col, utc=True
+            )
 
         bound = self._get_bound(df)
+        # Compute via total seconds and round so datetime inputs with hour-level
+        # precision don't get truncated to 0. `.dt.days` would floor a 23h diff
+        # to 0; here a sub-day delta rounds to the nearest integer day.
         if self.constraint_operator == ">=":
-            df[self.aux_col] = (df[self.target_col] - bound).dt.days
+            delta = (df[self.target_col] - bound).dt.total_seconds() / 86400.0
         else:
-            df[self.aux_col] = (bound - df[self.target_col]).dt.days
+            delta = (bound - df[self.target_col]).dt.total_seconds() / 86400.0
+        df[self.aux_col] = delta.round().astype("Int64")
         return df.drop(columns=[self.target_col])
 
     def apply_post(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         if self.origin_col is not None:
-            df[self.origin_col] = pd.to_datetime(
+            df[self.origin_col] = parse_dates(
                 df[self.origin_col],
+                col_name=self.origin_col,
                 errors="coerce",
-                format="mixed",
                 utc=True,
             ).dt.tz_localize(None)
 
         bound = self._get_bound(df)
+        days = pd.to_numeric(df[self.aux_col], errors="coerce")
         if self.enforce_non_negative:
-            df[self.aux_col] = df[self.aux_col].clip(lower=0)
+            days = days.clip(lower=0)
+        df[self.aux_col] = days
         if self.constraint_operator == ">=":
-            reconstructed = bound + pd.to_timedelta(df[self.aux_col], unit="D")
+            reconstructed = bound + pd.to_timedelta(days, unit="D")
         else:
-            reconstructed = bound - pd.to_timedelta(df[self.aux_col], unit="D")
+            reconstructed = bound - pd.to_timedelta(days, unit="D")
         if isinstance(reconstructed, pd.Series) and reconstructed.dt.tz is not None:
             reconstructed = reconstructed.dt.tz_localize(None)
         df[self.target_col] = reconstructed
@@ -1532,7 +1746,9 @@ class DateInequalityRule(LogicalRule):
         if self.target_col not in df.columns:
             return pd.DataFrame()
 
-        target_dates = pd.to_datetime(df[self.target_col], errors="coerce", utc=True)
+        target_dates = parse_dates(
+            df[self.target_col], col_name=self.target_col, errors="coerce", utc=True
+        )
 
         if self._constraint_dt is not None:
             bound_dates = self._constraint_dt
@@ -1540,7 +1756,9 @@ class DateInequalityRule(LogicalRule):
         else:
             if self.origin_col not in df.columns:
                 return pd.DataFrame()
-            bound_dates = pd.to_datetime(df[self.origin_col], errors="coerce", utc=True)
+            bound_dates = parse_dates(
+                df[self.origin_col], col_name=self.origin_col, errors="coerce", utc=True
+            )
             bound_label = self.origin_col
 
         if self.constraint_operator == ">=":
@@ -1592,6 +1810,7 @@ class NumericInequalityRule(LogicalRule):
     constraint_operator: str = ">="
     table_origin: str = None
     table_target: str = None
+    _flipped: bool = False
 
     def __post_init__(self):
         if self.origin_col is None and self.constraint is None:
@@ -1619,17 +1838,16 @@ class NumericInequalityRule(LogicalRule):
         if self.constraint is not None:
             return self.constraint
         return df[self.origin_col]
-    
-    def flip(self):
-        """Flips the inequality direction and swaps origin and target columns.
 
-        """
+    def flip(self):
+        """Flips the inequality direction and swaps origin and target columns."""
         self.constraint_operator = ">=" if self.constraint_operator == "<=" else "<="
         self.origin_col, self.target_col = self.target_col, self.origin_col
         self.table_origin, self.table_target = self.table_target, self.table_origin
         logger.debug(
             f"Flipped NumericInequalityRule: now '{self.target_col}' {self.constraint_operator} '{self.origin_col}'"
         )
+        self._flipped = True
 
     def apply_pre(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
@@ -1743,7 +1961,7 @@ class SemanticConsistencyRule(LogicalRule, ABC):
             List[Tuple[float, Any]]: List of tuples (upper_limit, category_name).
         """
         pass
-    
+
     def _generate_valid_combinations(self, df: pd.DataFrame) -> None:
         """Generates the valid (origin_col, target_col) combinations from the original data.
 

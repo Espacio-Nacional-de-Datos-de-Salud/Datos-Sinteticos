@@ -37,7 +37,7 @@ export function ProfilingCard({
           <CardTitle className="text-base">Profiling</CardTitle>
           <CardDescription>
             Informes de ydata-profiling por tabla. Se generan cuando la
-            inspección se lanza con la casilla de profiling activada.
+            carga de datos se lanza con la casilla de profiling activada.
           </CardDescription>
         </div>
         {inspectionId && hasReports && (
@@ -60,8 +60,8 @@ export function ProfilingCard({
           )}
           {!query.isLoading && !query.isError && !hasReports && (
             <p className="text-sm text-muted-foreground">
-              Esta inspección no tiene informes de profiling. Lanza otra
-              inspección con la casilla <i>&quot;Generar informes de
+              Esta carga de datos no tiene informes de profiling. Lanza otra
+              carga de datos con la casilla <i>&quot;Generar informes de
                 profiling&quot;</i> activada.
             </p>
           )}

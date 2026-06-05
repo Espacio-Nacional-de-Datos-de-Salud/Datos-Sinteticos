@@ -75,7 +75,10 @@ def parse_folder_start_time(folder_name: str, prefix: str) -> datetime | None:
 
     Returns ``None`` if the suffix doesn't match the expected pattern.
     """
-    suffix = folder_name[len(prefix) + 1 :]
+    parts = folder_name.split("_", 1)
+    if len(parts) < 2:
+        return None
+    suffix = parts[1]
     try:
         return datetime.strptime(suffix, "%Y%m%d_%H%M%S")
     except ValueError:
@@ -101,7 +104,13 @@ def find_run_cleanup_candidates(
     Returns ``(empty_ids, orphan_ids)``.
     """
     cutoff = datetime.now() - timedelta(hours=stale_hours)
-    run_folders = sorted(glob.glob(os.path.join(base_dir, folder_prefix + "_*")))
+    if folder_prefix == "upload":
+        run_folders = sorted(
+            glob.glob(os.path.join(base_dir, "upload_*"))
+            + glob.glob(os.path.join(base_dir, "inspection_*"))
+        )
+    else:
+        run_folders = sorted(glob.glob(os.path.join(base_dir, folder_prefix + "_*")))
 
     empty_ids: list[str] = []
     orphan_ids: list[str] = []

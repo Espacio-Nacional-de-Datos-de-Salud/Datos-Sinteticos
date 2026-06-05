@@ -37,7 +37,7 @@ export function DetectedTablesCard({
     if (!inspectionId) {
       return (
         <p className="text-sm text-muted-foreground">
-          Selecciona archivos e inicia la inspección para ver los resultados.
+          Selecciona archivos e inicia la carga de datos para ver los resultados.
         </p>
       );
     }
@@ -54,7 +54,7 @@ export function DetectedTablesCard({
     if (inspection.status === "failed") {
       return (
         <p className="text-sm text-destructive">
-          La inspección falló. Revisa los logs del backend.
+          La carga de datos falló. Revisa los logs del backend.
         </p>
       );
     }
@@ -62,7 +62,7 @@ export function DetectedTablesCard({
     if (tables.length === 0) {
       return (
         <p className="text-sm text-muted-foreground">
-          Inspección completada pero sin tablas detectadas.
+          Carga de datos completada pero sin tablas detectadas.
         </p>
       );
     }
@@ -93,7 +93,7 @@ export function DetectedTablesCard({
       <CardHeader>
         <CardTitle className="text-base">Tablas Detectadas</CardTitle>
         <CardDescription>
-          Resumen de tablas y nº de filas tras la inspección.
+          Resumen de tablas y nº de filas tras la carga de datos.
           {inspectionId && (
             <span className="ml-2 font-mono text-xs" suppressHydrationWarning>
               id: {inspectionId}

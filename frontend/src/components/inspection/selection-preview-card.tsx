@@ -36,6 +36,7 @@ export function SelectionPreviewCard({
   excludedColumns,
   onToggleColumn,
   startAction,
+  readOnly = false,
 }: {
   previews: FilePreview[];
   /** Whether the user has any files selected — drives the empty state. */
@@ -47,17 +48,22 @@ export function SelectionPreviewCard({
   onToggleColumn: (table: string, col: string) => void;
   /** Start-inspection controls rendered at the bottom of the card. */
   startAction?: React.ReactNode;
+  /** When true, hides the per-column exclusion toggles and the hint badge.
+   *  Used by views (e.g. Configuración right rail) where the column delete
+   *  action is exposed elsewhere and would be confusing to duplicate. */
+  readOnly?: boolean;
 }) {
   return (
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
           <CardTitle className="text-base">Vista previa de la selección</CardTitle>
-          <ColumnExclusionHint align="right" />
+          {!readOnly && <ColumnExclusionHint align="right" />}
         </div>
         <CardDescription>
-          Revisa los datos antes de inspeccionar. Expande una tabla y pulsa una
-          columna para excluirla.
+          {readOnly
+            ? "Revisa los datos. Para excluir columnas usa la sección «Eliminar columnas» del cuerpo principal."
+            : "Revisa los datos antes de inspeccionar. Expande una tabla y pulsa una columna para excluirla."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -82,6 +88,7 @@ export function SelectionPreviewCard({
               csvDelimiter={csvDelimiter}
               excludedCols={excludedColumns[p.table] ?? new Set()}
               onToggleColumn={(col) => onToggleColumn(p.table, col)}
+              readOnly={readOnly}
             />
           ))}
         {startAction && <div className="border-t pt-3">{startAction}</div>}
@@ -95,11 +102,13 @@ function SelectionPreviewRow({
   csvDelimiter,
   excludedCols,
   onToggleColumn,
+  readOnly,
 }: {
   preview: FilePreview;
   csvDelimiter: string;
   excludedCols: Set<string>;
   onToggleColumn: (col: string) => void;
+  readOnly: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(false);
@@ -111,8 +120,10 @@ function SelectionPreviewRow({
       ? `${preview.rows.length} filas en la muestra`
       : `${preview.total_rows.toLocaleString("es-ES")} filas`;
 
-  const excludedCount = excludedCols.size;
-  const includedColumns = preview.columns.filter((c) => !excludedCols.has(c));
+  const excludedCount = readOnly ? 0 : excludedCols.size;
+  const includedColumns = readOnly
+    ? preview.columns
+    : preview.columns.filter((c) => !excludedCols.has(c));
 
   return (
     <div className="rounded-md border">
@@ -155,37 +166,38 @@ function SelectionPreviewRow({
       </div>
       {open && (
         <div className="border-t">
-          {/* Column inclusion toggles */}
-          <div className="flex flex-wrap gap-1.5 bg-muted/20 px-3 py-2">
-            <span className="mr-1 self-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Columnas
-            </span>
-            {preview.columns.map((col) => {
-              const excluded = excludedCols.has(col);
-              return (
-                <button
-                  key={col}
-                  type="button"
-                  onClick={() => onToggleColumn(col)}
-                  title={excluded ? `Incluir '${col}'` : `Excluir '${col}'`}
-                  className={
-                    "flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] transition-all " +
-                    (excluded
-                      ? "border-red-200 bg-red-50 text-red-400 line-through dark:border-red-900 dark:bg-red-950/30 dark:text-red-500"
-                      : "border-border bg-background text-foreground hover:border-primary hover:bg-primary/5")
-                  }
-                >
-                  <span
+          {!readOnly && (
+            <div className="flex flex-wrap gap-1.5 bg-muted/20 px-3 py-2">
+              <span className="mr-1 self-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Columnas
+              </span>
+              {preview.columns.map((col) => {
+                const excluded = excludedCols.has(col);
+                return (
+                  <button
+                    key={col}
+                    type="button"
+                    onClick={() => onToggleColumn(col)}
+                    title={excluded ? `Incluir '${col}'` : `Excluir '${col}'`}
                     className={
-                      "inline-block h-2 w-2 shrink-0 rounded-full " +
-                      (excluded ? "bg-red-400" : "bg-emerald-500")
+                      "flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] transition-all " +
+                      (excluded
+                        ? "border-red-200 bg-red-50 text-red-400 line-through dark:border-red-900 dark:bg-red-950/30 dark:text-red-500"
+                        : "border-border bg-background text-foreground hover:border-primary hover:bg-primary/5")
                     }
-                  />
-                  {col}
-                </button>
-              );
-            })}
-          </div>
+                  >
+                    <span
+                      className={
+                        "inline-block h-2 w-2 shrink-0 rounded-full " +
+                        (excluded ? "bg-red-400" : "bg-emerald-500")
+                      }
+                    />
+                    {col}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {/* Data preview table */}
           <div className="max-h-[60vh] overflow-auto bg-muted/30">
             {includedColumns.length === 0 ? (
@@ -217,7 +229,7 @@ function SelectionPreviewRow({
                     preview.rows.map((row, i) => (
                       <TableRow key={i}>
                         {preview.columns.map((col, j) => {
-                          if (excludedCols.has(col)) return null;
+                          if (!readOnly && excludedCols.has(col)) return null;
                           return (
                             <TableCell
                               key={j}

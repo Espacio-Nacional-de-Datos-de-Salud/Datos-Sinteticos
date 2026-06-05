@@ -4,6 +4,8 @@ import re
 
 import pandas as pd
 import synthcity.logger as log
+
+from backend.src.domain.evaluation.dtype_alignment import align_dtypes
 from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -145,20 +147,11 @@ def align_datasets_structure_and_types(
         aligned_original[table] = aligned_original[table][common_columns].copy()
         aligned_synthetic[table] = aligned_synthetic[table][common_columns].copy()
 
-        # Fix Type Mismatches (e.g., int vs str)
-        for col in common_columns:
-            dtype_orig = aligned_original[table][col].dtype
-            dtype_syn = aligned_synthetic[table][col].dtype
-
-            if dtype_orig != dtype_syn:
-                logger.info(
-                    "Aligning types for '%s' column '%s': %s vs %s -> str",
-                    table,
-                    col,
-                    dtype_orig,
-                    dtype_syn,
-                )
-                aligned_original[table][col] = aligned_original[table][col].astype(str)
-                aligned_synthetic[table][col] = aligned_synthetic[table][col].astype(str)
+        # Fix type mismatches using the canonical align_dtypes logic
+        # (bool→int, int→float, fallback to syn dtype) so booleans like
+        # EXPIRE_FLAG are not corrupted into "True"/"False" strings.
+        aligned_original[table], aligned_synthetic[table] = align_dtypes(
+            aligned_original[table], aligned_synthetic[table]
+        )
 
     return aligned_original, aligned_synthetic

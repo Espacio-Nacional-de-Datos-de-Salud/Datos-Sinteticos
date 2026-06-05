@@ -69,16 +69,17 @@ class UtilityTests(MetricEvaluator):
                 )
 
         valid_rows = [
-            row for row in rows
+            row
+            for row in rows
             if isinstance(row.get("score"), (int, float)) and not math.isnan(row["score"])
         ]
 
         total_weight = sum(float(row.get("weight", 1.0)) for row in valid_rows)
         if total_weight > 0:
-            score = sum(
-                float(row["score"]) * float(row.get("weight", 1.0))
-                for row in valid_rows
-            ) / total_weight
+            score = (
+                sum(float(row["score"]) * float(row.get("weight", 1.0)) for row in valid_rows)
+                / total_weight
+            )
         else:
             score = None
 

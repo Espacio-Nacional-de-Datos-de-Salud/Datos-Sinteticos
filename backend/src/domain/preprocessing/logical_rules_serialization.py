@@ -147,6 +147,7 @@ def serialize_logical_rule_manager_to_dict(manager: LogicalRuleManager) -> dict[
         "rules": [_encode_rule(rule) for rule in manager.rules],
         "relationships": _encode_relationships(manager.relationships),
         "rejection_sampling_config": _encode_value(manager.rejection_sampling_config),
+        "date_formats": _encode_value(manager.date_formats),
     }
 
 
@@ -162,8 +163,10 @@ def reconstruct_logical_rule_manager_from_dict(payload: dict[str, Any]) -> Logic
     rules = [_decode_rule(item) for item in payload.get("rules", [])]
     relationships = _decode_relationships(payload.get("relationships"))
     rejection_sampling_config = _decode_value(payload.get("rejection_sampling_config", {}))
+    date_formats = _decode_value(payload.get("date_formats", {})) or {}
     return LogicalRuleManager(
         rules=rules,
         relationships=relationships,
         rejection_sampling_config=rejection_sampling_config,
+        date_formats=date_formats,
     )

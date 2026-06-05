@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -41,6 +42,7 @@ export function DatasetPreviewCard({
   isError,
   fetcher,
   downloadHref,
+  getProfilingUrl,
   emptyMessage = "No hay datos disponibles.",
 }: {
   title: string;
@@ -53,6 +55,9 @@ export function DatasetPreviewCard({
   isError: boolean;
   fetcher: DatasetFetcher;
   downloadHref?: string;
+  /** Optional: given the currently-active table name, returns the URL for its
+   * ydata-profiling HTML report, or null/undefined when not available. */
+  getProfilingUrl?: (table: string) => string | null | undefined;
   emptyMessage?: string;
 }) {
   const [active, setActive] = useState<string | null>(null);
@@ -98,13 +103,31 @@ export function DatasetPreviewCard({
             <CardTitle className="text-base">{title}</CardTitle>
             {description && <CardDescription>{description}</CardDescription>}
           </div>
-          {downloadHref && tables.length > 0 && (
-            <a href={`${API_BASE_URL}${downloadHref}`} download>
-              <Button type="button" size="sm" variant="outline">
-                Descargar ZIP
-              </Button>
-            </a>
-          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {getProfilingUrl && active && getProfilingUrl(active) && (
+              <Tooltip
+                content="Abre el informe ydata-profiling de esta tabla en una nueva pestaña."
+                side="top"
+              >
+                <a
+                  href={getProfilingUrl(active)!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button type="button" size="sm" variant="outline">
+                    Ver profiling
+                  </Button>
+                </a>
+              </Tooltip>
+            )}
+            {downloadHref && tables.length > 0 && (
+              <a href={`${API_BASE_URL}${downloadHref}`} download>
+                <Button type="button" size="sm" variant="outline">
+                  Descargar ZIP
+                </Button>
+              </a>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">

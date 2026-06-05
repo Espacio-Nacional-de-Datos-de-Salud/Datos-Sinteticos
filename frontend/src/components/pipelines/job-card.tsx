@@ -301,6 +301,7 @@ export function JobCard({
 
             <ConfigDrawer
               configId="evaluation"
+              contextId={job.evaluate.simulation_id || undefined}
               open={evaluationConfigOpen}
               onClose={() => setEvaluationConfigOpen(false)}
             />
