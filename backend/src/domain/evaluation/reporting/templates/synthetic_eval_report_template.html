@@ -1411,12 +1411,21 @@
       max-width: 100%;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
+      display: block;
+      margin: 0 auto;
     }
 
     #tab-privacy table {
-      width: max-content;
+      width: 100%;
       min-width: 760px;
-      max-width: none;
+      margin: 0 auto;
+      table-layout: auto;
+    }
+
+    #tab-privacy #exactMatchTable,
+    #tab-privacy #kanonColumnTable,
+    #tab-privacy #lDiversityTable {
+      min-width: 640px;
     }
 
     #tab-privacy th,
@@ -1425,6 +1434,11 @@
       overflow-wrap: anywhere;
       max-width: 220px;
       vertical-align: top;
+    }
+
+    #tab-privacy .detail-table {
+      width: 100%;
+      max-width: 100%;
     }
 
     .utility-subsection {
@@ -1813,6 +1827,14 @@
                 <li>Si una métrica está desactivada o no tiene valor válido, el reporte puede ocultarla para no ocupar espacio ni inducir a error.</li>
               </ul>
             </article>
+            <article class="report-usage-details-card">
+              <h4>4. Revisa el modelo generativo</h4>
+              <ul>
+                <li><strong>Modelo generativo</strong>: indica la arquitectura usada para sintetizar los datos.</li>
+                <li>En modelos tabulares de MostlyAI, el motor se basa en <strong>TabularARGN</strong>, una red generativa auto-regresiva diseñada para datos tabulares mixtos.</li>
+                <li>La privacidad no depende solo de la arquitectura: también influyen la configuración, los datos, la privacidad diferencial, el tamaño de muestra y la evaluación posterior.</li>
+              </ul>
+            </article>
           </div>
           <div class="report-usage-note">
             <strong>Consideraciones:</strong> valida siempre las variables críticas del caso de uso, revisa las tablas detalladas y contrasta los resultados con conocimiento experto. Un buen resultado en fidelidad no implica ausencia total de riesgo, y un buen resultado en privacidad puede venir acompañado de pérdida de utilidad.
@@ -1906,13 +1928,6 @@
             <div id="accuracyMatrixHeatmap" class="matrix-grid"></div>
           </details>
 
-          <details class="detail-table" id="cioDetails">
-            <summary>CIO por estadistico</summary>
-            <div class="table-wrap">
-              <table id="cioTable"></table>
-            </div>
-          </details>
-
           <details class="detail-table">
             <summary>CMD</summary>
             <div class="table-wrap">
@@ -1963,6 +1978,38 @@
               <table id="kanonColumnTable"></table>
             </div>
           </details>
+
+          <details class="detail-table">
+            <summary>EMR exacto y leave-one-out</summary>
+            <p class="explain">
+              EMR mide filas sintéticas idénticas a filas reales. El detalle leave-one-out no mide coincidencias de una columna aislada: compara la fila completa omitiendo solo esa columna. Si al omitir PESO aparecen matches, significa que PESO estaba impidiendo coincidencias exactas en registros que sí coinciden en el resto de variables.
+            </p>
+            <div id="exactMatchSummary" class="score-breakdown"></div>
+            <div class="table-wrap">
+              <table id="exactMatchTable"></table>
+            </div>
+          </details>
+
+          <details class="detail-table" id="exactMatchRowsDetails" style="display:none">
+            <summary>Filas coincidentes (registros reales copiados)</summary>
+            <p class="explain">
+              Estas son las filas reales que el dataset sintético reproduce de forma idéntica. Se muestran porque la opción «Mostrar filas coincidentes en el reporte» está activada en la configuración de privacidad. Contienen datos reales: trátalas con la misma confidencialidad que el dataset original.
+            </p>
+            <div class="table-wrap">
+              <table id="exactMatchRowsTable"></table>
+            </div>
+          </details>
+
+          <details class="detail-table">
+            <summary>l-diversity por subset</summary>
+            <p class="explain">
+              l-diversity mide diversidad de columnas sensibles dentro de clases definidas por quasi-identificadores. Valores bajos indican mayor riesgo.
+            </p>
+            <div id="lDiversitySummary" class="score-breakdown"></div>
+            <div class="table-wrap">
+              <table id="lDiversityTable"></table>
+            </div>
+          </details>
         </div>
       </details>
     </section>
@@ -1987,12 +2034,13 @@
             </div>
 
             <p class="explain">
-              Real / GT es la referencia con datos reales. Sintético ID evalúa en distribución y Sintético OOD evalúa fuera de distribución.
+              Real / GT es la referencia con datos reales. Sintético ID evalúa en distribución.
             </p>
+            <div id="predictiveUtilityContext" class="score-breakdown utility-tests-meta"></div>
             <div class="utility-model-grid">
               <article class="utility-model-card utility-model-section">
                 <h4>Evaluación con modelo lineal</h4>
-                <p>Compara la referencia real con los modelos entrenados con sintéticos en escenarios ID y OOD.</p>
+                <p>Compara la referencia real con el modelo entrenado con sintéticos y evaluado en distribución.</p>
                 <div id="linearUtilityMetrics" class="utility-model-metrics"></div>
                 <div class="utility-model-chart">
                   <canvas id="linearUtilityChart" aria-label="Rendimiento predictivo del modelo lineal"></canvas>
@@ -2069,13 +2117,10 @@ __REPORT_DATA_JSON__
       return "Bajo";
     }
 
-    function formatScore(value, digits = 1) {
+    function formatScore(value, digits = 2) {
       if (typeof value !== "number" || Number.isNaN(value)) return "-";
 
-      const maxDigits = Math.min(
-        typeof digits === "number" ? digits : 1,
-        1
-      );
+      const maxDigits = Math.max(0, Math.min(typeof digits === "number" ? digits : 2, 6));
 
       return value.toLocaleString("es-ES", {
         minimumFractionDigits: 0,
@@ -2089,7 +2134,7 @@ __REPORT_DATA_JSON__
     }
 
     function formatScorePart(label, value) {
-      return label + " " + formatScore(value, 1);
+      return label + " " + formatScore(value, 2);
     }
 
     function lowerIsBetterScore(value, maxValue) {
@@ -2293,7 +2338,7 @@ __REPORT_DATA_JSON__
       const rawValue = metricRawValue(value, config);
       const rawText = rawValue === null
         ? (config.rawUnavailableText || "Valor original no disponible en este resumen.")
-        : formatScore(rawValue, 1);
+        : formatScore(rawValue, 2);
 
       return tooltipSections([
         {
@@ -2306,7 +2351,7 @@ __REPORT_DATA_JSON__
         },
         {
           title: config.displayedValueLabel || "Valor mostrado",
-          text: formatScore(value, 1)
+          text: formatScore(value, 2)
         },
         {
           title: config.rawValueLabel || "Valor original/crudo",
@@ -2323,7 +2368,7 @@ __REPORT_DATA_JSON__
       const config = metricConfig(name, metricOptions);
       const level = metricQuality(value, config);
       const color = qualityColor(level);
-      const valueText = formatScore(value, 1);
+      const valueText = formatScore(value, 2);
       const el = document.createElement("article");
       el.className = "metric-pill";
       el.style.borderLeftColor = color;
@@ -2411,7 +2456,7 @@ __REPORT_DATA_JSON__
       const percent = typeof score === "number" && !Number.isNaN(score)
         ? Math.max(0, Math.min(100, score * 100))
         : 0;
-      value.textContent = formatScore(score, 1);
+      value.textContent = formatScore(score, 2);
       value.style.color = color;
       bar.style.background = color;
       bar.style.width = percent + "%";
@@ -2467,7 +2512,7 @@ __REPORT_DATA_JSON__
         ].join("");
 
         item.querySelector(".tvd-bar-name").textContent = row.column;
-        item.querySelector(".tvd-bar-value").textContent = formatScore(value, 1);
+        item.querySelector(".tvd-bar-value").textContent = formatScore(value, 2);
         const fill = item.querySelector(".tvd-bar-fill");
         fill.style.width = scorePercent(value) + "%";
         fill.style.background = scoreToColor(value);
@@ -2538,7 +2583,7 @@ __REPORT_DATA_JSON__
             td.textContent = "-";
             td.style.background = "#edf2f6";
           } else {
-            td.textContent = formatScore(value, 1);
+            td.textContent = formatScore(value, 2);
             td.style.background =
               Math.abs(value) < 0.1 ? "#e6f4ec" :
               Math.abs(value) < 0.25 ? "#fff6df" :
@@ -2674,7 +2719,7 @@ __REPORT_DATA_JSON__
             td.textContent = formatScore(value, digits);
             td.style.background = bg;
             td.style.color = rgbLuminance(bg) < 0.58 ? "#ffffff" : "#122231";
-            td.title = `${rowLabel} / ${columns[j]}: ${formatScore(value, 1)}`;
+            td.title = `${rowLabel} / ${columns[j]}: ${formatScore(value, 2)}`;
           }
           tr.appendChild(td);
         });
@@ -2748,7 +2793,7 @@ __REPORT_DATA_JSON__
         '<div class="dist-acc-overall-value"></div>'
       ].join("");
       overallBox.querySelector(".dist-acc-overall-value").textContent =
-        formatScore(overallMean, 1);
+        formatScore(overallMean, 2);
 
       const sep = document.createElement("div");
       sep.className = "dist-acc-sep";
@@ -2763,7 +2808,7 @@ __REPORT_DATA_JSON__
         k.textContent = labels[family] + n;
         const v = document.createElement("span");
         v.className = "v";
-        v.textContent = formatScore(means[idx], 1);
+        v.textContent = formatScore(means[idx], 2);
         v.style.color = scoreToColor(means[idx]);
         breakdown.appendChild(k);
         breakdown.appendChild(v);
@@ -2788,7 +2833,7 @@ __REPORT_DATA_JSON__
 
       const fmtScored = (v) => {
         const span = document.createElement("span");
-        span.textContent = formatScore(v, 1);
+        span.textContent = formatScore(v, 2);
         if (typeof v === "number" && !Number.isNaN(v)) {
           span.style.color = scoreToColor(v);
           span.style.fontWeight = "800";
@@ -2845,7 +2890,7 @@ __REPORT_DATA_JSON__
         if (typeof plot.one_minus_tvd === "number") {
           const acc = document.createElement("span");
           acc.className = "dist-acc";
-          acc.textContent = formatScore(plot.one_minus_tvd, 1);
+          acc.textContent = formatScore(plot.one_minus_tvd, 2);
           title.appendChild(acc);
         }
 
@@ -2888,7 +2933,7 @@ __REPORT_DATA_JSON__
                 legend: { display: false },
                 tooltip: {
                   callbacks: {
-                    label: (ctx) => `${ctx.dataset.label}: ${formatScore(ctx.raw, 1)}`
+                    label: (ctx) => `${ctx.dataset.label}: ${formatScore(ctx.raw, 2)}`
                   }
                 }
               },
@@ -2909,7 +2954,7 @@ __REPORT_DATA_JSON__
                   ticks: {
                     font: { size: 8 },
                     color: "#8aa0b2",
-                    callback: (value) => formatScore(Number(value), 1)
+                    callback: (value) => formatScore(Number(value), 2)
                   }
                 }
               }
@@ -2949,7 +2994,7 @@ __REPORT_DATA_JSON__
         if (typeof plot.one_minus_tvd === "number") {
           const acc = document.createElement("span");
           acc.className = "dist-acc";
-          acc.textContent = formatScore(plot.one_minus_tvd, 1);
+          acc.textContent = formatScore(plot.one_minus_tvd, 2);
           title.appendChild(acc);
         }
 
@@ -3027,17 +3072,16 @@ __REPORT_DATA_JSON__
         const chart = new Chart(canvas, {
           type: "bar",
           data: {
-            labels: ["Real / GT", "Sintético ID", "Sintético OOD"],
+            labels: ["Real / GT", "Sintético ID"],
             datasets: [
               {
                 label: title,
                 data: values.map(chartValue),
                 backgroundColor: [
                   "rgba(47, 108, 179, 0.72)",
-                  "rgba(31, 143, 95, 0.72)",
-                  "rgba(211, 156, 25, 0.72)"
+                  "rgba(31, 143, 95, 0.72)"
                 ],
-                borderColor: [infoColor, goodColor, midColor],
+                borderColor: [infoColor, goodColor],
                 borderWidth: 1
               }
             ]
@@ -3048,12 +3092,11 @@ __REPORT_DATA_JSON__
               legend: { display: false },
               tooltip: {
                 callbacks: {
-                  label: (context) => title + ": " + formatScore(context.raw, 1),
+                  label: (context) => title + ": " + formatScore(context.raw, 2),
                   afterTitle: (items) => {
                     const label = items && items[0] ? items[0].label : "";
                     if (label === "Real / GT") return "Referencia con datos reales";
                     if (label === "Sintético ID") return "Entrenado con sintéticos y evaluado en distribución";
-                    if (label === "Sintético OOD") return "Entrenado con sintéticos y evaluado fuera de distribución";
                     return "";
                   }
                 }
@@ -3069,7 +3112,7 @@ __REPORT_DATA_JSON__
                 suggestedMax: 1,
                 ticks: {
                   color: axisColor,
-                  callback: (value) => formatScore(Number(value), 1)
+                  callback: (value) => formatScore(Number(value), 2)
                 }
               }
             }
@@ -3081,12 +3124,12 @@ __REPORT_DATA_JSON__
       makeChart(
         linearCanvas,
         "Modelo lineal",
-        [summary.linear_gt, summary.linear_syn_id, summary.linear_syn_ood]
+        [summary.linear_gt, summary.linear_syn_id]
       );
       makeChart(
         mlpCanvas,
         "MLP",
-        [summary.mlp_gt, summary.mlp_syn_id, summary.mlp_syn_ood]
+        [summary.mlp_gt, summary.mlp_syn_id]
       );
     }
 
@@ -3112,7 +3155,7 @@ __REPORT_DATA_JSON__
 
       card.querySelector(".score-breakdown-label").textContent = label;
       const valueEl = card.querySelector(".score-breakdown-value");
-      valueEl.textContent = formatScore(value, 1);
+      valueEl.textContent = formatScore(value, 2);
       valueEl.style.color = color;
       card.querySelector(".score-breakdown-note").textContent = note;
       return card;
@@ -3162,6 +3205,14 @@ __REPORT_DATA_JSON__
         th.textContent = col.label;
         th.classList.add("sortable");
         th.dataset.key = col.key;
+        if (col.tooltip) {
+          th.title = col.tooltip;
+          th.style.cursor = "help";
+          const info = document.createElement("span");
+          info.textContent = " ⓘ";
+          info.style.opacity = "0.6";
+          th.appendChild(info);
+        }
         headerRow.appendChild(th);
       });
       thead.appendChild(headerRow);
@@ -3178,7 +3229,7 @@ __REPORT_DATA_JSON__
           if (value instanceof Node) {
             td.appendChild(value);
           } else if (typeof value === "number" && Number.isFinite(value)) {
-            td.textContent = formatScore(value, 1);
+            td.textContent = formatScore(value, 2);
           } else {
             td.textContent = value === undefined || value === null ? "-" : String(value);
           }
@@ -3220,6 +3271,8 @@ __REPORT_DATA_JSON__
 
       const training = metadata.training_parameters || {};
 
+      const modelType = training.model_type || "No disponible";
+      const modelTypeFullName = training.model_type_full_name || "";
       const modelSize = training.model_size || "-";
       const epsilon = training.epsilon === null || training.epsilon === undefined
         ? "Sin DP"
@@ -3227,8 +3280,43 @@ __REPORT_DATA_JSON__
       const flexibleGeneration = training.flexible_generation === null || training.flexible_generation === undefined
         ? "-"
         : (training.flexible_generation ? "Sí" : "No");
+      const modelingConfig = training.modeling_configuration || {};
+      const formatMode = (mode) => {
+        if (!mode) {
+          return "No disponible";
+        }
+        if (mode === "sequential") {
+          return "Secuencial";
+        }
+        if (mode === "flat") {
+          return "Plano";
+        }
+        if (mode === "mixed") {
+          return "Mixto";
+        }
+        if (mode === "auto") {
+          return "Auto";
+        }
+        if (mode === "backend_default") {
+          return "Backend default";
+        }
+        return String(mode);
+      };
+      const modelingMode = formatMode(
+        training.modeling_mode || modelingConfig.detected_modeling_mode
+      );
 
       const params = [
+        [
+          "Tipo de modelo",
+          modelType,
+          "Arquitectura generativa tabular usada por MostlyAI. TabularARGN significa Tabular Auto-Regressive Generative Network. Es un modelo auto-regresivo para datos tabulares que aprende distribuciones condicionadas entre columnas y permite generar registros sintéticos conservando relaciones estadísticas del dataset original." + (modelTypeFullName ? "\n\nNombre técnico: " + modelTypeFullName : "")
+        ],
+        [
+          "Modo de modelado",
+          modelingMode,
+          "Indica si el modelo entrenado preserva la estructura secuencial / longitudinal (contexto entre filas) o si se trata de un modelo plano."
+        ],
         [
           "Tamaño del Modelo",
           modelSize,
@@ -3376,7 +3464,7 @@ __REPORT_DATA_JSON__
       tip.textContent = "i";
       title.appendChild(tip);
 
-      value.textContent = formatScore(score, 1);
+      value.textContent = formatScore(score, 2);
       value.style.color = color;
       copy.textContent = "Resume el equilibrio entre fidelidad y privacidad del dataset sintético. La utilidad se muestra como información complementaria y no participa en este balance.";
       bar.style.background = color;
@@ -3400,7 +3488,7 @@ __REPORT_DATA_JSON__
 
       card.querySelector(".contribution-label").textContent = label;
       const valueEl = card.querySelector(".contribution-value");
-      valueEl.textContent = formatScore(value, 1);
+      valueEl.textContent = formatScore(value, 2);
       valueEl.style.color = color;
       card.querySelector(".contribution-description").textContent = description;
       const fill = card.querySelector(".contribution-fill");
@@ -3488,7 +3576,7 @@ __REPORT_DATA_JSON__
       }
 
       const valueEl = card.querySelector(".score-value");
-      valueEl.textContent = formatScore(value, 1);
+      valueEl.textContent = formatScore(value, 2);
       valueEl.style.color = color;
       card.querySelector(".score-subtitle").textContent = subtitleText;
       const bar = card.querySelector(".score-scale-bar");
@@ -3526,7 +3614,7 @@ __REPORT_DATA_JSON__
           },
           {
             title: "Valor mostrado",
-            text: formatScore(predictiveValue, 1)
+            text: formatScore(predictiveValue, 2)
           },
           {
             title: "Nota",
@@ -3551,7 +3639,7 @@ __REPORT_DATA_JSON__
           },
           {
             title: "Valor mostrado",
-            text: formatScore(statisticalValue, 1)
+            text: formatScore(statisticalValue, 2)
           },
           {
             title: "Nota",
@@ -3681,7 +3769,7 @@ __REPORT_DATA_JSON__
       const mapTips = {
         jsd: {
           label: "JSD",
-          definition: "Diferencia entre distribuciones reales y sintéticas.",
+          definition: "JSD (Jensen-Shannon Distance): diferencia entre distribuciones reales y sintéticas.",
           displayedValueLabel: "Valor mostrado (score de similitud)",
           rawValueLabel: "JSD cruda",
           rawValue: summary.jsd,
@@ -3696,7 +3784,7 @@ __REPORT_DATA_JSON__
         },
         inv_kl: {
           label: "Similitud KL",
-          definition: "Similitud probabilística derivada de una divergencia KL.",
+          definition: "Similitud KL (Kullback-Leibler): similitud probabilística derivada de la divergencia KL.",
           displayedValueLabel: "Valor mostrado (similitud KL)",
           rawValueLabel: "KL cruda",
           transformDescription: "La KL cruda mide divergencia y valores bajos son mejores. El reporte muestra una versión transformada para que valores altos indiquen mayor similitud.",
@@ -3714,7 +3802,7 @@ __REPORT_DATA_JSON__
         },
         inv_tvd: {
           label: "Similitud TVD (1 - TVD)",
-          definition: "Compara distribuciones mediante la TVD complementaria.",
+          definition: "TVD (Total Variation Distance): se muestra como 1 − TVD (similitud complementaria) comparando distribuciones.",
           displayedValueLabel: "Valor mostrado (1 - TVD)",
           rawValueLabel: "TVD cruda estimada",
           rawValueFromDisplayed: (displayedValue) => (
@@ -3733,7 +3821,7 @@ __REPORT_DATA_JSON__
         },
         cmd: {
           label: "CMD",
-          definition: "Mide conservación de relaciones y correlaciones entre variables.",
+          definition: "CMD (Correlation Matrix Distance): mide conservación de relaciones y correlaciones entre variables.",
           displayedValueLabel: "Valor mostrado (score de estructura)",
           rawValueLabel: "CMD cruda",
           rawValue: summary.cmd,
@@ -3745,42 +3833,14 @@ __REPORT_DATA_JSON__
           warning: 0.5,
           max: 1,
           scaleType: "bounded_quality"
-        },
-        cio: {
-          label: "CIO",
-          definition: "Mide solapamiento de intervalos estadísticos entre real y sintético.",
-          tooltip: tooltipSections([
-            { title: "Qué mide", text: "Solapamiento de intervalos estadísticos entre real y sintético." },
-            { title: "Valores altos", text: "Los intervalos son más compatibles." },
-            { title: "Valores bajos", text: "Los estadísticos se separan." }
-          ]),
-          direction: "higher",
-          good: 0.75,
-          warning: 0.5,
-          max: 1,
-          scaleType: "bounded_quality"
         }
       };
-      const cioRows = (details.cio_by_statistic || []).map((r) => ({
-        key: r.key,
-        column: r.column,
-        stat: r.stat,
-        overlap: r.overlap,
-        real_value: r.real_value,
-        synthetic_value: r.synthetic_value,
-        abs_diff: r.abs_diff
-      }));
-      const validCioRows = cioRows.filter((row) => Number.isFinite(Number(row.overlap)));
-      const hasValidCio = Number.isFinite(Number(summary.cio)) && validCioRows.length > 0;
       const metricRows = [
         ["jsd", lowerIsBetterScore(summary.jsd, 0.2)],
         ["inv_kl", summary.inv_kl],
         ["inv_tvd", summary.inv_tvd],
         ["cmd", lowerIsBetterScore(summary.cmd, 1.0)]
       ];
-      if (hasValidCio) {
-        metricRows.push(["cio", Number(summary.cio)]);
-      }
 
       renderAxisScore(
         "fidelityAxisScore",
@@ -3794,38 +3854,10 @@ __REPORT_DATA_JSON__
       );
 
       document.getElementById("fidelitySummaryRight").textContent =
-        "Score " + formatScore(scores.fidelity_score, 1);
+        "Score " + formatScore(scores.fidelity_score, 2);
 
       renderFidelityTvdBars(details.tvd_by_column || []);
       renderDistributionComparison(details);
-
-      const cioDetails = document.getElementById("cioDetails");
-      if (cioDetails) {
-        cioDetails.style.display = hasValidCio ? "" : "none";
-      }
-      if (hasValidCio) {
-        renderSimpleTable(
-          "cioTable",
-          validCioRows,
-          [
-            { key: "key", label: "Clave" },
-            { key: "column", label: "Columna" },
-            { key: "stat", label: "Estadístico" },
-            { key: "overlap", label: "Solapamiento" },
-            { key: "real_value", label: "Real" },
-            { key: "synthetic_value", label: "Sintético" },
-            { key: "abs_diff", label: "Diferencia abs." }
-          ],
-          {
-            formatters: {
-              overlap: (v) => formatScore(v, 1),
-              real_value: (v) => formatScore(v, 1),
-              synthetic_value: (v) => formatScore(v, 1),
-              abs_diff: (v) => formatScore(v, 1)
-            }
-          }
-        );
-      }
 
       renderSimpleTable(
         "cmdTable",
@@ -3836,7 +3868,7 @@ __REPORT_DATA_JSON__
         ],
         {
           formatters: {
-            value: (v) => formatScore(v, 1)
+            value: (v) => formatScore(v, 2)
           }
         }
       );
@@ -3957,13 +3989,156 @@ __REPORT_DATA_JSON__
       root.replaceChildren(...cards);
     }
 
+    function createPrivacyInfoCard(label, value, note, color = null) {
+      const card = document.createElement("article");
+      const cardColor = color || getComputedStyle(document.documentElement).getPropertyValue("--info").trim();
+      card.className = "score-breakdown-card";
+      card.style.borderTopColor = cardColor;
+      card.innerHTML = [
+        '<div class="score-breakdown-label"></div>',
+        '<div class="score-breakdown-value"></div>',
+        '<div class="score-breakdown-note"></div>'
+      ].join("");
+      card.querySelector(".score-breakdown-label").textContent = label;
+      card.querySelector(".score-breakdown-value").textContent = value;
+      card.querySelector(".score-breakdown-value").style.color = cardColor;
+      card.querySelector(".score-breakdown-note").textContent = note;
+      return card;
+    }
+
+    function renderExactMatchDetails(details) {
+      const summaryRoot = document.getElementById("exactMatchSummary");
+      const summary = (details && details.exact_match_summary) || {};
+      const rows = Array.isArray(summary.leave_one_out) ? summary.leave_one_out : [];
+      const emrValue = isValidNumber(summary.proportion)
+        ? summary.proportion
+        : (((window.__reportData || {}).summary || {}).privacy || {}).emr;
+      const count = isValidNumber(summary.count) ? summary.count : 0;
+      const source = (((window.__reportData || {}).summary || {}).privacy || {}).emr_source;
+
+      if (summaryRoot) {
+        const emrColor = isValidNumber(emrValue) && emrValue > 0
+          ? getComputedStyle(document.documentElement).getPropertyValue("--bad").trim()
+          : getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+        summaryRoot.replaceChildren(
+          createPrivacyInfoCard("EMR", formatScore(emrValue, 4), "Proporción de filas sintéticas que coinciden exactamente con filas reales.", emrColor),
+          createPrivacyInfoCard("Coincidencias", formatScore(count, 0), "Número de filas sintéticas con match exacto completo.", emrColor),
+          createPrivacyInfoCard("Leave-one-out", "Fila sin 1 columna", "Cada fila de la tabla compara todas las columnas salvo la indicada; no es una comparación por variable aislada."),
+          createPrivacyInfoCard("Fuente", source === "exact_match_rows" ? "ExactMatchRows" : "Common Rows", "ExactMatchRows contiene el cálculo detallado; Common Rows se usa solo como fallback histórico.")
+        );
+      }
+
+      renderSimpleTable(
+        "exactMatchTable",
+        rows,
+        [
+          { key: "excluded_column", label: "Columna omitida" },
+          { key: "count", label: "Matches al omitirla" },
+          { key: "extra_matches", label: "Extra vs fila completa" },
+          { key: "proportion", label: "Proporción" }
+        ],
+        {
+          formatters: {
+            count: (value) => formatScore(value, 0),
+            extra_matches: (value) => formatScore(value, 0),
+            proportion: (value) => formatScore(value, 4)
+          }
+        }
+      );
+
+      // Matched real rows are only present when the privacy toggle
+      // "show_filtered_rows" is enabled; otherwise hide the whole section.
+      const matchedRows = (((details || {}).exact_match_rows || {}).full_match || {}).rows;
+      const rowsDetails = document.getElementById("exactMatchRowsDetails");
+      if (rowsDetails) {
+        const hasRows = Array.isArray(matchedRows) && matchedRows.length > 0;
+        rowsDetails.style.display = hasRows ? "" : "none";
+        if (hasRows) {
+          const columns = Object.keys(matchedRows[0]).map((key) => ({ key, label: key }));
+          renderSimpleTable("exactMatchRowsTable", matchedRows, columns, {});
+        }
+      }
+    }
+
+    function renderLDiversityDetails(details) {
+      const summaryRoot = document.getElementById("lDiversitySummary");
+      const summary = (details && details.l_diversity_summary) || {};
+      const rows = Array.isArray(details && details.l_diversity_subsets)
+        ? details.l_diversity_subsets
+        : [];
+
+      if (summaryRoot) {
+        if (summary.skipped) {
+          summaryRoot.replaceChildren(
+            createPrivacyInfoCard("Estado", "Omitido", "Motivo: " + (summary.skip_reason || "sin detalle"))
+          );
+        } else {
+          summaryRoot.replaceChildren(
+            createPrivacyInfoCard("Real l", formatScore(summary.real_l, 0), "Mínimo l-diversity observado en datos reales."),
+            createPrivacyInfoCard("Sintético l", formatScore(summary.syn_l, 0), "Mínimo l-diversity observado en datos sintéticos."),
+            createPrivacyInfoCard("Subsets", formatScore(summary.n_subsets, 0), "Número de subconjuntos evaluados.")
+          );
+        }
+      }
+
+      renderSimpleTable(
+        "lDiversityTable",
+        rows,
+        [
+          { key: "risk", label: "Riesgo" },
+          { key: "subset", label: "Subset" },
+          { key: "columns", label: "QI" },
+          { key: "sensitive_columns", label: "Sensibles" },
+          { key: "real_l", label: "Real l" },
+          { key: "syn_l", label: "Sintético l" },
+          { key: "l_gap", label: "Delta l" }
+        ],
+        {
+          formatters: {
+            risk: (value) => createRiskTag(value),
+            real_l: (value) => formatScore(value, 0),
+            syn_l: (value) => formatScore(value, 0),
+            l_gap: (value) => signedNumber(value)
+          }
+        }
+      );
+    }
+
+    function renderPredictiveUtilityContext() {
+      const root = document.getElementById("predictiveUtilityContext");
+      if (!root) return;
+      const metadata = (window.__reportData && window.__reportData.metadata) || {};
+      const params = metadata.evaluation_parameters || {};
+      const targetColumn = params.target_column || "-";
+      const taskType = params.task_type || "-";
+      const taskLabels = {
+        classification: "Clasificación",
+        regression: "Regresión",
+        survival_analysis: "Supervivencia"
+      };
+      const taskLabel = taskLabels[String(taskType)] || taskType;
+
+      root.replaceChildren(
+        createPrivacyInfoCard(
+          "Variable objetivo",
+          String(targetColumn),
+          "Columna usada como target para calcular utilidad predictiva."
+        ),
+        createPrivacyInfoCard(
+          "Tarea ejecutada",
+          String(taskLabel),
+          "Tipo de problema usado por las métricas predictivas."
+        )
+      );
+    }
+
     function renderPrivacy(summary, details) {
       const aggRoot = document.getElementById("privacyAggregated");
       const scores = (window.__reportData && window.__reportData.scores) || {};
       const mapTips = {
         dcr: {
           label: "DCR",
-          definition: "Mide la distancia al registro real más cercano.",
+          definition: "DCR (Distance to Closest Record): mide la distancia al registro real más cercano.",
           displayedValueLabel: "Valor mostrado",
           rawValueLabel: "Valor crudo",
           rawValue: summary.dcr,
@@ -3979,7 +4154,7 @@ __REPORT_DATA_JSON__
         },
         nndr: {
           label: "NNDR",
-          definition: "Compara la cercanía del primer vecino frente al segundo.",
+          definition: "NNDR (Nearest Neighbor Distance Ratio): compara la cercanía del primer vecino frente al segundo.",
           displayedValueLabel: "Valor mostrado",
           rawValueLabel: "Valor crudo",
           rawValue: summary.nndr,
@@ -4008,11 +4183,56 @@ __REPORT_DATA_JSON__
           scaleType: "direction_only",
           scaleNote: "Más alto suele ser mejor"
         },
+        l_diversity_real: {
+          label: "l-diversity real",
+          definition: "Mínimo l-diversity observado en los datos reales para los subsets configurados.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Diversidad de columnas sensibles dentro de clases definidas por quasi-identificadores en el dataset real." },
+            { title: "Uso", text: "Sirve como referencia para interpretar el l-diversity sintético." },
+            { title: "Nota", text: "Valores mayores indican más diversidad sensible dentro de las clases equivalentes." }
+          ]),
+          direction: "higher",
+          good: 3,
+          warning: 2,
+          scale: "qualitative",
+          scaleType: "direction_only",
+          scaleNote: "Referencia real"
+        },
+        l_diversity_syn: {
+          label: "l-diversity sintético",
+          definition: "Mínimo l-diversity observado en los datos sintéticos para los subsets configurados.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Diversidad de columnas sensibles dentro de clases sintéticas definidas por quasi-identificadores." },
+            { title: "Valores altos", text: "Más diversidad sensible por clase; suele reducir riesgo de homogeneidad." },
+            { title: "Valores bajos", text: "Clases con poca diversidad sensible; conviene revisar los subsets detallados." }
+          ]),
+          direction: "higher",
+          good: 3,
+          warning: 2,
+          scale: "qualitative",
+          scaleType: "direction_only",
+          scaleNote: "Más alto suele ser mejor"
+        },
+        l_diversity_score: {
+          label: "Score l-diversity",
+          definition: "Componente normalizado de l-diversity usado en el score de privacidad.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Resume si el sintético mantiene diversidad suficiente de columnas sensibles dentro de clases equivalentes." },
+            { title: "Cálculo", text: "Combina un umbral absoluto de l-diversity sintético con la comparación frente al l-diversity real." },
+            { title: "Uso", text: "Este componente se incluye en la media base del score de privacidad junto con DCR, NNDR, EMR y otras señales disponibles." }
+          ]),
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5,
+          max: 1,
+          scaleType: "bounded_quality"
+        },
         emr: {
           label: "EMR",
-          definition: "Mide la proporción de filas sintéticas idénticas a filas reales.",
+          definition: "EMR (Exact Match Rows): proporción de filas sintéticas idénticas a filas reales.",
           tooltip: tooltipSections([
-            { title: "Qué mide", text: "Proporción de filas sintéticas idénticas a filas reales." },
+            { title: "Qué mide", text: "EMR (Exact Match Rows): proporción de filas sintéticas idénticas a filas reales." },
+            { title: "Fuente", text: summary.emr_source === "exact_match_rows" ? "Calculado con ExactMatchRows, que compara filas completas y conserva detalle de coincidencias." : "Fallback histórico basado en Common Rows Proportion." },
             { title: "Valores altos", text: "Hay más coincidencias exactas y mayor riesgo de fuga." },
             { title: "Valores bajos", text: "Hay pocas o ninguna coincidencia exacta." }
           ]),
@@ -4024,7 +4244,7 @@ __REPORT_DATA_JSON__
         },
         detection_mlp: {
           label: "Detection MLP",
-          definition: "Mide si un clasificador distingue real frente a sintético.",
+          definition: "Detection MLP (Multi-Layer Perceptron): mide si un clasificador distingue real frente a sintético.",
           displayedValueLabel: "Valor mostrado",
           rawValueLabel: "Valor crudo",
           rawValue: summary.detection_mlp,
@@ -4057,7 +4277,7 @@ __REPORT_DATA_JSON__
       );
 
       document.getElementById("privacySummaryRight").textContent =
-        "Score " + formatScore(scores.privacy_score, 1);
+        "Score " + formatScore(scores.privacy_score, 2);
 
       renderPrivacyRiskCards(details || {});
 
@@ -4171,6 +4391,9 @@ __REPORT_DATA_JSON__
           }
         }
       );
+
+      renderExactMatchDetails(details || {});
+      renderLDiversityDetails(details || {});
     }
 
     function renderUtility(summary, details) {
@@ -4201,7 +4424,7 @@ __REPORT_DATA_JSON__
           definition: "Mide el rendimiento del modelo lineal con datos reales.",
           tooltip: tooltipSections([
             { title: "Qué mide", text: "Rendimiento del modelo lineal entrenado y evaluado con datos reales." },
-            { title: "Interpretación", text: "Es la referencia para comparar SYN_ID y SYN_OOD." }
+            { title: "Interpretación", text: "Es la referencia para comparar SYN_ID." }
           ]),
           direction: "none",
           scaleNote: "Referencia real"
@@ -4221,27 +4444,12 @@ __REPORT_DATA_JSON__
           scale: "qualitative",
           scaleNote: "Más alto suele ser mejor"
         },
-        linear_syn_ood: {
-          label: "Lineal - Sintético OOD",
-          definition: "Mide rendimiento lineal entrenando con sintéticos fuera de distribución.",
-          tooltip: tooltipSections([
-            { title: "Qué mide", text: "Rendimiento lineal entrenando con sintéticos y evaluando fuera de distribución." },
-            { title: "Valores altos", text: "El sintético ayuda a generalizar." },
-            { title: "Valores bajos", text: "La señal predictiva no se transfiere bien." },
-            { title: "Referencia", text: "Compáralo con Lineal - Real y Sintético ID." }
-          ]),
-          direction: "higher",
-          good: 0.75,
-          warning: 0.5,
-          scale: "qualitative",
-          scaleNote: "Más alto suele ser mejor"
-        },
         mlp_gt: {
           label: "MLP - Real",
           definition: "Mide el rendimiento del MLP con datos reales.",
           tooltip: tooltipSections([
             { title: "Qué mide", text: "Rendimiento del MLP entrenado y evaluado con datos reales." },
-            { title: "Interpretación", text: "Es la referencia para comparar MLP - Sintético ID y MLP - Sintético OOD." }
+            { title: "Interpretación", text: "Es la referencia para comparar MLP - Sintético ID." }
           ]),
           direction: "none",
           scaleNote: "Referencia real"
@@ -4260,32 +4468,15 @@ __REPORT_DATA_JSON__
           warning: 0.5,
           scale: "qualitative",
           scaleNote: "Más alto suele ser mejor"
-        },
-        mlp_syn_ood: {
-          label: "MLP - Sintético OOD",
-          definition: "Mide rendimiento MLP entrenando con sintéticos fuera de distribución.",
-          tooltip: tooltipSections([
-            { title: "Qué mide", text: "Rendimiento MLP entrenando con sintéticos y evaluando fuera de distribución." },
-            { title: "Valores altos", text: "El sintético conserva utilidad en escenarios distintos." },
-            { title: "Valores bajos", text: "Generalización débil." },
-            { title: "Referencia", text: "Compáralo con MLP - Real y Sintético ID." }
-          ]),
-          direction: "higher",
-          good: 0.75,
-          warning: 0.5,
-          scale: "qualitative",
-          scaleNote: "Más alto suele ser mejor"
         }
       };
       const linearRows = [
         ["linear_gt", (summary || {}).linear_gt],
-        ["linear_syn_id", (summary || {}).linear_syn_id],
-        ["linear_syn_ood", (summary || {}).linear_syn_ood]
+        ["linear_syn_id", (summary || {}).linear_syn_id]
       ];
       const mlpRows = [
         ["mlp_gt", (summary || {}).mlp_gt],
-        ["mlp_syn_id", (summary || {}).mlp_syn_id],
-        ["mlp_syn_ood", (summary || {}).mlp_syn_ood]
+        ["mlp_syn_id", (summary || {}).mlp_syn_id]
       ];
 
       renderAxisScore(
@@ -4294,6 +4485,7 @@ __REPORT_DATA_JSON__
         utilityRelativeScore,
         "Resume el rendimiento relativo de los modelos entrenados con datos sintéticos frente a la referencia real. Esta dimensión es informativa y no participa en el Balance Fidelidad/Privacidad."
       );
+      renderPredictiveUtilityContext();
 
       if (aggRoot) {
         aggRoot.replaceChildren();
@@ -4314,20 +4506,18 @@ __REPORT_DATA_JSON__
       }
 
       document.getElementById("utilitySummaryRight").textContent =
-        "Score " + formatScore(utilityRelativeScore, 1);
+        "Score " + formatScore(utilityRelativeScore, 2);
 
       renderUtilityComparisonChart(summary || {});
 
       const metricLabels = {
         linear_gt: "Lineal - Real",
         linear_syn_id: "Lineal - Sintético ID",
-        linear_syn_ood: "Lineal - Sintético OOD",
         mlp_gt: "MLP - Real",
-        mlp_syn_id: "MLP - Sintético ID",
-        mlp_syn_ood: "MLP - Sintético OOD"
+        mlp_syn_id: "MLP - Sintético ID"
       };
       const utilityRows = Object.entries((details && details.metrics) || {})
-        .filter(([metric, value]) => metric !== "utility_tests_score" && isValidNumber(value))
+        .filter(([metric, value]) => metric !== "utility_tests_score" && !metric.endsWith("_syn_ood") && isValidNumber(value))
         .map(([metric, value]) => ({
           metric: metricLabels[metric] || metric,
           value,
@@ -4344,7 +4534,7 @@ __REPORT_DATA_JSON__
         ],
         {
           formatters: {
-            value: (v) => formatScore(v, 1),
+            value: (v) => formatScore(v, 2),
             quality: (v, row) => {
               const span = document.createElement("span");
               span.textContent = v;
@@ -4406,7 +4596,7 @@ __REPORT_DATA_JSON__
 
             card.querySelector(".score-breakdown-label").textContent = item.label;
             card.querySelector(".score-breakdown-value").textContent =
-              isScore ? formatScore(item.value, 1) : item.value;
+              isScore ? formatScore(item.value, 2) : item.value;
             card.querySelector(".score-breakdown-value").style.color = color;
             card.querySelector(".score-breakdown-note").textContent = item.note;
 
@@ -4415,19 +4605,19 @@ __REPORT_DATA_JSON__
         );
       }
 
-      const fmtNumber = (value, digits = 1) => {
+      const fmtNumber = (value, digits = 2) => {
         if (typeof value !== "number" || Number.isNaN(value)) return "-";
         return formatScore(value, digits);
       };
       
       const fmtPercent = (value) => {
         if (typeof value !== "number" || Number.isNaN(value)) return "-";
-        return formatScore(value * 100, 1) + "%";
+        return formatScore(value * 100, 2) + "%";
       };
 
       const fmtScore = (value) => {
         const span = document.createElement("span");
-        span.textContent = fmtNumber(value, 3);
+        span.textContent = fmtNumber(value, 2);
         if (typeof value === "number" && !Number.isNaN(value)) {
           span.style.color = scoreToColor(value);
           span.style.fontWeight = "800";
@@ -4441,22 +4631,21 @@ __REPORT_DATA_JSON__
         [
           { key: "name", label: "Prueba" },
           { key: "metric", label: "Métrica" },
-          { key: "weight", label: "Peso" },
-          { key: "tolerance", label: "Tolerancia" },
-          { key: "real_value", label: "Real" },
-          { key: "synthetic_value", label: "Sintético" },
-          { key: "relative_error", label: "Error relativo" },
-          { key: "score", label: "Score" },
-          { key: "status", label: "Estado" }
+          { key: "real_value", label: "Valor real" },
+          { key: "real_std", label: "Std real", tooltip: "Desviación estándar de la columna evaluada en el dataset real. Solo aplica a métricas sobre una columna (mean, median, etc.); en count/proportion/fórmulas aparece «-»." },
+          { key: "synthetic_value", label: "Valor sintético" },
+          { key: "synthetic_std", label: "Std sintético", tooltip: "Desviación estándar de la columna evaluada en el dataset sintético. Solo aplica a métricas sobre una columna; en count/proportion/fórmulas aparece «-»." },
+          { key: "relative_discrepancy", label: "Discrepancia rel.", tooltip: "Discrepancia relativa simétrica: |real − sintético| / (|real| + |sintético|). Acotada entre 0% y 100% e independiente de cuál sea mayor (no es el error relativo clásico, que divide solo por el real)." },
+          { key: "relative_precision", label: "Precisión rel.", tooltip: "Precisión relativa = 1 − discrepancia relativa = 1 − |real − sintético| / (|real| + |sintético|). Escala simétrica y acotada en [0,1]: 1 = idéntico, 0 = máxima discrepancia. La utilidad estadística global es su media ponderada por el peso de cada prueba." }
         ],
         {
           formatters: {
-            weight: (v) => fmtNumber(v, 1),
-            tolerance: (v) => fmtPercent(v),
-            real_value: (v) => fmtNumber(v, 4),
-            synthetic_value: (v) => fmtNumber(v, 4),
-            relative_error: (v) => fmtPercent(v),
-            score: fmtScore
+            real_value: (v) => fmtNumber(v, 2),
+            synthetic_value: (v) => fmtNumber(v, 2),
+            relative_discrepancy: (v) => fmtPercent(v),
+            relative_precision: fmtScore,
+            real_std: (v) => fmtNumber(v, 2),
+            synthetic_std: (v) => fmtNumber(v, 2),
           }
         }
       );

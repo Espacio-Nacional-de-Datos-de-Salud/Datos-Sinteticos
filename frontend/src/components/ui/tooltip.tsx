@@ -9,6 +9,10 @@ interface TooltipProps {
   children?: React.ReactNode;
   side?: "top" | "right" | "bottom" | "left";
   className?: string;
+  /** Render the trigger wrapper as a <span> instead of a <div>, so the tooltip
+   *  can be placed inside phrasing content (<p>, <h4>, …) without producing an
+   *  invalid-nesting hydration error. Only safe when children are inline. */
+  inline?: boolean;
 }
 
 const TOOLTIP_WIDTH = 350;
@@ -19,13 +23,13 @@ export function Tooltip({
   children,
   side = "top",
   className = "",
+  inline = false,
 }: TooltipProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [coords, setCoords] = useState<{ top: number; left: number } | null>(
-    null,
-  );
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  // Use HTMLElement so the ref works for both <button> and <div> triggers.
+  const triggerRef = useRef<HTMLElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -86,40 +90,69 @@ export function Tooltip({
     };
   }, [isOpen, side]);
 
+  const hoverProps = {
+    onMouseEnter: () => setIsOpen(true),
+    onMouseLeave: () => setIsOpen(false),
+    onFocus: () => setIsOpen(true),
+    onBlur: () => setIsOpen(false),
+  };
+
+  const portal = mounted && isOpen && coords
+    ? createPortal(
+      <div
+        ref={tooltipRef}
+        role="tooltip"
+        onMouseEnter={() => setIsOpen(true)}
+        onMouseLeave={() => setIsOpen(false)}
+        className="fixed z-[9999] rounded-md border bg-popover px-4 py-3 text-sm text-popover-foreground shadow-md whitespace-normal break-words pointer-events-auto"
+        style={{ top: coords.top, left: coords.left, width: TOOLTIP_WIDTH }}
+      >
+        {content}
+      </div>,
+      document.body,
+    )
+    : null;
+
+  if (children) {
+    // When `inline`, the wrapper is a <span> so the trigger is valid inside
+    // phrasing content (<p>, <h4>, …); otherwise a <div> as before.
+    if (inline) {
+      return (
+        <span
+          ref={triggerRef as React.RefObject<HTMLSpanElement>}
+          className={`inline-block ${className}`}
+          {...hoverProps}
+        >
+          {children}
+          {portal}
+        </span>
+      );
+    }
+    return (
+      <div
+        ref={triggerRef as React.RefObject<HTMLDivElement>}
+        className={`inline-block ${className}`}
+        {...hoverProps}
+      >
+        {children}
+        {portal}
+      </div>
+    );
+  }
+
   return (
     <div className={`relative inline-block ${className}`}>
       <button
-        ref={triggerRef}
+        ref={triggerRef as React.RefObject<HTMLButtonElement>}
         type="button"
-        onMouseEnter={() => setIsOpen(true)}
-        onMouseLeave={() => setIsOpen(false)}
-        onFocus={() => setIsOpen(true)}
-        onBlur={() => setIsOpen(false)}
+        aria-label="Más información"
+        {...hoverProps}
         onClick={() => setIsOpen((v) => !v)}
         className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-        aria-label="Más información"
       >
-        {children || <Info className="h-4 w-4" />}
+        <Info className="h-4 w-4" />
       </button>
-
-      {mounted && isOpen && coords &&
-        createPortal(
-          <div
-            ref={tooltipRef}
-            role="tooltip"
-            onMouseEnter={() => setIsOpen(true)}
-            onMouseLeave={() => setIsOpen(false)}
-            className="fixed z-[9999] rounded-md border bg-popover px-4 py-3 text-sm text-popover-foreground shadow-md whitespace-normal break-words pointer-events-auto"
-            style={{
-              top: coords.top,
-              left: coords.left,
-              width: TOOLTIP_WIDTH,
-            }}
-          >
-            {content}
-          </div>,
-          document.body,
-        )}
+      {portal}
     </div>
   );
 }

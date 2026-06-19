@@ -42,19 +42,13 @@ export type StartInspectionPayload = {
 export function useInspeccionPage() {
   const queryClient = useQueryClient();
 
-  // Start as null on both server and client to match SSR output, then load
-  // the stored id from localStorage in an effect so the first client render
-  // matches the server render (avoids a hydration mismatch on every piece of
-  // DOM that branches on inspectionId).
+  // Each page visit is a clean slate: we deliberately do NOT hydrate the active
+  // carga de datos from localStorage, so entering the page never pre-selects a
+  // past run from its history — keeping "what was already done" separate from
+  // "what I'm about to launch". We still WRITE localStorage on start/select (so
+  // downstream steps read it as their upstream input); selecting a past run
+  // from the history is the explicit, confirmed way to bring one back.
   const [inspectionId, setInspectionId] = useState<string | null>(null);
-  useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    // Reading localStorage is intentionally deferred to a mount effect so
-    // SSR and the first client render agree on `null`. Acceptable use of
-    // setState-in-effect.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (stored) setInspectionId(stored);
-  }, []);
 
   const inspectionQuery = useQuery({
     queryKey: ["inspection", inspectionId],
@@ -384,14 +378,19 @@ export function useInspeccionPage() {
   });
 
   const purgeInspections = useMutation({
-    mutationFn: async () => {
-      const { data } = await api.delete("/inspections/purge");
+    mutationFn: async (cascade: boolean) => {
+      const { data } = await api.delete("/inspections/purge", {
+        params: cascade ? { cascade: true } : undefined,
+      });
       return data as { deleted_ids: string[] };
     },
     onSuccess: (result) => {
       const n = result.deleted_ids?.length ?? 0;
-      toast.success(`${n} inspección(es) eliminadas`);
-      queryClient.invalidateQueries({ queryKey: ["inspections"] });
+      toast.success(`${n} elemento(s) eliminado(s)`);
+      // A cascade purge wipes downstream artifacts too, so refresh every list.
+      for (const key of ["inspections", "models", "simulations", "evaluations"]) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
     },
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : "Error desconocido";
@@ -507,7 +506,7 @@ export function useInspeccionPage() {
     cleanupInspections: () => cleanupInspections.mutate(),
     isCleaning: cleanupInspections.isPending,
 
-    purgeInspections: () => purgeInspections.mutate(),
+    purgeInspections: (cascade = false) => purgeInspections.mutate(cascade),
     isPurging: purgeInspections.isPending,
 
     cancelInspection: (id: string) => cancelInspection.mutate(id),

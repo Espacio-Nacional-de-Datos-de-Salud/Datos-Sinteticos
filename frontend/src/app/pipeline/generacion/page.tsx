@@ -13,10 +13,14 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download, Play, Trash2, Wand2, XCircle } from "lucide-react";
+import { Download, Play, Trash2, Wand2, XCircle, AlertTriangle } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
+import { NativeSelect } from "@/components/ui/native-select";
+import { getGeneracionInstructions } from "@/components/generation/instructions-content";
+import yaml from "js-yaml";
+import { getBrcRulesSnapshot } from "@/lib/brc";
 
 import { DatasetPreviewCard } from "@/components/dataset/dataset-preview-card";
 import {
@@ -25,23 +29,32 @@ import {
   buildConditionalPayload,
   type ConditionalConfig,
 } from "@/components/generation/conditional-config";
-import { TableSampleSizesEditor } from "@/components/generation/table-sample-sizes-editor";
+import {
+  TableSampleSizesEditor,
+  type FixedTarget,
+} from "@/components/generation/table-sample-sizes-editor";
 import { SimulationSchemaDiagram } from "@/components/generation/simulation-schema-diagram";
 import { EditableName } from "@/components/jobs/editable-name";
+import { ActiveRunName } from "@/components/jobs/active-run-name";
 import { ActiveJobCard } from "@/components/pipeline-step/active-job-card";
 import { TimeProfilingPanel } from "@/components/pipeline-step/time-profiling-panel";
 import { DownloadMenu } from "@/components/pipeline-step/download-menu";
 import { HistoryCard, type HistoryColumn } from "@/components/pipeline-step/history-card";
+import { useConfirmSelect } from "@/components/pipeline-step/use-confirm-select";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useArtifactLifecycle } from "@/components/pipeline-step/use-artifact-lifecycle";
 import { useUpstreamSelection } from "@/components/pipeline-step/use-upstream-selection";
 import { WizardConfirmDialogs } from "@/components/pipeline-step/wizard-confirm-dialogs";
 import { RulesBanner } from "@/components/config/rules-banner";
+import { SanityReportCard } from "@/components/generation/sanity-report-card";
+import { RejectionSamplingCard } from "@/components/generation/rejection-sampling-card";
 import { WizardShell } from "@/components/layout/wizard-shell";
+import { WizardBanner, WIZARD_BANNER_HEIGHT } from "@/components/layout/wizard-banner";
 import { WorkflowGroup } from "@/components/layout/workflow-group";
 import { NamePromptDialog } from "@/components/ui/name-prompt-dialog";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/jobs/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,23 +65,29 @@ import {
   type ModelSummary,
   type SimulationSummary,
 } from "@/lib/api";
-import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
+import { toast } from "sonner";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 import { cn } from "@/lib/utils";
+import { useManualOpen } from "@/lib/use-manual-open";
 
 type StartInput = {
   model_id: string;
   sampleSize: string;
   tableSampleSizes: Record<string, number> | null;
+  fixedTarget: FixedTarget | null;
+  maxAttempts: string;
+  overgenerateFactor: string;
+  hasRejectionSampling: boolean;
   syntheticDataFileFormat: string;
   conditional: ConditionalConfig;
 };
 
 const GENERACION_OUTLINE = [
   { id: "preparacion", label: "Preparación", level: 1 },
-  { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
-  { id: "nueva-generacion", label: "Nueva generación", level: 2 },
-  { id: "condiciones", label: "Configuración condicional", level: 2 },
+  { id: "nueva-generacion", label: "Selección de modelo", level: 2 },
+  { id: "reglas-preprocesamiento", label: "Reglas de negocio", level: 2 },
+  { id: "configuracion-volumen", label: "Configuración de volumen", level: 2 },
+  { id: "condiciones", label: "Condicionar la generación", level: 2 },
   { id: "ejecutar-generacion", label: "Ejecutar generación", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
   { id: "generacion-actual", label: "Generación actual", level: 2 },
@@ -78,9 +97,19 @@ const GENERACION_OUTLINE = [
 ] as const;
 
 export default function GeneracionPage() {
+  const generacionInstructions = useMemo(
+    () => getGeneracionInstructions(),
+    [],
+  );
   const [sampleSize, setSampleSize] = useState<string>("");
   const [syntheticDataFileFormat, setSyntheticDataFileFormat] = useState<string>("csv");
   const [tableSampleSizes, setTableSampleSizes] = useState<Record<string, number> | null>(null);
+  const [fixedTarget, setFixedTarget] = useState<FixedTarget | null>(null);
+  // Sampling knobs (only sent when oversampling can occur). Defaults favor
+  // overgeneration over retries: each retry restarts the engine (slow), while a
+  // bigger batch is nearly free.
+  const [maxAttempts, setMaxAttempts] = useState<string>("2");
+  const [overgenerateFactor, setOvergenerateFactor] = useState<string>("3");
   const [conditionalConfig, setConditionalConfig] = useState<ConditionalConfig>(
     EMPTY_CONDITIONAL_CONFIG,
   );
@@ -88,6 +117,49 @@ export default function GeneracionPage() {
   const [confirmCleanup, setConfirmCleanup] = useState(false);
   const [confirmPurge, setConfirmPurge] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
+
+  // Instructions manual state — shared across pipeline pages via localStorage
+  // so the panel stays open as the user navigates between steps.
+  const [instructionsOpen, setInstructionsOpen] = useManualOpen();
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    preparacion: true,
+    resultados: true,
+    historial: false,
+  });
+  const scrollToSection = useCallback((id: string) => {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        document
+          .getElementById(id)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }),
+    );
+  }, []);
+  const toggleSection = useCallback(
+    (id: string) =>
+      setOpenSections((p) => {
+        const next = !(p[id] ?? true);
+        if (next) scrollToSection(id);
+        return { ...p, [id]: next };
+      }),
+    [scrollToSection],
+  );
+  const setSectionOpen = useCallback(
+    (id: string, open: boolean) => {
+      if (open) scrollToSection(id);
+      setOpenSections((p) => ({ ...p, [id]: open }));
+    },
+    [scrollToSection],
+  );
+  const [helpReserve, setHelpReserve] = useState<Record<string, number>>({});
+  const handleHelpMeasure = useCallback(
+    (reserve: Record<string, number>) => setHelpReserve(reserve),
+    [],
+  );
+  const helpGap = (id: string): React.CSSProperties | undefined =>
+    instructionsOpen && (openSections[id] ?? true) && helpReserve[id]
+      ? { marginBottom: helpReserve[id] + 16 }
+      : undefined;
 
   const lc = useArtifactLifecycle<SimulationSummary, StartInput>({
     apiPath: "/simulations",
@@ -97,13 +169,25 @@ export default function GeneracionPage() {
     idField: "simulation_id",
     buildStartBody: (input) => {
       const body: Record<string, unknown> = { model_id: input.model_id };
-      if (input.tableSampleSizes && Object.keys(input.tableSampleSizes).length > 0) {
+      if (input.fixedTarget) {
+        // Fixing a child table's row count: the mother floats, so no
+        // sample_size / table_sample_sizes may accompany it (API rejects both).
+        body.fixed_target = input.fixedTarget;
+      } else if (input.tableSampleSizes && Object.keys(input.tableSampleSizes).length > 0) {
         body.table_sample_sizes = input.tableSampleSizes;
       } else {
         const n = Number.parseInt(input.sampleSize, 10);
         if (Number.isFinite(n) && n > 0) body.sample_size = n;
       }
       body.synthetic_data_file_format = input.syntheticDataFileFormat;
+      // The sampling knobs only matter when oversampling can occur: a child
+      // target always oversimulates; a fixed mother only with rejection rules.
+      if (input.fixedTarget || input.hasRejectionSampling) {
+        const attempts = Number.parseInt(input.maxAttempts, 10);
+        if (Number.isFinite(attempts) && attempts >= 1) body.max_attempts = attempts;
+        const factor = Number.parseFloat(input.overgenerateFactor);
+        if (Number.isFinite(factor) && factor >= 1) body.overgenerate_factor = factor;
+      }
       const conditional = buildConditionalPayload(input.conditional);
       if (conditional) body.conditional = conditional;
       return body;
@@ -136,8 +220,49 @@ export default function GeneracionPage() {
     useUpstreamSelection(completedModels, "model_id", STORAGE_KEYS.model);
 
   const selectedModel = completedModels.find((m) => m.model_id === selectedModelId);
+
+  // Reset the Preparación form to its defaults — used when the user jumps to a
+  // past generation from the history, which discards whatever they were setting
+  // up (sample sizes, sampling knobs, conditional config, selected model).
+  const resetPreparation = useCallback(() => {
+    setSampleSize("");
+    setSyntheticDataFileFormat("csv");
+    setTableSampleSizes(null);
+    setFixedTarget(null);
+    setMaxAttempts("2");
+    setOvergenerateFactor("3");
+    setConditionalConfig(EMPTY_CONDITIONAL_CONFIG);
+    setSelectedModelId(completedModels[0]?.model_id ?? "");
+  }, [completedModels, setSelectedModelId]);
+
+  // Selecting a past generation from the history loads its results and resets
+  // the preparation form — gated behind a confirmation dialog.
+  const selectRun = useConfirmSelect((id) => {
+    lc.setActiveId(id);
+    resetPreparation();
+  }, lc.activeId);
   const originalSizes = selectedModel?.training_table_sizes || {};
   const subjectTables = selectedModel?.subject_tables || [];
+
+  const brcId = selectedModel?.brc_id;
+  const brcRulesQuery = useQuery({
+    queryKey: ["brc-rules-snapshot", brcId ?? null],
+    enabled: !!brcId,
+    queryFn: async () => {
+      const yamlText = await getBrcRulesSnapshot(brcId!);
+      try {
+        const parsed = (yaml.load(yamlText) as { rules?: any[] }) ?? {};
+        return parsed.rules ?? [];
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  const hasRejectionSampling = useMemo(() => {
+    if (!brcRulesQuery.data) return false;
+    return brcRulesQuery.data.some((r: any) => r.rejection_sampling === true);
+  }, [brcRulesQuery.data]);
 
 
   // Outside the Entrenamiento page itself we always show the upstream model
@@ -156,7 +281,7 @@ export default function GeneracionPage() {
     {
       key: "name",
       header: "Nombre",
-      width: "22%",
+      width: "16%",
       render: (s) => (
         <div className="space-y-0.5">
           <p
@@ -176,20 +301,19 @@ export default function GeneracionPage() {
     {
       key: "status",
       header: "Estado",
-      width: "10%",
+      width: "14%",
       render: (s) => (
-        <Badge
-          variant={statusBadgeVariant(s.status)}
+        <StatusBadge
+          status={s.status}
+          errorMessage={s.error_message}
           className={cn(s.status === "completed" && "!bg-blue-500/20 !text-blue-400")}
-        >
-          {translateStatus(s.status)}
-        </Badge>
+        />
       ),
     },
     {
       key: "model",
       header: "Modelo",
-      width: "22%",
+      width: "13%",
       render: (s) => (
         <span className="block truncate font-mono text-xs" title={s.model_id ?? ""}>
           {labelForModelId(s.model_id)}
@@ -198,8 +322,8 @@ export default function GeneracionPage() {
     },
     {
       key: "trainingTables",
-      header: "Tablas de entrenamiento",
-      width: "24%",
+      header: "Tablas",
+      width: "11%",
       render: (s) => {
         const sizes = s.training_table_sizes ?? {};
         const names = Object.keys(sizes);
@@ -223,118 +347,201 @@ export default function GeneracionPage() {
     {
       key: "size",
       header: "Tamaño",
-      width: "12%",
+      width: "9%",
       align: "right",
-      render: (s) => (
-        <span className="tabular-nums">
-          {s.sample_size != null ? s.sample_size.toLocaleString() : "—"}
-        </span>
-      ),
+      render: (s) => {
+        const size = s.target_table_rows ?? s.mother_table_size ?? s.sample_size;
+        const title = s.target_table
+          ? `Filas objetivo de ${s.target_table} (maestra libre)`
+          : s.mother_table
+            ? `Filas de ${s.mother_table}`
+            : undefined;
+        return (
+          <span className="tabular-nums" title={title}>
+            {size != null ? size.toLocaleString() : "—"}
+          </span>
+        );
+      },
     },
   ];
 
   return (
-    <WizardShell currentSlug="generacion" canAdvance={lc.hasCompleted} outline={GENERACION_OUTLINE}>
+    <WizardShell
+      currentSlug="generacion"
+      canAdvance={lc.hasCompleted}
+      outline={GENERACION_OUTLINE}
+      instructions={generacionInstructions}
+      instructionsOpen={instructionsOpen}
+      instructionsSections={openSections}
+      onInstructionsToggleSection={toggleSection}
+      onInstructionsClose={() => setInstructionsOpen(false)}
+      onInstructionsMeasure={handleHelpMeasure}
+      instructionsBannerHeight={WIZARD_BANNER_HEIGHT}
+    >
+      <WizardBanner
+        title="Generación"
+        subtitle="Genera datos sintéticos a partir de un modelo entrenado."
+        instructionsOpen={instructionsOpen}
+        onOpenManual={() => setInstructionsOpen(true)}
+        info={
+          <ActiveRunName
+            label="de la simulación"
+            name={
+              lc.activeId && lc.active
+                ? lc.active.simulation_name || lc.active.simulation_id
+                : null
+            }
+            placeholder="simulación aún no iniciada"
+            existingNames={lc.list.map((x) => x.simulation_name || x.simulation_id)}
+            onSave={
+              lc.active
+                ? async (name) => lc.rename(lc.active!.simulation_id, name)
+                : undefined
+            }
+          />
+        }
+      />
       <div className="space-y-6">
-        <div className="sticky top-0 z-20 -mx-8 -mt-6 border-b bg-background/95 px-8 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <h1 className="text-2xl font-semibold tracking-tight">Generación</h1>
-          <p className="text-sm text-muted-foreground">
-            Genera datos sintéticos a partir de un modelo entrenado.
-          </p>
-          {lc.activeId && lc.active && (
-            <div className="mt-3 flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Nombre:</span>
-              <EditableName
-                name={lc.active.simulation_name || lc.active.simulation_id}
-                existingNames={lc.list.map((x) => x.simulation_name || x.simulation_id)}
-                onSave={(name) => lc.rename(lc.active!.simulation_id, name)}
-                size="sm"
-              />
-            </div>
-          )}
-        </div>
-
-        <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
-          <div id="reglas-preprocesamiento" className="scroll-mt-24">
-            <RulesBanner />
-          </div>
-
+        <WorkflowGroup
+          id="preparacion"
+          label="Preparación"
+          open={openSections.preparacion ?? true}
+          onOpenChange={(o) => setSectionOpen("preparacion", o)}
+          className="scroll-mt-24"
+          style={helpGap("preparacion")}
+        >
           <div id="nueva-generacion" className="scroll-mt-24">
             <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Selección de modelo</CardTitle>
+              </CardHeader>
               <CardContent className="flex flex-col gap-4 p-4">
-              <div className="grid gap-3 md:grid-cols-[auto_1fr_140px_auto] md:items-end">
-              <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
-                <Wand2 className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="model-select">Modelo</Label>
-                  <Tooltip content="Selecciona el modelo entrenado que será usado para generar los datos sintéticos. Puede haber varios modelos disponibles si has realizado múltiples entrenamientos." />
+                <div className="grid gap-3 md:grid-cols-[auto_1fr_140px_auto] md:items-end">
+                  <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
+                    <Wand2 className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="model-select">Modelo</Label>
+                      <Tooltip content="Selecciona el modelo entrenado que será usado para generar los datos sintéticos. Puede haber varios modelos disponibles si has realizado múltiples entrenamientos." />
+                    </div>
+                    {modelsQuery.isLoading ? (
+                      <Skeleton className="h-9 w-full" />
+                    ) : completedModels.length === 0 ? (
+                      <p className="text-sm text-destructive">
+                        No hay modelos completados. Vuelve a <b>Entrenamiento</b>.
+                      </p>
+                    ) : (
+                      <NativeSelect
+                        id="model-select"
+                        value={selectedModelId}
+                        onValueChange={(v) => {
+                          setSelectedModelId(v);
+                          lc.setActiveId(null);
+                        }}
+                        className="h-9 rounded-md px-3 font-mono text-xs"
+                      >
+                        {completedModels.map((m) => (
+                          <option key={m.model_id} value={m.model_id}>
+                            {m.model_name || m.model_id}
+                            {m.tables ? ` · ${m.tables}` : ""}
+                            {m.train_size != null
+                              ? ` · ${m.train_size.toLocaleString()} filas`
+                              : ""}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="synthetic-format">Formato</Label>
+                      <Tooltip content="Selecciona el formato en el que deseas descargar los datos sintéticos. CSV es universal y fácil de procesar; Parquet es más compacto y eficiente." />
+                    </div>
+                    <NativeSelect
+                      id="synthetic-format"
+                      value={syntheticDataFileFormat}
+                      onValueChange={setSyntheticDataFileFormat}
+                      className="h-9 rounded-md px-3 text-sm"
+                    >
+                      <option value="csv">CSV</option>
+                      <option value="parquet">Parquet</option>
+                    </NativeSelect>
+                  </div>
                 </div>
-                {modelsQuery.isLoading ? (
-                  <Skeleton className="h-9 w-full" />
-                ) : completedModels.length === 0 ? (
-                  <p className="text-sm text-destructive">
-                    No hay modelos completados. Vuelve a <b>Entrenamiento</b>.
-                  </p>
-                ) : (
-                  <select
-                    id="model-select"
-                    value={selectedModelId}
-                    onChange={(e) => setSelectedModelId(e.target.value)}
-                    className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
-                  >
-                    {completedModels.map((m) => (
-                      <option key={m.model_id} value={m.model_id}>
-                        {m.model_name || m.model_id}
-                        {m.tables ? ` · ${m.tables}` : ""}
-                        {m.train_size != null
-                          ? ` · ${m.train_size.toLocaleString()} filas`
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="synthetic-format">Formato</Label>
-                  <Tooltip content="Selecciona el formato en el que deseas descargar los datos sintéticos. CSV es universal y fácil de procesar; Parquet es más compacto y eficiente." />
-                </div>
-                <select
-                  id="synthetic-format"
-                  value={syntheticDataFileFormat}
-                  onChange={(e) => setSyntheticDataFileFormat(e.target.value)}
-                  className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                >
-                  <option value="csv">CSV</option>
-                  <option value="parquet">Parquet</option>
-                </select>
-              </div>
-              </div>
 
-              {selectedModelId && Object.keys(originalSizes).length > 0 && (
-                <TableSampleSizesEditor
-                  originalSizes={originalSizes}
-                  subjectTables={subjectTables}
-                  value={tableSampleSizes}
-                  onChange={setTableSampleSizes}
-                />
-              )}
-            </CardContent>
+                {selectedModel?.brc_id && (
+                  <div id="reglas-preprocesamiento" className="scroll-mt-24">
+                    <RulesBanner brcId={selectedModel.brc_id} title="Reglas de negocio" />
+                  </div>
+                )}
+                {selectedModelId && Object.keys(originalSizes).length > 0 && (
+                  <div id="configuracion-volumen" className="scroll-mt-24">
+                    <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[#26467a] dark:text-[#9db4dc]">
+                      Configuración de volumen
+                    </h3>
+                    <TableSampleSizesEditor
+                      key={selectedModelId}
+                      originalSizes={originalSizes}
+                      subjectTables={subjectTables}
+                      value={tableSampleSizes}
+                      onChange={setTableSampleSizes}
+                      fixedTarget={fixedTarget}
+                      onFixedTargetChange={setFixedTarget}
+                      hasRejectionRules={hasRejectionSampling}
+                      maxAttempts={maxAttempts}
+                      onMaxAttemptsChange={setMaxAttempts}
+                      overgenerateFactor={overgenerateFactor}
+                      onOvergenerateFactorChange={setOvergenerateFactor}
+                      allowFixedTarget
+                    />
+                  </div>
+                )}
+                {/* Oversampling warning, right below the knobs it refers to.
+                    Shown only when oversampling will actually run: a fixed
+                    child target, or rejection-sampling rules. Mother fixed +
+                    no rules = single exact pass, nothing to warn about. */}
+                {(fixedTarget != null || hasRejectionSampling) && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50/50 p-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <div className="space-y-1">
+                        <p className="font-semibold text-xs uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                          {hasRejectionSampling
+                            ? "Muestreo por rechazo activo"
+                            : "Sobresimulación activa"}
+                        </p>
+                        <p className="text-xs text-muted-foreground leading-relaxed text-amber-800/90 dark:text-amber-300/90">
+                          {hasRejectionSampling && fixedTarget != null
+                            ? `Hay reglas con muestreo por rechazo y el objetivo de filas está fijado en ${fixedTarget.table}: se sobresimulará la tabla maestra (descartando filas que incumplan) hasta alcanzar el objetivo, reintentando si hace falta. La generación puede tardar más.`
+                            : hasRejectionSampling
+                              ? "Esta generación incluye al menos una regla de negocio con muestreo por rechazo activado. Esto hará que potencialmente tarde más porque intentará hacer cumplir la regla y el target de filas, lo que usualmente hace que se reintente la simulación."
+                              : `El objetivo de filas está fijado en la tabla hija ${fixedTarget!.table}: la maestra se sobresimulará (y se reintentará si hace falta) hasta alcanzarlo, por lo que la generación puede tardar más.`}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed text-amber-800/80 dark:text-amber-300/80 mt-1">
+                          Puedes ajustar la <b>sobregeneración</b> y los <b>reintentos máximos</b> justo arriba. Sube primero la sobregeneración: simular más filas de golpe es mucho más rápido que reintentar (cada reintento rearranca el motor).
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
             </Card>
           </div>
 
           <div id="condiciones" className="scroll-mt-24">
             <ConditionalConfigPanel
-            modelId={selectedModelId}
-            config={conditionalConfig}
-            onChange={setConditionalConfig}
+              modelId={selectedModelId}
+              config={conditionalConfig}
+              onChange={setConditionalConfig}
             />
           </div>
 
-          <div id="ejecutar-generacion" className="scroll-mt-24">
+          <div id="ejecutar-generacion" className="scroll-mt-24 space-y-3">
             <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Ejecutar generación</CardTitle>
+              </CardHeader>
               <CardContent className="flex flex-col gap-2 p-4 md:flex-row md:items-center">
                 <div className="flex-1 flex items-start gap-2">
                   <p className="text-sm text-muted-foreground pt-0.5">
@@ -359,73 +566,103 @@ export default function GeneracionPage() {
           </div>
         </WorkflowGroup>
 
-        <WorkflowGroup id="resultados" label="Resultados" className="scroll-mt-24">
+        <WorkflowGroup
+          id="resultados"
+          label="Resultados"
+          open={openSections.resultados ?? true}
+          onOpenChange={(o) => setSectionOpen("resultados", o)}
+          className="scroll-mt-24"
+          style={helpGap("resultados")}
+        >
           <div id="generacion-actual" className="scroll-mt-24">
             <ActiveJobCard
-            id={lc.activeId}
-            title="Generación actual"
-            description="Estado de la última generación iniciada."
-            isLoading={lc.activeQuery.isLoading}
-            isError={lc.activeQuery.isError}
-            errorMessage="No se pudo cargar el estado de la generación."
-            active={lc.active}
-            metadata={
-              lc.active && (
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
-                    {lc.active.model_id && (
-                      <span>
-                        Modelo:{" "}
-                        <span className="font-mono" title={lc.active.model_id}>
-                          {labelForModelId(lc.active.model_id)}
+              id={lc.activeId}
+              title="Generación actual"
+              description="Estado de la última generación iniciada."
+              isLoading={lc.activeQuery.isLoading}
+              isError={lc.activeQuery.isError}
+              errorMessage="No se pudo cargar el estado de la generación."
+              active={lc.active}
+              metadata={
+                lc.active && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                      {lc.active.model_id && (
+                        <span>
+                          Modelo:{" "}
+                          <span className="font-mono" title={lc.active.model_id}>
+                            {labelForModelId(lc.active.model_id)}
+                          </span>
                         </span>
-                      </span>
+                      )}
+                      {(lc.active.target_table_rows ??
+                        lc.active.mother_table_size ??
+                        lc.active.sample_size) != null && (
+                        <span
+                          className="tabular-nums"
+                          title={
+                            lc.active.target_table
+                              ? `Filas objetivo de ${lc.active.target_table} (maestra libre)`
+                              : lc.active.mother_table
+                                ? `Filas de ${lc.active.mother_table}`
+                                : undefined
+                          }
+                        >
+                          Filas{lc.active.target_table ? ` de ${lc.active.target_table}` : ""}:{" "}
+                          {(
+                            lc.active.target_table_rows ??
+                            lc.active.mother_table_size ??
+                            lc.active.sample_size
+                          )?.toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                    {lc.active.status === "completed" &&
+                      lc.activeId &&
+                      Object.keys(lc.active.training_table_sizes ?? {}).length > 0 && (
+                        <SimulationSchemaDiagram
+                          simulationId={lc.activeId}
+                          fallbackSizes={lc.active.training_table_sizes}
+                          relationships={lc.active.relationships ?? []}
+                        />
+                      )}
+                    {lc.active.status === "completed" && lc.activeId && (
+                      <TimeProfilingPanel kind="simulations" id={lc.activeId} />
                     )}
-                    {lc.active.sample_size != null && (
-                      <span className="tabular-nums">
-                        Filas: {lc.active.sample_size.toLocaleString()}
-                      </span>
+                    {lc.active.status === "completed" && lc.activeId && (
+                      <SanityReportCard simulationId={lc.activeId} />
+                    )}
+                    {lc.active.status === "completed" && lc.activeId && (
+                      <RejectionSamplingCard simulationId={lc.activeId} />
                     )}
                   </div>
-                  {lc.activeId &&
-                    Object.keys(lc.active.training_table_sizes ?? {}).length > 0 && (
-                      <SimulationSchemaDiagram
-                        simulationId={lc.activeId}
-                        fallbackSizes={lc.active.training_table_sizes}
-                        relationships={lc.active.relationships ?? []}
-                      />
-                    )}
-                  {lc.active.status === "completed" && lc.activeId && (
-                    <TimeProfilingPanel kind="simulations" id={lc.activeId} />
-                  )}
-                </div>
-              )
-            }
-            actions={
-              <>
-                {lc.isRunning && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={lc.isCancelling}
-                    onClick={() => lc.activeId && lc.cancel(lc.activeId)}
-                  >
-                    Cancelar
-                  </Button>
-                )}
-                {lc.active?.status === "completed" && lc.activeId && (
-                  <a
-                    href={`${API_BASE_URL}/simulations/${lc.activeId}/download/synthetic-dataset`}
-                  >
-                    <Button type="button" size="sm" variant="outline">
-                      <Download className="mr-2 h-4 w-4" />
-                      Descargar datos sintéticos
+                )
+              }
+              actions={
+                <>
+                  {lc.isRunning && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={lc.isCancelling}
+                      onClick={() => lc.activeId && lc.cancel(lc.activeId)}
+                    >
+                      Cancelar
                     </Button>
-                  </a>
-                )}
-              </>
-            }
+                  )}
+                  {lc.active?.status === "completed" && lc.activeId && (
+                    <a
+                      href={`${API_BASE_URL}/simulations/${lc.activeId}/download/synthetic-dataset`}
+                    >
+                      <Button type="button" size="sm" variant="outline">
+                        <Download className="mr-2 h-4 w-4" />
+                        Descargar datos sintéticos
+                      </Button>
+                    </a>
+                  )}
+                </>
+              }
             />
           </div>
 
@@ -436,67 +673,74 @@ export default function GeneracionPage() {
           )}
         </WorkflowGroup>
 
-        <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
+        <WorkflowGroup
+          id="historial"
+          label="Historial"
+          open={openSections.historial ?? false}
+          onOpenChange={(o) => setSectionOpen("historial", o)}
+          className="scroll-mt-24"
+          style={helpGap("historial")}
+        >
           <div id="generaciones" className="scroll-mt-24">
             <HistoryCard
-            title="Generaciones"
-            description="Catálogo completo de generaciones en el servidor. Haz click para cargar una generación pasada y ver sus datos sintéticos."
-            items={lc.list}
-            isLoading={lc.listQuery.isLoading}
-            isError={lc.listQuery.isError}
-            errorMessage="No se pudo cargar el catálogo de generaciones."
-            emptyMessage="Todavía no hay generaciones."
-            columns={columns}
-            actionsWidth="12%"
-            onCleanup={() => setConfirmCleanup(true)}
-            onPurge={() => setConfirmPurge(true)}
-            isCleaning={lc.isCleaning}
-            isPurging={lc.isPurging}
-            activeId={lc.activeId}
-            getRowId={(s) => s.simulation_id}
-            getTimestamp={(s) => s.timestamp}
-            getDuration={(s) => s.duration_seconds}
-            onSelect={(id) => lc.setActiveId(id)}
-            actionsCell={(s) =>
-              s.status === "in_progress" ? (
-                <button
-                  type="button"
-                  aria-label="Cancelar generación"
-                  disabled={lc.isCancelling}
-                  onClick={() => lc.cancel(s.simulation_id)}
-                  className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                </button>
-              ) : (
-                <>
-                  {s.status === "completed" && (
-                    <DownloadMenu
-                      ariaLabel="Descargar generación"
-                      options={[
-                        {
-                          label: "Dataset sintético",
-                          href: `/simulations/${s.simulation_id}/download/synthetic-dataset`,
-                        },
-                        {
-                          label: "Carpeta completa",
-                          href: `/simulations/${s.simulation_id}/download`,
-                        },
-                      ]}
-                    />
-                  )}
+              title="Generaciones"
+              description="Catálogo completo de generaciones en el servidor. Haz click para cargar una generación pasada y ver sus datos sintéticos."
+              items={lc.list}
+              isLoading={lc.listQuery.isLoading}
+              isError={lc.listQuery.isError}
+              errorMessage="No se pudo cargar el catálogo de generaciones."
+              emptyMessage="Todavía no hay generaciones."
+              columns={columns}
+              actionsWidth="12%"
+              onCleanup={() => setConfirmCleanup(true)}
+              onPurge={() => setConfirmPurge(true)}
+              isCleaning={lc.isCleaning}
+              isPurging={lc.isPurging}
+              activeId={lc.activeId}
+              getRowId={(s) => s.simulation_id}
+              getTimestamp={(s) => s.timestamp}
+              getDuration={(s) => s.duration_seconds}
+              onSelect={selectRun.request}
+              actionsCell={(s) =>
+                s.status === "in_progress" ? (
                   <button
                     type="button"
-                    aria-label="Eliminar generación"
-                    disabled={lc.isDeleting}
-                    onClick={() => setConfirmDeleteId(s.simulation_id)}
+                    aria-label="Cancelar generación"
+                    disabled={lc.isCancelling}
+                    onClick={() => lc.cancel(s.simulation_id)}
                     className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <XCircle className="h-3.5 w-3.5" />
                   </button>
-                </>
-              )
-            }
+                ) : (
+                  <>
+                    {s.status === "completed" && (
+                      <DownloadMenu
+                        ariaLabel="Descargar generación"
+                        options={[
+                          {
+                            label: "Dataset sintético",
+                            href: `/simulations/${s.simulation_id}/download/synthetic-dataset`,
+                          },
+                          {
+                            label: "Carpeta completa",
+                            href: `/simulations/${s.simulation_id}/download`,
+                          },
+                        ]}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      aria-label="Eliminar generación"
+                      disabled={lc.isDeleting}
+                      onClick={() => setConfirmDeleteId(s.simulation_id)}
+                      className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                )
+              }
             />
           </div>
         </WorkflowGroup>
@@ -513,6 +757,10 @@ export default function GeneracionPage() {
               model_id: selectedModelId,
               sampleSize,
               tableSampleSizes,
+              fixedTarget,
+              maxAttempts,
+              overgenerateFactor,
+              hasRejectionSampling,
               syntheticDataFileFormat,
               conditional: conditionalConfig,
             },
@@ -521,6 +769,15 @@ export default function GeneracionPage() {
           setStartDialogOpen(false);
         }}
         onCancel={() => setStartDialogOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={selectRun.pendingId !== null}
+        title="¿Ver una generación anterior?"
+        description="Se cargarán sus resultados y se descartarán los cambios sin guardar en la preparación, que volverá a sus valores por defecto."
+        confirmLabel="Ver generación"
+        onConfirm={selectRun.confirm}
+        onCancel={selectRun.cancel}
       />
 
       <WizardConfirmDialogs
@@ -538,7 +795,9 @@ export default function GeneracionPage() {
           purge: {
             title: "¿Purgar todas las generaciones?",
             description:
-              "Se eliminarán TODAS las generaciones, incluidas las completadas correctamente. Esta acción no se puede deshacer.",
+              "Se eliminarán TODAS las generaciones, incluidas las completadas correctamente. ¿Quieres eliminar también sus evaluaciones asociadas, o dejarlas huérfanas? Esta acción no se puede deshacer.",
+            cascadeLabel: "Purgar generaciones y sus evaluaciones",
+            orphanLabel: "Purgar solo generaciones (dejar evaluaciones huérfanas)",
           },
         }}
         confirmDeleteId={confirmDeleteId}
@@ -549,7 +808,8 @@ export default function GeneracionPage() {
         onCleanup={lc.cleanup}
         confirmPurge={confirmPurge}
         setConfirmPurge={setConfirmPurge}
-        onPurge={lc.purge}
+        onPurge={() => lc.purge(false)}
+        onPurgeCascade={() => lc.purge(true)}
         deleteConflict={lc.deleteConflict}
         onDeleteConflictCascade={() => lc.resolveDeleteConflict("cascade")}
         onDeleteConflictForce={() => lc.resolveDeleteConflict("force")}
@@ -587,6 +847,8 @@ function SyntheticDataCard({ simulationId }: { simulationId: string }) {
       }}
       downloadHref={`/simulations/${simulationId}/download/synthetic-dataset`}
       emptyMessage="No hay datos sintéticos disponibles para esta generación."
+      collapsible={true}
+      defaultOpen={false}
     />
   );
 }

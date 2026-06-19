@@ -39,7 +39,13 @@ export type DataFile = Schemas["DataFile"];
 export type FilePreview = Schemas["FilePreview"];
 export type JobProgress = Schemas["JobProgress"];
 
-export type InspectionSummary = Schemas["InspectionSummary"];
+// `error_message` is written by the backend on failed cards (see
+// card_io.mark_card_failed) and surfaced on the status pill. The intersection
+// keeps it typed until the OpenAPI snapshot is regenerated, after which the
+// generated field is identical and the overlay becomes a harmless no-op.
+type WithErrorMessage = { error_message?: string | null };
+
+export type InspectionSummary = Schemas["InspectionSummary"] & WithErrorMessage;
 export type InspectionJob = Schemas["InspectionJob"];
 export type ForeignKey = Schemas["ForeignKey"];
 export type Autodetect = Schemas["Autodetect"];
@@ -48,14 +54,106 @@ export type ColumnWarning = Schemas["ColumnWarning"];
 export type ProfilingReport = Schemas["ProfilingReport"];
 export type ProfilingReports = Schemas["ProfilingReports"];
 
-export type ModelSummary = Schemas["ModelSummary"];
+export type ModelSummary = Schemas["ModelSummary"] & WithErrorMessage;
+export type ModelTrainingConfig = Schemas["ModelTrainingConfig"];
 export type TrainingJob = Schemas["TrainingJob"];
 
-export type SimulationSummary = Schemas["SimulationSummary"];
+export type SimulationSummary = Schemas["SimulationSummary"] & WithErrorMessage;
 export type SimulationRelationship = Schemas["SimulationRelationship"];
 export type SimulationJob = Schemas["SimulationJob"];
+export type ComplianceRow = {
+  rule_index: number;
+  rule_type: string;
+  table: string;
+  origin_col?: string | null;
+  target_col?: string | null;
+  source_col?: string | null;
+  checked: number;
+  failing: number;
+  pct_compliant?: number | null;
+  null_rows?: number;
+  pct_null?: number | null;
+  nonnull_failing?: number;
+  pct_nonnull_noncompliant?: number | null;
+  skipped: boolean;
+  skip_reason?: string | null;
+};
+export type ComplianceReport = {
+  inspection_id: string;
+  sample_size: number;
+  rows: ComplianceRow[];
+};
 
-export type EvaluationSummary = Schemas["EvaluationSummary"];
+export type SanityReportRow = {
+  type: "rule" | "general";
+  check: string;
+  rule: string;
+  table: string;
+  status: "PASS" | "FAIL" | "SKIPPED";
+  failed_rows: number;
+  total_rows: number;
+  details?: string | null;
+  table_origin?: string | null;
+  origin_col?: string | null;
+  target_col?: string | null;
+  source_col?: string | null;
+  aux_col?: string | null;
+  canonical_col?: string | null;
+  part_cols?: string | null;
+  constraint?: string | null;
+  constraint_operator?: string | null;
+  threshold?: number | null;
+  operator?: string | null;
+  bins?: string | null;
+  reference_date?: string | null;
+  reference_date_col?: string | null;
+};
+export type SanityReport = {
+  simulation_id: string;
+  rows: SanityReportRow[];
+};
+
+export type RejectionSamplingTableStats = {
+  generated: number;
+  accepted: number;
+  rejected: number;
+  trimmed: number;
+};
+export type RejectionSamplingAttemptTableStats = {
+  generated: number;
+  accepted: number;
+  rejected: number;
+  trimmed: number;
+};
+export type RejectionSamplingAttempt = {
+  attempt: number;
+  multiplier: number;
+  tables: Record<string, RejectionSamplingAttemptTableStats>;
+  score: number;
+  is_best: boolean;
+  subject_draw?: Record<string, number> | null;
+};
+export type RejectionSamplingReport = {
+  simulation_id: string;
+  enabled: boolean;
+  max_attempts: number;
+  overgenerate_factor: number;
+  attempts: number;
+  sample_size?: number | null;
+  partial_results: boolean;
+  selection?: string | null;
+  rules: string[];
+  tables: Record<string, RejectionSamplingTableStats>;
+  subject_targets?: Record<string, number>;
+  child_targets?: Record<string, number>;
+  all_targets?: Record<string, number>;
+  fixed_tables?: string[];
+  target_table?: string | null;
+  target_rows?: number | null;
+  attempt_history?: RejectionSamplingAttempt[];
+};
+
+export type EvaluationSummary = Schemas["EvaluationSummary"] & WithErrorMessage;
 export type EvaluationJob = Schemas["EvaluationJob"];
 
 export type TimeProfilingReport = Schemas["TimeProfilingReport"];
@@ -114,15 +212,15 @@ export const ENCODING_TYPE_LABELS: Record<string, string> = {
 
 // Spanish description of each encoding type, for help/manual content.
 export const ENCODING_TYPE_DESCRIPTIONS: Record<string, string> = {
-  AUTO: "Deja que el sistema elija automáticamente el tipo más adecuado para la columna.",
+  AUTO: "El sistema detecta el tipo de dato y elige automáticamente una codificación tabular (categórica, numérica o de fecha). Es el valor de partida de cada columna; los tipos de lenguaje y el resto se fijan a mano.",
   TABULAR_CATEGORICAL: "Conjunto cerrado de valores discretos (p. ej. servicio, sexo). El modelo respeta las categorías existentes.",
-  TABULAR_NUMERIC_AUTO: "Valores numéricos continuos; el sistema ajusta automáticamente la representación.",
+  TABULAR_NUMERIC_AUTO: "Fuerza que la columna sea un número tabular; el sistema solo elige entre las codificaciones numéricas (discreta, agrupada o por dígitos). A diferencia de «Automático», no reconsidera si en realidad es categoría o texto.",
   TABULAR_NUMERIC_DISCRETE: "Valores numéricos con un número limitado de valores distintos (p. ej. número de hijos).",
   TABULAR_NUMERIC_BINNED: "Valores numéricos agrupados en intervalos; suaviza distribuciones muy dispersas.",
   TABULAR_NUMERIC_DIGIT: "Modela el número dígito a dígito; útil para identificadores numéricos con formato fijo.",
   TABULAR_CHARACTER: "Texto corto con estructura fija, como códigos o matrículas.",
   TABULAR_DATETIME: "Marcas temporales absolutas; se preservan rangos y estacionalidad.",
-  TABULAR_DATETIME_RELATIVE: "Fechas modeladas como diferencia respecto a otra fecha de la fila.",
+  TABULAR_DATETIME_RELATIVE: "Solo para tablas enlazadas (secuencias): modela cada fecha como la diferencia respecto a la fecha anterior de la misma secuencia, no como una fecha absoluta.",
   TABULAR_LAT_LONG: "Pares de coordenadas geográficas (latitud y longitud).",
   LANGUAGE_TEXT: "Texto libre sin estructura fija, como observaciones o comentarios clínicos.",
   LANGUAGE_CATEGORICAL: "Categórica modelada con el motor de lenguaje, para categorías de texto complejas.",
@@ -208,6 +306,23 @@ export async function purgeEvaluations(): Promise<PurgeResult> {
   return data;
 }
 
+// One known problem that would make a training run fail (GET /models/training-preflight).
+export type TrainingPreflightIssue = {
+  id: string;
+  title: string;
+  guidance: string;
+  tables: string[];
+};
+
+export async function getTrainingPreflight(
+  inspectionId: string,
+): Promise<TrainingPreflightIssue[]> {
+  const { data } = await api.get<TrainingPreflightIssue[]>("/models/training-preflight", {
+    params: { inspection_id: inspectionId },
+  });
+  return data;
+}
+
 export async function getSimulationColumns(simulationId: string): Promise<SimulationColumns> {
   const { data } = await api.get<SimulationColumns>(`/simulations/${simulationId}/columns`);
   return data;
@@ -230,6 +345,18 @@ export async function getModelColumnTypes(
   return data;
 }
 
+export async function getModelTrainingConfig(
+  modelId: string,
+): Promise<ModelTrainingConfig> {
+  const { data } = await api.get<ModelTrainingConfig>(`/models/${modelId}/config`);
+  return data;
+}
+
+export async function getModelKeyColumns(modelId: string): Promise<string[]> {
+  const { data } = await api.get<string[]>(`/models/${modelId}/key-columns`);
+  return data;
+}
+
 export async function getModelColumnValues(
   modelId: string,
   table: string,
@@ -245,6 +372,16 @@ export async function getModelColumnValues(
 
 export async function purgeAll(): Promise<PurgeAllResult> {
   const { data } = await api.delete<PurgeAllResult>("/admin/purge-all");
+  return data;
+}
+
+export interface KillBgResult {
+  killed_pids: number[];
+  cancelled_simulations: string[];
+}
+
+export async function killBgProcesses(): Promise<KillBgResult> {
+  const { data } = await api.post<KillBgResult>("/admin/kill-bg");
   return data;
 }
 

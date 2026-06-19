@@ -1,12 +1,12 @@
 "use client";
 
-// Tiny dropdowns shared by JobCard. Kept as plain native <select>s rather
-// than promoted to a generic <MultiSelect/>: the page only needs two flavours
-// and a real combobox would mean shipping Radix Popover for ~150 lines saved.
+// Tiny dropdowns shared by JobCard. Built on the shared <NativeSelect> wrapper
+// (Base UI Select) rather than promoted to a generic <MultiSelect/>: the page
+// only needs two flavours and a real combobox would be overkill here.
 
 import { X } from "lucide-react";
 
-import { SELECT_CLASS } from "@/lib/ui";
+import { NativeSelect } from "@/components/ui/native-select";
 import type { DataFile, InspectionSummary } from "@/lib/api";
 
 export function FilesMultiSelect({
@@ -43,11 +43,10 @@ export function FilesMultiSelect({
           ))}
         </ul>
       )}
-      <select
-        className={SELECT_CLASS}
+      <NativeSelect
+        className="h-9"
         value=""
-        onChange={(e) => {
-          const next = e.target.value;
+        onValueChange={(next) => {
           if (next) onChange([...selected, next]);
         }}
       >
@@ -57,7 +56,7 @@ export function FilesMultiSelect({
             {f.name}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </div>
   );
 }
@@ -72,10 +71,10 @@ export function InspectionSelect({
   onChange: (next: string) => void;
 }) {
   return (
-    <select
-      className={SELECT_CLASS}
+    <NativeSelect
+      className="h-9"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onValueChange={onChange}
     >
       <option value="">Selecciona una inspección…</option>
       {inspections.map((i) => (
@@ -83,6 +82,6 @@ export function InspectionSelect({
           {i.inspection_name || i.inspection_id}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }

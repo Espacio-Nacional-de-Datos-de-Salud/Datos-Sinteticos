@@ -111,6 +111,24 @@ def test_computes_configured_l_diversity_with_pycanon(
     )
 
 
+def test_accepts_single_sensitive_column_as_string(
+    monkeypatch: pytest.MonkeyPatch,
+    l_diversity_frames: tuple[pd.DataFrame, pd.DataFrame],
+) -> None:
+    real, synthetic = l_diversity_frames
+    monkeypatch.setattr(
+        evaluation_config,
+        "QUASI_IDENTIFIER_SUBSETS",
+        {"demographic": ["age_band", "zip3"]},
+    )
+    monkeypatch.setattr(evaluation_config, "SENSITIVE_COLUMNS", "diagnosis")
+
+    result = LDiversityPyCanonClass().evaluate(real, synthetic)
+
+    assert result["scores"]["l_diversity.real"]["mean"] == 2.0
+    assert result["scores"]["l_diversity.syn"]["mean"] == 1.0
+
+
 def test_sensitive_columns_are_removed_from_qi_subset(
     monkeypatch: pytest.MonkeyPatch,
     l_diversity_frames: tuple[pd.DataFrame, pd.DataFrame],

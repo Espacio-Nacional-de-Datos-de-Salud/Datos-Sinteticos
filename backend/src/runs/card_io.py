@@ -45,6 +45,52 @@ def update_card_status(card_path: str, status: str, indent: int = 2) -> None:
         logger.warning("Could not update status on card %s: %s", card_path, error)
 
 
+SUPERSEDED_FAILURE_MESSAGE = (
+    "Ejecución interrumpida: quedó en progreso sin finalizar y se inició otra "
+    "ejecución después, por lo que se marcó como fallida automáticamente "
+    "(no se produjo un error explícito durante su ejecución)."
+)
+
+
+def fail_superseded_in_progress_runs(
+    base_dir: str,
+    card_filename: str,
+    current_run_id: str | None = None,
+) -> list[str]:
+    """Flip every other ``in_progress`` card under ``base_dir`` to ``failed``.
+
+    Runs of a given category execute one at a time, so when a new run starts any
+    sibling card still reading ``in_progress`` belongs to a run that died without
+    ever updating its status (crash, killed worker, lost connection). Left alone
+    it shows a perpetual spinner in the UI. This sweep, invoked as a new run
+    starts, marks those orphans as failed so only the freshly started run keeps
+    spinning.
+
+    ``current_run_id`` (the run just started) is skipped. Returns the ids
+    flipped to failed. Errors are logged but never raised: failing to tidy up a
+    stale sibling must not block the new run.
+    """
+    if not os.path.isdir(base_dir):
+        return []
+    failed: list[str] = []
+    for entry in os.listdir(base_dir):
+        if entry == current_run_id:
+            continue
+        card_path = os.path.join(base_dir, entry, card_filename)
+        if not os.path.exists(card_path):
+            continue
+        try:
+            if read_json(card_path).get("status") != "in_progress":
+                continue
+        except Exception:
+            continue
+        mark_card_failed(card_path, error_message=SUPERSEDED_FAILURE_MESSAGE)
+        failed.append(entry)
+    if failed:
+        logger.info("Marked superseded in_progress runs as failed: %s", failed)
+    return failed
+
+
 def mark_card_failed(
     card_path: str,
     error: BaseException | None = None,

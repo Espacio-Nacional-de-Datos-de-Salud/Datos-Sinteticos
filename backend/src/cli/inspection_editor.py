@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 
-from backend.src.infrastructure.utils import ModelEncodingType
+from backend.src.domain.encoding_types import ModelEncodingType
 
 _ENCODING_TYPES: list[str] = [e.value for e in ModelEncodingType]
 _ENCODING_TYPE_MAP: dict[str, str] = {chr(ord("A") + i): t for i, t in enumerate(_ENCODING_TYPES)}

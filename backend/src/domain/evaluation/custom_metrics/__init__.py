@@ -7,7 +7,6 @@ privacy/statistics dependency in this package.
 from __future__ import annotations
 
 __all__ = [
-    "ConfidenceIntervalOverlap",
     "CorrelationMatrixDistance",
     "DCR",
     "DistributionComparisonReport",
@@ -21,12 +20,6 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name == "ConfidenceIntervalOverlap":
-        from backend.src.domain.evaluation.custom_metrics.confidence_interval_overlap import (
-            ConfidenceIntervalOverlap,
-        )
-
-        return ConfidenceIntervalOverlap
     if name == "CorrelationMatrixDistance":
         from backend.src.domain.evaluation.custom_metrics.correlation_matrix_distance import (
             CorrelationMatrixDistance,

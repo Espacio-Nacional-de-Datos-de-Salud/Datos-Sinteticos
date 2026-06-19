@@ -5,20 +5,27 @@ import shutil
 import threading
 from dataclasses import dataclass
 
+import pandas as pd
+import yaml
+
 from backend.src.config.general import (
     AUTODETECTED_INSPECTION_METADATA_FILENAME,
     BRC_CARD_FILENAME,
     BRC_DIR,
+    INSPECTION_CARD_FILENAME,
+    INSPECTION_METADATA_FILENAME,
     INSPECTIONS_DIR,
     MODEL_CARD_FILENAME,
     MODEL_RUN_FOLDER_PREFIX,
     MODELS_DIR,
     MOSTLYAI_DIR,
     PROCESSED_DATA_DIRNAME,
+    SKIP_DATA_CLEANING_TABLES,
     TIME_PROFILING_REPORT_FILENAME,
     refresh_run_timestamp,
 )
 from backend.src.domain.loader import FileDataLoader
+from backend.src.domain.modeling_configuration import build_modeling_configuration
 from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
 from backend.src.domain.preprocessing.logical_rules_serialization import (
     reconstruct_logical_rule_manager_from_dict,
@@ -31,7 +38,8 @@ from backend.src.domain.preprocessing.utils import (
     infer_foreign_keys_consistency_rules,
 )
 from backend.src.domain.rules_config import extract_rules_and_rejection_config
-from backend.src.domain.synthesis import MostlyAIEngine
+from backend.src.domain.synthesis import create_engine, resolve_active_engine
+from backend.src.domain.synthesis.training_diagnostics import collect_preflight_issues
 from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.progress import (
     TRAINING_PHASES,
@@ -115,6 +123,7 @@ def run_training_flow(
     job_name: str | None = None,
     session: TrainingSession | None = None,
     cancel_event: threading.Event | None = None,
+    skip_data_cleaning_tables: list[str] | tuple[str, ...] | set[str] | None = None,
 ) -> tuple[str | None, object | None, object | None, object | None]:
     """Execute the core training workflow isolated from CLI or Pipeline.
 
@@ -131,6 +140,8 @@ def run_training_flow(
         mostly_ai_overrides (dict | None, optional): Specific engine overrides.
         pipeline_id (str, optional): The ID tying jobs together if part of pipeline.
         job_name (str | None, optional): The human name of the job currently executing.
+        skip_data_cleaning_tables (list[str] | tuple[str, ...] | set[str] | None, optional):
+            Table names that should bypass the data-cleaning step.
 
     Returns:
         tuple[str | None, object | None, object | None, object | None]:
@@ -157,7 +168,9 @@ def run_training_flow(
             job_name=job_name,
             model_id=session.model_id if session else None,
         ) as model_tracker:
-            engine = MostlyAIEngine(
+            engine_name = resolve_active_engine()
+            engine = create_engine(
+                engine_name=engine_name,
                 config_path=mostly_config_path,
                 config_overrides=mostly_ai_overrides,
                 run_dir=model_tracker.output_directory,
@@ -166,7 +179,15 @@ def run_training_flow(
 
             with profiler.phase(ProfilerPhase.LOAD_FILES):
                 raw_data = FileDataLoader().load(file_paths, sep=csv_delimiter)
-            preprocessor = DataPreprocessor(raw_data)
+            effective_skip_tables = (
+                SKIP_DATA_CLEANING_TABLES
+                if skip_data_cleaning_tables is None
+                else tuple(skip_data_cleaning_tables)
+            )
+            preprocessor = DataPreprocessor(
+                raw_data,
+                skip_data_cleaning_tables=effective_skip_tables,
+            )
 
             rules, rejection_config = extract_rules_and_rejection_config(rules_config_path)
             for rule in rules:
@@ -182,16 +203,25 @@ def run_training_flow(
                     relationships=format_relationships(preprocessing_result.relationships),
                 )
             encoding_types = MetadataExtractor(processed_data).extract_encoding_types()
-            metadata = MetadataFormatter(engine_name="mostly").format(
+            metadata = MetadataFormatter(engine_name=engine_name).format(
                 data_dfs=processed_data,
                 relationships_data=preprocessing_result.relationships,
                 types_data=encoding_types,
             )
+            engine_config = getattr(engine, "config", {}) or {}
+            model_settings = engine_config.get("model_settings") or {}
+            modeling_configuration = build_modeling_configuration(model_settings, metadata)
+            metadata["modeling_configuration"] = modeling_configuration
 
             with profiler.phase(ProfilerPhase.SAVE_METADATA_AND_REPORTS):
                 model_tracker.save_training_table_sizes(processed_data)
                 model_tracker.save_rule_manager(preprocessing_result.rule_manager)
                 model_tracker.save_metadata(metadata)
+                save_modeling_configuration = getattr(
+                    model_tracker, "save_modeling_configuration", None
+                )
+                if save_modeling_configuration is not None:
+                    save_modeling_configuration(modeling_configuration)
                 if preprocessing_result.data_profiles:
                     model_tracker.save_data_profiles(preprocessing_result.data_profiles)
 
@@ -268,6 +298,67 @@ def _drop_excluded_columns(
             "Dropped training-excluded columns: %s", {t: sorted(c) for t, c in drop.items()}
         )
     return filtered_data, filtered_types, {"pks": pks, "fks": fks}
+
+
+def collect_training_preflight(inspection_id: str) -> list[dict]:
+    """Evaluate known training preconditions for an inspection, before launch.
+
+    Cheap by design: uses the inspection card's per-table row counts and the
+    saved relationships instead of loading the processed parquets, plus the
+    *current* Mostly AI config — the same file a training launched now would
+    read. Returns one dict per detected issue: ``{id, title, guidance, tables}``
+    (empty list = nothing known would make the run fail).
+    """
+    output_directory = os.path.join(INSPECTIONS_DIR, inspection_id)
+    if not os.path.isdir(output_directory):
+        raise FileNotFoundError(f"Inspection not found: {output_directory}")
+    card = read_json(os.path.join(output_directory, INSPECTION_CARD_FILENAME))
+    inspection_metadata = read_json(os.path.join(output_directory, INSPECTION_METADATA_FILENAME))
+    foreign_keys = (inspection_metadata.get("relationships") or {}).get("fks") or []
+
+    row_counts = {str(table): int(count) for table, count in (card.get("tables") or {}).items()}
+    # Length-only stand-ins: the detectors need row counts and table
+    # membership, never actual cell values.
+    data = {
+        name: pd.DataFrame(index=pd.RangeIndex(count)) for name, count in row_counts.items()
+    }
+    metadata = {
+        "tables": [
+            {
+                "name": name,
+                "foreign_keys": [
+                    {
+                        "column": fk.get("fk_column"),
+                        "referenced_table": fk.get("parent"),
+                        "is_context": bool(fk.get("is_context")),
+                    }
+                    for fk in foreign_keys
+                    if fk.get("child") == name
+                ],
+            }
+            for name in row_counts
+        ]
+    }
+
+    from backend.src.sessions.configs import resolve_config_path
+
+    config_path = card.get("mostly_config_path")
+    if not config_path or not os.path.exists(config_path):
+        config_path = str(resolve_config_path("mostly_ai"))
+    model_settings: dict = {}
+    if config_path and os.path.exists(config_path):
+        try:
+            with open(config_path) as f:
+                config = yaml.safe_load(f) or {}
+            model_settings = config.get("model_settings") or {}
+        except (OSError, yaml.YAMLError):
+            logger.warning("Could not read Mostly AI config at %s for preflight.", config_path)
+
+    issues = collect_preflight_issues(data, metadata, model_settings)
+    return [
+        {"id": issue.id, "title": issue.title, "guidance": issue.guidance, "tables": issue.tables}
+        for issue in issues
+    ]
 
 
 def run_training_flow_from_inspection(
@@ -361,12 +452,6 @@ def run_training_flow_from_inspection(
                 "Training using BRC '%s' (tables=%s).",
                 brc_id,
                 sorted(processed_data),
-            )
-
-        if not card.get("rules_pre_applied"):
-            logger.error(
-                "Inspection %s has no rules_pre_applied flag; rules PRE may be missing.",
-                inspection_id,
             )
 
         relationships = inspection_metadata.get("relationships", {"pks": {}, "fks": []})
@@ -465,8 +550,11 @@ def run_training_flow_from_inspection(
                 processed_data, relationships=format_relationships(relationships)
             )
             encoding_types = MetadataExtractor(processed_data).extract_encoding_types()
+        else:
+            processed_data = rule_manager.apply_foreign_key_consistency_pre(processed_data)
 
-        metadata = MetadataFormatter(engine_name="mostly").format(
+        engine_name = resolve_active_engine()
+        metadata = MetadataFormatter(engine_name=engine_name).format(
             data_dfs=processed_data,
             relationships_data=relationships,
             types_data=encoding_types,
@@ -481,17 +569,27 @@ def run_training_flow_from_inspection(
             job_name=job_name,
             model_id=session.model_id if session else None,
         ) as model_tracker:
-            engine = MostlyAIEngine(
+            engine = create_engine(
+                engine_name=engine_name,
                 config_path=mostly_config_path,
                 config_overrides=effective_overrides,
                 run_dir=model_tracker.output_directory,
                 local_dir=MOSTLYAI_DIR,
             )
+            engine_config = getattr(engine, "config", {}) or {}
+            model_settings = engine_config.get("model_settings") or {}
+            modeling_configuration = build_modeling_configuration(model_settings, metadata)
+            metadata["modeling_configuration"] = modeling_configuration
 
             with profiler.phase(ProfilerPhase.SAVE_METADATA_AND_REPORTS):
                 model_tracker.save_training_table_sizes(processed_data)
                 model_tracker.save_rule_manager(rule_manager)
                 model_tracker.save_metadata(metadata)
+                save_modeling_configuration = getattr(
+                    model_tracker, "save_modeling_configuration", None
+                )
+                if save_modeling_configuration is not None:
+                    save_modeling_configuration(modeling_configuration)
                 _stamp_inspection_info_on_model_card(
                     output_directory=model_tracker.output_directory,
                     inspection_id=inspection_id,

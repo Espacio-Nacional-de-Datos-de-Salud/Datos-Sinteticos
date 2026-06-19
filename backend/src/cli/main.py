@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 
 from backend.src.config.execution import get_execution_config
-from backend.src.infrastructure.logging_config import get_logger
+from backend.src.infrastructure.logging_config import get_logger, setup_global_file_log
 from backend.src.infrastructure.time_profiling import profiler
 
 from .commands import run_workflow
@@ -72,6 +72,7 @@ def _run_interactive_session() -> None:
 
 def main(argv: list[str] | None = None) -> None:
     """Run the backend CLI."""
+    setup_global_file_log()
     args_list = list(sys.argv[1:] if argv is None else argv)
 
     if not args_list and sys.stdin.isatty():

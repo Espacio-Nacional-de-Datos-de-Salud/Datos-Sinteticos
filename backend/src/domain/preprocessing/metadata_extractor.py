@@ -3,7 +3,7 @@ from typing import Any
 import pandas as pd
 from backend.src.domain.preprocessing.utils import validate_referential_integrity
 from backend.src.infrastructure.logging_config import get_logger
-from backend.src.infrastructure.utils import ModelEncodingType, auto_detect_encoding_type
+from backend.src.infrastructure.utils import detect_series_encoding
 
 logger = get_logger(__name__)
 
@@ -303,33 +303,9 @@ class MetadataExtractor:
             dict[str, Any]: Mapping {column_name: ModelEncodingType} for
                 each table column.
         """
-        col_types = {}
-        for col in df.columns:
-            series = df[col]
-
-            # Binary flags (bool dtype, or any column with at most 2 distinct
-            # non-null values) are STATES, not magnitudes. Force categorical
-            # so MostlyAI uses softmax-over-vocab instead of L2 regression and
-            # preserves the original encoding through the round-trip.
-            non_null = series.dropna()
-            if pd.api.types.is_bool_dtype(series) or (
-                len(non_null) > 0 and non_null.nunique() <= 2
-            ):
-                col_types[col] = ModelEncodingType.tabular_categorical
-                continue
-
-            # Default heuristic for the rest
-            if pd.api.types.is_numeric_dtype(series):
-                ctype = ModelEncodingType.tabular_numeric_auto
-            else:
-                ctype = ModelEncodingType.tabular_categorical
-
-            # Refinement: If it's categorical and NOT the PK, inspect deeper
-            if ctype == ModelEncodingType.tabular_categorical and col != pk_col:
-                ctype = auto_detect_encoding_type(series)
-
-            col_types[col] = ctype
-        return col_types
+        return {
+            col: detect_series_encoding(df[col], refine=col != pk_col) for col in df.columns
+        }
 
     def _internal_sanity_check_relationship(
         self,

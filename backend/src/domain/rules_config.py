@@ -9,8 +9,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import yaml
-from backend.src.infrastructure.logging_config import get_logger
+
 from backend.src.domain.preprocessing.logical_rules import (
+    DateCompositionRule,
     DateInequalityRule,
     DateToAgeRule,
     ForeignKeysConsistencyRule,
@@ -21,11 +22,13 @@ from backend.src.domain.preprocessing.logical_rules import (
     SemanticProportionalConsistencyRule,
     SemanticRankingConsistencyRule,
 )
+from backend.src.infrastructure.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 RULE_MAP: dict[str, type[LogicalRule]] = {
     "foreign_keys_consistency_rule": ForeignKeysConsistencyRule,
+    "date_composition": DateCompositionRule,
     "date_inequality": DateInequalityRule,
     "date_to_age": DateToAgeRule,
     "numeric_inequality": NumericInequalityRule,
@@ -69,8 +72,16 @@ def _extract_rejection_sampling_config(config_data: dict) -> RejectionSamplingCo
 
 def extract_rules_and_rejection_config(
     config_path: str,
+    warnings_sink: list[dict[str, Any]] | None = None,
 ) -> tuple[list[LogicalRule], RejectionSamplingConfig]:
-    """Load logical rules and rejection sampling config from YAML."""
+    """Load logical rules and rejection sampling config from YAML.
+
+    Args:
+        config_path: Path to the rules YAML.
+        warnings_sink: Optional list that collects a structured entry for every
+            rule that is skipped (invalid parameters or unknown type), so
+            callers can surface them to the user instead of relying on logs.
+    """
     with open(config_path) as f:
         config_data = yaml.safe_load(f) or {}
 
@@ -88,8 +99,26 @@ def extract_rules_and_rejection_config(
                 logger.error(
                     "Invalid configuration for rule type '%s': %s. Skipping.", rule_type, e
                 )
+                if warnings_sink is not None:
+                    warnings_sink.append(
+                        {
+                            "rule": rule_type,
+                            "table": rule_entry.get("table_target"),
+                            "column": rule_entry.get("target_col"),
+                            "message": f"Rule skipped, invalid configuration: {e}",
+                        }
+                    )
         else:
             logger.warning("Rule type '%s' not recognized. Skipping.", rule_type)
+            if warnings_sink is not None:
+                warnings_sink.append(
+                    {
+                        "rule": rule_type,
+                        "table": rule_entry.get("table_target"),
+                        "column": rule_entry.get("target_col"),
+                        "message": f"Rule skipped, unrecognized type '{rule_type}'.",
+                    }
+                )
 
     rejection_config = _extract_rejection_sampling_config(config_data)
     return extracted_rules, rejection_config

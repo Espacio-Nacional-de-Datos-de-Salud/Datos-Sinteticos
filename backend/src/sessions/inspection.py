@@ -49,7 +49,12 @@ from backend.src.config.general import (
     TIME_PROFILING_REPORT_FILENAME,
 )
 from backend.src.domain.loader import FileDataLoader
+from backend.src.domain.preprocessing.date_composition_detector import (
+    build_date_composition_warnings,
+    detect_date_composition_candidates,
+)
 from backend.src.domain.preprocessing.preprocessor import DataPreprocessor
+from backend.src.domain.preprocessing.profiling import generate_profile_report
 from backend.src.domain.rules_config import extract_rules_and_rejection_config
 from backend.src.infrastructure.errors import (
     DataLoadError,
@@ -65,7 +70,10 @@ from backend.src.infrastructure.progress import (
     advance_progress,
 )
 from backend.src.infrastructure.time_profiling import profiler
-from backend.src.infrastructure.utils import detect_incompatible_type_mix
+from backend.src.infrastructure.utils import (
+    detect_high_null_fraction,
+    detect_incompatible_type_mix,
+)
 from backend.src.runs.card_io import mark_card_failed, read_json, update_card_status, write_json
 from backend.src.runs.tracking.inspection_tracker import (
     InspectionSession,
@@ -201,9 +209,11 @@ def run_inspection_flow(
 
                 advance_progress(tracker.card_path, phases, InspectionPhase.PREPROCESSING)
                 with profiler.phase(ProfilerPhase.PREPROCESS_AUTODETECT):
-                    preprocessing_result = preprocessor.run(
-                        run_data_profiling=enable_data_profiling
-                    )
+                    # Profiling is deferred until after column exclusions are
+                    # applied (see below), so the reports never describe columns
+                    # the user dropped during data load. Hence run() does not
+                    # profile here.
+                    preprocessing_result = preprocessor.run(run_data_profiling=False)
 
                 advance_progress(tracker.card_path, phases, InspectionPhase.SAVING_PROCESSED)
                 processed_data_dir = os.path.join(tracker.output_directory, PROCESSED_DATA_DIRNAME)
@@ -227,6 +237,23 @@ def run_inspection_flow(
                         preprocessing_result.processed_data
                     )
                     warnings = _build_incompatible_warnings(flagged_columns)
+                    composition_candidates = detect_date_composition_candidates(
+                        preprocessing_result.processed_data,
+                        preprocessing_result.encoding_types,
+                    )
+                    warnings.extend(build_date_composition_warnings(composition_candidates))
+                    # High-null columns: informational only, never auto-excluded.
+                    high_null_columns = _detect_high_null_columns(
+                        preprocessing_result.processed_data
+                    )
+                    warnings.extend(_build_high_null_warnings(high_null_columns))
+                    # Ambiguous date columns: informational only, never auto-excluded.
+                    warnings.extend(
+                        _detect_ambiguous_date_warnings(
+                            preprocessing_result.processed_data,
+                            preprocessing_result.encoding_types,
+                        )
+                    )
                     for warning in warnings:
                         logger.warning(warning["message"])
                     # Flagged columns are excluded from training by default. The
@@ -263,11 +290,13 @@ def run_inspection_flow(
 
                 if enable_data_profiling:
                     advance_progress(tracker.card_path, phases, InspectionPhase.PROFILING_REPORTS)
-                if preprocessing_result.data_profiles:
                     with profiler.phase(ProfilerPhase.WRITE_PROFILING_REPORTS):
-                        _write_profiling_reports(
-                            preprocessing_result.data_profiles, tracker.output_directory
-                        )
+                        # Profile the on-disk parquet, which `_apply_column_exclusions`
+                        # has already pruned. This is the single source of truth for
+                        # what was persisted, so excluded columns never reach the report.
+                        data_profiles = _profile_processed_data(processed_data_dir)
+                        if data_profiles:
+                            _write_profiling_reports(data_profiles, tracker.output_directory)
 
                 # Preserve the user-assigned name (set via PATCH /name after the
                 # session was created) instead of resetting it to the raw id.
@@ -371,6 +400,96 @@ def _build_incompatible_warnings(
     return warnings
 
 
+def _detect_high_null_columns(
+    processed_data: dict[str, pd.DataFrame],
+) -> dict[str, dict[str, dict]]:
+    """Scan tables for columns with a high share of missing values.
+
+    See :func:`detect_high_null_fraction`. Detection is non-destructive and
+    informational only: flagged columns stay in the schema/data and are *not*
+    excluded by default. The result is surfaced as warnings so the frontend can
+    show an attention sign next to the column.
+
+    Returns ``{table_name: {column: summary}}`` for every flagged column.
+    """
+    flagged: dict[str, dict[str, dict]] = {}
+    for table_name, df in processed_data.items():
+        for col in df.columns:
+            summary = detect_high_null_fraction(df[col])
+            if summary is not None:
+                flagged.setdefault(table_name, {})[col] = summary
+    return flagged
+
+
+def _build_high_null_warnings(
+    flagged_columns: dict[str, dict[str, dict]],
+) -> list[dict]:
+    """Turn high-null columns into user-facing warning records.
+
+    Unlike incompatible-type-mix warnings, these set ``default_excluded`` to
+    ``False``: nothing is auto-excluded or auto-treated. The user reviews the
+    auto-detected type and decides whether to continue or clean the data.
+    """
+    warnings: list[dict] = []
+    for table_name, cols in flagged_columns.items():
+        for col, summary in cols.items():
+            pct = round(summary["null_fraction"] * 100)
+            warnings.append(
+                {
+                    "table": table_name,
+                    "column": col,
+                    "kind": "high_null_fraction",
+                    "default_excluded": False,
+                    "message": (
+                        f"Tiene un {pct}% de valores vacíos. Una proporción alta de "
+                        "nulos puede falsear el tipo autodetectado y degradar la "
+                        "columna sintética. Revisa el tipo y decide si continuar o "
+                        "tratar los datos tú mismo; no se excluye automáticamente."
+                    ),
+                    "details": summary,
+                }
+            )
+    return warnings
+
+
+def _detect_ambiguous_date_warnings(
+    processed_data: dict[str, pd.DataFrame],
+    encoding_types: dict[str, dict[str, str]],
+) -> list[dict]:
+    """Scan datetime columns for ambiguous date formats."""
+    warnings: list[dict] = []
+    from backend.src.domain.preprocessing.preprocessor import _DATETIME_ENCODINGS
+    from backend.src.infrastructure.date_parsing import detect_date_pattern
+
+    for table_name, df in processed_data.items():
+        if df is None:
+            continue
+        types = encoding_types.get(table_name, {})
+        for col in df.columns:
+            enc = types.get(col)
+            if enc not in _DATETIME_ENCODINGS:
+                continue
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                continue
+            info = detect_date_pattern(df[col], col_name=f"{table_name}.{col}")
+            if info.ambiguous:
+                warnings.append(
+                    {
+                        "table": table_name,
+                        "column": col,
+                        "kind": "ambiguous_date_format",
+                        "default_excluded": False,
+                        "message": (
+                            f"El formato de fecha en '{col}' es ambiguo (ambos DD/MM y MM/DD son posibles). "
+                            f"Se ha asumido día primero (dayfirst=True). "
+                            f"Si no es correcto, define el formato explícitamente en las reglas de negocio."
+                        ),
+                        "details": {},
+                    }
+                )
+    return warnings
+
+
 def _apply_column_exclusions(
     encoding_types: dict,
     relationships: dict,
@@ -417,6 +536,22 @@ def _apply_column_exclusions(
             logger.info("Dropped excluded columns %s from '%s'.", cols_to_drop, tbl)
 
     return filtered_types, {"pks": pks, "fks": filtered_fks}
+
+
+def _profile_processed_data(processed_data_dir: str) -> dict[str, object] | None:
+    """Profile the persisted parquet tables (post column-exclusion).
+
+    Reads back what was written to ``processed_data_dir`` after
+    :func:`_apply_column_exclusions` has dropped the excluded columns, so the
+    resulting reports describe exactly the data that survives data load — never
+    columns the user excluded before the inspection ran.
+    """
+    data = {}
+    for filename in sorted(os.listdir(processed_data_dir)):
+        if filename.endswith(".parquet"):
+            table_name = filename[: -len(".parquet")]
+            data[table_name] = pd.read_parquet(os.path.join(processed_data_dir, filename))
+    return generate_profile_report(data)
 
 
 def _write_profiling_reports(data_profiles: dict, output_directory: str) -> None:

@@ -30,7 +30,7 @@ import {
 } from "./expansion";
 import type { Job } from "./types";
 import type { ApplyMode } from "./combinations-dialog";
-import { SELECT_CLASS } from "@/lib/ui";
+import { NativeSelect } from "@/components/ui/native-select";
 
 type VariantDraft = {
   label: string;
@@ -117,7 +117,7 @@ export function VariantsDialog({
             <Copy className="h-5 w-5 text-[#00215C]" />
             <div>
               <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-                Expandir job en variantes
+                Expandir trabajo en variantes
               </div>
               <h3 className="text-lg font-semibold tracking-tight">{baseJob.name}</h3>
             </div>
@@ -170,13 +170,13 @@ export function VariantsDialog({
                   current={mode}
                   value="insertAfter"
                   onChange={setMode}
-                  label="Insertar variantes después del job base (mantener base)"
+                  label="Insertar variantes después del trabajo base (mantener base)"
                 />
                 <RadioRow
                   current={mode}
                   value="replace"
                   onChange={setMode}
-                  label="Reemplazar el job base con las variantes"
+                  label="Reemplazar el trabajo base con las variantes"
                 />
               </div>
             </section>
@@ -296,13 +296,13 @@ function VariantCard({
           );
           return (
             <div key={idx} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
-              <select
-                className={SELECT_CLASS}
+              <NativeSelect
+                className="h-9"
                 value={p.field}
-                onChange={(e) =>
+                onValueChange={(v) =>
                   // Different field → different value kind, so clear the value.
                   updatePatch(idx, {
-                    field: e.target.value as AxisField,
+                    field: v as AxisField,
                     value: null,
                   })
                 }
@@ -312,7 +312,7 @@ function VariantCard({
                     {AXIS_LABELS[f]}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
               <AxisSingleValueEditor
                 field={p.field}
                 value={p.value}

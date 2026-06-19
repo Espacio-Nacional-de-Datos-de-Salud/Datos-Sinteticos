@@ -31,9 +31,11 @@ import {
   Workflow,
   RotateCcw,
   Layers,
+  BookOpen,
 } from "lucide-react";
 
 import { RulesEditor } from "@/components/config/rules-editor";
+import { PipelinesInstructionsPanel } from "@/components/pipelines/instructions-content";
 import {
   CombinationsDialog,
   type ApplyMode,
@@ -70,11 +72,10 @@ import {
   type PipelineConfigFile,
   type SimulationSummary,
 } from "@/lib/api";
-import { useIsDev } from "@/lib/mode";
 import { cn } from "@/lib/utils";
+import { AdvancedBadge } from "@/components/ui/advanced-section";
 
 export default function PipelinesPage() {
-  const isDev = useIsDev();
   const queryClient = useQueryClient();
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [doc, setDoc] = useState<PipelineDoc>(emptyDoc);
@@ -91,17 +92,18 @@ export default function PipelinesPage() {
   // index (null = closed). Both flow back through `applyExpansion` below.
   const [combinationsOpen, setCombinationsOpen] = useState(false);
   const [variantsTarget, setVariantsTarget] = useState<number | null>(null);
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
 
   const configsQuery = useQuery({
     queryKey: ["pipeline-configs"],
     queryFn: listPipelineConfigs,
-    enabled: isDev,
+    enabled: true,
   });
 
   const runsQuery = useQuery({
     queryKey: ["pipeline-runs"],
     queryFn: listPipelineRuns,
-    enabled: isDev,
+    enabled: true,
     refetchInterval: 5000,
   });
 
@@ -116,7 +118,7 @@ export default function PipelinesPage() {
       const { data } = await api.get<DataFile[]>("/files/");
       return data;
     },
-    enabled: isDev,
+    enabled: true,
   });
 
   const modelsQuery = useQuery({
@@ -125,7 +127,7 @@ export default function PipelinesPage() {
       const { data } = await api.get<ModelSummary[]>("/models/");
       return data;
     },
-    enabled: isDev,
+    enabled: true,
   });
 
   const simulationsQuery = useQuery({
@@ -134,7 +136,7 @@ export default function PipelinesPage() {
       const { data } = await api.get<SimulationSummary[]>("/simulations/");
       return data;
     },
-    enabled: isDev,
+    enabled: true,
   });
 
   const inspectionsQuery = useQuery({
@@ -143,7 +145,7 @@ export default function PipelinesPage() {
       const { data } = await api.get<InspectionSummary[]>("/inspections/");
       return data;
     },
-    enabled: isDev,
+    enabled: true,
   });
 
   // Per-job overrides may point at a custom rules YAML — list them so we can
@@ -156,7 +158,7 @@ export default function PipelinesPage() {
       });
       return data;
     },
-    enabled: isDev,
+    enabled: true,
   });
 
   // To give the rules editor the same table/column autocompletion it has on
@@ -177,7 +179,7 @@ export default function PipelinesPage() {
 
   const rulesAutodetectQuery = useQuery({
     queryKey: ["autodetect", rulesInspectionId],
-    enabled: isDev && !!rulesInspectionId && !!editingRulesConfig,
+    enabled: !!rulesInspectionId && !!editingRulesConfig,
     queryFn: async () => {
       const { data } = await api.get<Autodetect>(
         `/inspections/${rulesInspectionId}/autodetect`,
@@ -269,7 +271,7 @@ export default function PipelinesPage() {
   };
   const addJob = () => {
     setDoc((d) => ({
-      jobs: [...d.jobs, { ...EMPTY_JOB, name: `job_${d.jobs.length + 1}` }],
+      jobs: [...d.jobs, { ...EMPTY_JOB, name: `trabajo_${d.jobs.length + 1}` }],
     }));
   };
 
@@ -303,7 +305,7 @@ export default function PipelinesPage() {
     toast.success(
       generated.length === 1
         ? "Variante añadida."
-        : `Se añadieron ${generated.length} jobs.`,
+        : `Se añadieron ${generated.length} trabajos.`,
     );
   };
 
@@ -328,7 +330,7 @@ export default function PipelinesPage() {
       return;
     }
     if (doc.jobs.length === 0) {
-      toast.error("El pipeline debe tener al menos un job.");
+      toast.error("El pipeline debe tener al menos un trabajo.");
       return;
     }
     saveMutation.mutate({ name, doc });
@@ -345,29 +347,15 @@ export default function PipelinesPage() {
     }
   };
 
-  if (!isDev) {
-    return (
-      <div className="flex h-full items-center justify-center p-8">
-        <div className="max-w-md rounded-md border border-border bg-card p-6 text-center">
-          <Workflow className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
-          <h2 className="mb-1 text-base font-bold">Modo desarrollo requerido</h2>
-          <p className="text-sm text-muted-foreground">
-            Activa el modo <strong>Dev</strong> en la cabecera para diseñar y
-            ejecutar pipelines.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full overflow-hidden">
       {/* ---- Left rail: saved configs + past runs ---- */}
       <aside className="flex w-72 shrink-0 flex-col overflow-hidden border-r border-border bg-card">
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
               Pipelines guardados
+              <AdvancedBadge tooltip="Sección avanzada: editor de pipelines reutilizables. Diseña flujos de trabajo para que se puedan ejecutar de manera automatizada." />
             </div>
             <div className="text-sm font-semibold">{configs.length} configuraciones</div>
           </div>
@@ -451,17 +439,28 @@ export default function PipelinesPage() {
                 {creatingNew ? "Nuevo pipeline" : selectedName ? "Editando" : "Diseñador"}
               </div>
               <div className="text-sm font-semibold">
-                {creatingNew || !selectedName ? "Define jobs paso a paso" : selectedName}
+                {creatingNew || !selectedName ? "Define trabajos paso a paso" : selectedName}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {!instructionsOpen && (
+              <button
+                type="button"
+                onClick={() => setInstructionsOpen(true)}
+                aria-label="Abrir manual de instrucciones"
+                className="mr-1 flex items-center gap-2 rounded-lg bg-[#FFDB00] px-3 py-2 text-sm font-bold text-[#00215C] shadow-md transition-colors hover:bg-[#f0cf00]"
+              >
+                <BookOpen className="h-4 w-4" />
+                Manual
+              </button>
+            )}
             <Button
               variant="outline"
               size="sm"
               type="button"
               onClick={() => setCombinationsOpen(true)}
-              title="Generar varios jobs como producto cartesiano de ejes"
+              title="Generar varios trabajos como producto cartesiano de ejes"
             >
               <Layers className="mr-1 h-3.5 w-3.5" /> Combinaciones
             </Button>
@@ -561,11 +560,15 @@ export default function PipelinesPage() {
               />
             ))}
             <Button type="button" variant="outline" onClick={addJob} className="w-full">
-              <Plus className="mr-2 h-3.5 w-3.5" /> Añadir job
+              <Plus className="mr-2 h-3.5 w-3.5" /> Añadir trabajo
             </Button>
           </div>
         </div>
       </section>
+
+      {instructionsOpen && (
+        <PipelinesInstructionsPanel onClose={() => setInstructionsOpen(false)} />
+      )}
 
       <ConfirmDialog
         open={!!confirmDeleteName}

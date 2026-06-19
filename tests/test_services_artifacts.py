@@ -1,9 +1,9 @@
 """Tests for `backend.src.sessions.artifacts.load_generator_artifacts`.
 
-The function is a thin coordinator over `MostlyAIEngine` plus two metadata
-loaders. Tests mock those collaborators to verify the wiring: the engine is
-constructed with the expected config, the model is loaded by ID, and the
-returned tuple matches the loader outputs.
+The function is a thin coordinator over an engine (built via `create_engine`)
+plus two metadata loaders. Tests mock those collaborators to verify the wiring:
+the engine is constructed with the expected config, the model is loaded by ID,
+and the returned tuple matches the loader outputs.
 """
 
 from __future__ import annotations
@@ -27,8 +27,10 @@ def test_load_generator_artifacts_wires_collaborators(
     run_folder = "/runs/model_x"
 
     class FakeEngine:
-        def __init__(self, config_path: str) -> None:
+        def __init__(self, config_path: str, engine_name: str | None = None) -> None:
             captured["config_path"] = config_path
+            if engine_name is not None:
+                captured["engine_name"] = engine_name
 
         def load_generator_by_id(self, model_id: str):
             captured["model_id"] = model_id
@@ -43,7 +45,7 @@ def test_load_generator_artifacts_wires_collaborators(
         return fake_rule_manager
 
     # --- Mock collaborators ---
-    monkeypatch.setattr(artifacts_module, "MostlyAIEngine", FakeEngine)
+    monkeypatch.setattr(artifacts_module, "create_engine", FakeEngine)
     monkeypatch.setattr(artifacts_module, "load_metadata", fake_load_metadata)
     monkeypatch.setattr(artifacts_module, "load_rule_manager", fake_load_rule_manager)
 
@@ -61,6 +63,7 @@ def test_load_generator_artifacts_wires_collaborators(
         "model_id": "model_x",
         "metadata_path": run_folder,
         "rules_path": run_folder,
+        "engine_name": "mostly"
     }
 
 
@@ -68,13 +71,13 @@ def test_load_generator_artifacts_propagates_engine_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeEngine:
-        def __init__(self, config_path: str) -> None:
+        def __init__(self, config_path: str, engine_name: str | None = None) -> None:
             pass
 
         def load_generator_by_id(self, model_id: str):
             raise FileNotFoundError("missing model")
 
-    monkeypatch.setattr(artifacts_module, "MostlyAIEngine", FakeEngine)
+    monkeypatch.setattr(artifacts_module, "create_engine", FakeEngine)
     monkeypatch.setattr(
         artifacts_module, "load_metadata", lambda _path: {}
     )

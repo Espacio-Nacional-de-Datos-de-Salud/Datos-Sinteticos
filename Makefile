@@ -15,8 +15,8 @@ endif
 
 
 API_HOST ?= 0.0.0.0
-API_PORT ?= 8000
-FRONTEND_PORT ?= 3000
+API_PORT ?= 8001
+FRONTEND_PORT ?= 3001
 FRONTEND_DIR := frontend
 NODE_MIN_VERSION ?= 20.9.0
 NODE_VERSION ?= 20
@@ -28,11 +28,6 @@ EVAL_PYTHON := $(CURDIR)/.venv_eval/bin/python
 RUFF := $(CORE_PYTHON) -m ruff
 TY := $(CORE_PYTHON) -m ty
 
-# SageMaker instances tend to have weaker single-thread CPU than dev laptops,
-# which dominates Next.js dev compile time. Detect via the resource-metadata
-# file that only exists inside SageMaker, and drop source maps in dev there
-# (errors point to bundled output instead of original source — acceptable
-# tradeoff for the speedup). No-op on Mac/WSL/local Linux.
 NEXT_DEV_FLAGS := $(shell [ -f /opt/ml/metadata/resource-metadata.json ] && echo "--disable-source-maps" || echo "")
 
 define set_mode
@@ -66,6 +61,18 @@ help:
 	@printf "Available targets:\n"
 	@printf "\nSetup:\n"
 	@printf "  make setup        Install uv, Python 3.12.3, and both virtual environments\n"
+	@printf "\nUse the tool:\n"
+	@printf "  make api          Start backend API locally (uvicorn, API_PORT=%s)\n" "$(API_PORT)"
+	@printf "  make local        Start backend + frontend together in one terminal\n"
+	@printf "  make cli          Open the interactive backend CLI wizard\n"
+	@printf "  make compose      Build and start container (Docker) services in dev mode (auto-merges compose.override.yaml)\n"
+	@printf "\nMore commands:\n"
+	@printf "  make help-dev	  Show complete list of detailed help for development targets\n"
+
+help-dev:
+	@printf "Available targets:\n"
+	@printf "\nSetup:\n"
+	@printf "  make setup        Install uv, Python 3.12.3, and both virtual environments\n"
 	@printf "  make config       Create real backend/config/*.yaml files from *.example.yaml templates (non-destructive)\n"
 	@printf "  make clean-config Delete every real backend/config/*.yaml (keeps *.example.yaml templates)\n"
 	@printf "\nExecution (backend):\n"
@@ -96,13 +103,14 @@ help:
 	@printf "  make kill-port PORT=N Kill the process listening on a single port (e.g. make kill-port PORT=8001)\n"
 	@printf "\nDev:\n"
 	@printf "  make clean        Remove generated run artifacts and local caches\n"
-	@printf "  make copy-repo    Create a clean copy of the repo in the parent folder (excludes venvs, deps, outputs, etc.)\n"
+	@printf "  make copy    	 Create a clean copy of the repo in the parent folder (excludes venvs, deps, outputs, etc.)\n"
 	@printf "  make format       Format Python code with ruff\n"
 	@printf "  make lint         Run ruff check\n"
 	@printf "  make ty           Run type checking with Ty\n"
 	@printf "  make test         Run all tests with pytest (excludes tests/eval/)\n"
 	@printf "  make test-eval    Run evaluation tests under .venv_eval\n"
 	@printf "  make coverage     Run tests with coverage report (HTML in htmlcov/)\n"
+
 
 setup:
 	@export PATH="$$HOME/.local/bin:$$PATH"; \
@@ -252,7 +260,7 @@ clean:
 DIST_NAME := $(shell basename $(CURDIR))_clean
 DIST_PATH := ../$(DIST_NAME)
 
-copy-repo:
+copy:
 	@echo "📦 Creating clean copy in $(DIST_PATH)..."
 	@rm -rf $(DIST_PATH)
 	@mkdir -p $(DIST_PATH)

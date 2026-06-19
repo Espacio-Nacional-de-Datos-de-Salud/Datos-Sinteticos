@@ -16,50 +16,67 @@
 
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { BookOpen, Play, Sparkles, Trash2, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Play, Sparkles, Trash2, XCircle } from "lucide-react";
 
 import { ConfigPanel } from "@/components/config/config-drawer";
 import { EditableName } from "@/components/jobs/editable-name";
+import { ActiveRunName } from "@/components/jobs/active-run-name";
 import { ActiveJobCard } from "@/components/pipeline-step/active-job-card";
 import { TimeProfilingPanel } from "@/components/pipeline-step/time-profiling-panel";
+import {
+  CurrentConfigSummary,
+  TrainingConfigSummary,
+} from "@/components/pipeline-step/training-config-summary";
 import { DownloadMenu } from "@/components/pipeline-step/download-menu";
 import { HistoryCard, type HistoryColumn } from "@/components/pipeline-step/history-card";
+import { useConfirmSelect } from "@/components/pipeline-step/use-confirm-select";
 import { useArtifactLifecycle } from "@/components/pipeline-step/use-artifact-lifecycle";
 import { useUpstreamSelection } from "@/components/pipeline-step/use-upstream-selection";
 import { WizardConfirmDialogs } from "@/components/pipeline-step/wizard-confirm-dialogs";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RulesBanner } from "@/components/config/rules-banner";
 import { WizardShell } from "@/components/layout/wizard-shell";
+import { WizardBanner, WIZARD_BANNER_HEIGHT } from "@/components/layout/wizard-banner";
 import { WorkflowGroup } from "@/components/layout/workflow-group";
-import { ENTRENAMIENTO_INSTRUCTIONS } from "@/components/training/instructions-content";
+import { getEntrenamientoInstructions } from "@/components/training/instructions-content";
 import { NamePromptDialog } from "@/components/ui/name-prompt-dialog";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/jobs/status-badge";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   api,
-  API_BASE_URL,
+  getTrainingPreflight,
+  type ConfigContent,
   type InspectionSummary,
   type ModelSummary,
 } from "@/lib/api";
-import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
+import yaml from "js-yaml";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
-import { listBrcs } from "@/lib/brc";
+import { listBrcs, totalRuleCount } from "@/lib/brc";
 import { cn } from "@/lib/utils";
+import { useManualOpen } from "@/lib/use-manual-open";
 
 type StartInput = { inspection_id: string; brc_id?: string };
 
+interface MostlyAiConfig {
+  model_settings?: {
+    per_table?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 const ENTRENAMIENTO_OUTLINE = [
-  { id: "preparacion", label: "Preparación", level: 1 },
-  { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
-  { id: "nuevo-entrenamiento", label: "Nuevo entrenamiento", level: 2 },
+  { id: "preparacion", label: "Configuración", level: 1 },
+  { id: "nuevo-entrenamiento", label: "Selector de reglas", level: 2 },
+  { id: "reglas-preprocesamiento", label: "Reglas de negocio", level: 2 },
   { id: "configuracion-modelo", label: "Configuración del modelo", level: 2 },
-  { id: "ejecutar-entrenamiento", label: "Ejecutar entrenamiento", level: 2 },
+  { id: "ejecutar-entrenamiento", label: "Ejecución del entrenamiento", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
   { id: "entrenamiento-actual", label: "Entrenamiento actual", level: 2 },
   { id: "historial", label: "Historial", level: 1 },
@@ -72,28 +89,9 @@ export default function EntrenamientoPage() {
   const [confirmPurge, setConfirmPurge] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
 
-  // Instructions manual state — mirrors the wiring on the Inspección page so
-  // the manual panel, the help banner and the section toggles stay in sync.
-  const [instructionsOpen, setInstructionsOpen] = useState(false);
-
-  // Page banner height — the manual's sticky "Resumen" block is sized to
-  // match it so the two banners look the same height.
-  const bannerRef = useRef<HTMLDivElement | null>(null);
-  const [bannerHeight, setBannerHeight] = useState<number | undefined>();
-  useLayoutEffect(() => {
-    const el = bannerRef.current;
-    if (!el) return;
-    const update = () => {
-      // Round to whole pixels — a fractional height feeds the panel's
-      // overview block and would jitter, retriggering measurement endlessly.
-      const h = Math.round(el.getBoundingClientRect().height);
-      setBannerHeight((prev) => (prev === h ? prev : h));
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  // Instructions manual state — shared across pipeline pages via localStorage
+  // so the panel stays open as the user navigates between steps.
+  const [instructionsOpen, setInstructionsOpen] = useManualOpen();
 
   // Open/collapsed state per page section — shared between the WorkflowGroups
   // and the help panel so the two collapse in sync.
@@ -183,25 +181,20 @@ export default function EntrenamientoPage() {
   const { selectedId: selectedInspectionId, setSelectedId: setSelectedInspectionId } =
     useUpstreamSelection(completedInspections, "inspection_id", STORAGE_KEYS.inspection);
 
-  // Training source toggle: either train from a raw upload (rules.yaml applied
-  // live during training) or from a completed BRC run (preprocessed parquet
-  // already on disk). The choice gates which dropdown is shown and is
-  // remembered across reloads so the user's intent isn't silently overwritten
-  // by the auto-defaulting that used to pick the most recent BRC.
+  const entrenamientoInstructions = useMemo(
+    () => getEntrenamientoInstructions(),
+    [],
+  );
+
   type TrainingSource = "upload" | "brc";
-  const [trainingSource, setTrainingSource] = useState<TrainingSource>("upload");
-  useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEYS.trainingSource);
-    if (stored === "upload" || stored === "brc") setTrainingSource(stored);
-  }, []);
+  // Default to training from a preprocessed configuration with its business
+  // rules applied ("brc"); fall back to a plain upload only when no completed
+  // BRC exists (handled by the auto-select effect below).
+  const [trainingSource, setTrainingSource] = useState<TrainingSource>("brc");
   const updateTrainingSource = useCallback((value: TrainingSource) => {
     setTrainingSource(value);
-    window.localStorage.setItem(STORAGE_KEYS.trainingSource, value);
   }, []);
 
-  // List ALL completed BRCs (across uploads). When the user is in BRC mode,
-  // the dropdown shows every completed run; the originating upload is derived
-  // from the BRC itself so we don't need a separate upload selector.
   const brcsQuery = useQuery({
     queryKey: ["brc", "list", "all"],
     queryFn: () => listBrcs(),
@@ -210,21 +203,56 @@ export default function EntrenamientoPage() {
     () => (brcsQuery.data ?? []).filter((r) => r.status === "completed"),
     [brcsQuery.data],
   );
-  const { selectedId: selectedBrcId, setSelectedId: setSelectedBrcId } =
-    useUpstreamSelection(completedBrcs, "brc_id", STORAGE_KEYS.brc);
+  const [selectedBrcId, setSelectedBrcId] = useState<string>("");
+  useEffect(() => {
+    if (completedBrcs.length === 0) return;
+    if (selectedBrcId && completedBrcs.some((b) => b.brc_id === selectedBrcId)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedBrcId(completedBrcs[0].brc_id);
+  }, [completedBrcs, selectedBrcId]);
 
   const selectedBrc = useMemo(
     () => completedBrcs.find((b) => b.brc_id === selectedBrcId) ?? null,
     [completedBrcs, selectedBrcId],
   );
 
+  const autoSourceSettled = useRef(false);
+  useEffect(() => {
+    if (autoSourceSettled.current) return;
+    if (inspectionsQuery.isLoading || brcsQuery.isLoading) return;
+
+    const latestInspection = completedInspections[0] ?? null;
+    const latestBrc = completedBrcs[0] ?? null;
+    if (!latestInspection && !latestBrc) return; // nothing completed yet; wait
+
+    // Prefer training from a configuration with rules applied (brc) whenever one
+    // exists; only fall back to a plain upload when there are no completed BRCs.
+    if (latestBrc) {
+      // BRC selection is kept on the latest run by the effect above.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTrainingSource("brc");
+    } else if (latestInspection) {
+      setTrainingSource("upload");
+      setSelectedInspectionId(latestInspection.inspection_id);
+    }
+    autoSourceSettled.current = true;
+  }, [
+    inspectionsQuery.isLoading,
+    brcsQuery.isLoading,
+    completedInspections,
+    completedBrcs,
+    setSelectedInspectionId,
+  ]);
+
+  const effectiveSource: TrainingSource = trainingSource;
+
   // Effective inspection_id sent to the API: in upload mode it's the picked
   // upload; in BRC mode it's the upload that owns the selected BRC.
   const effectiveInspectionId =
-    trainingSource === "brc"
+    effectiveSource === "brc"
       ? selectedBrc?.inspection_id ?? ""
       : selectedInspectionId;
-  const effectiveBrcId = trainingSource === "brc" ? selectedBrcId : "";
+  const effectiveBrcId = effectiveSource === "brc" ? selectedBrcId : "";
 
   const inspectionNameById = useMemo(() => {
     const map: Record<string, string> = {};
@@ -234,13 +262,137 @@ export default function EntrenamientoPage() {
     return map;
   }, [inspectionsQuery.data]);
 
+  // Table names of the upload being trained, so the model config can offer
+  // guided per-table overrides instead of free-text table names.
+  const effectiveTableNames = useMemo(() => {
+    const inspection = (inspectionsQuery.data ?? []).find(
+      (i) => i.inspection_id === effectiveInspectionId,
+    );
+    return Object.keys(inspection?.tables ?? {});
+  }, [inspectionsQuery.data, effectiveInspectionId]);
 
+  // Row count of the largest table in the selected upload — used to auto-size
+  // the training batch when a configuration preset is applied.
+  const effectiveRowCount = useMemo(() => {
+    const inspection = (inspectionsQuery.data ?? []).find(
+      (i) => i.inspection_id === effectiveInspectionId,
+    );
+    const counts = Object.values(inspection?.tables ?? {});
+    return counts.length > 0 ? Math.max(...counts) : undefined;
+  }, [inspectionsQuery.data, effectiveInspectionId]);
+
+  // Known blockers for "this upload + the current model config". Refreshed
+  // whenever the config panel saves, so the warning (and the disabled launch
+  // button) always reflect what the training would actually read.
+  const queryClient = useQueryClient();
+  const preflightQuery = useQuery({
+    queryKey: ["training-preflight", effectiveInspectionId],
+    enabled: !!effectiveInspectionId,
+    queryFn: () => getTrainingPreflight(effectiveInspectionId),
+  });
+  const preflightIssues = preflightQuery.data ?? [];
+  const refreshPreflight = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ["training-preflight"] }),
+    [queryClient],
+  );
+
+  // Reset the training per-table settings on page entry so they always start clean,
+  // matching the "blank on entry" behavior of logical rules and column exclusions.
+  const [clearedOnEntry, setClearedOnEntry] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get<ConfigContent>("/configs/mostly_ai");
+        if (cancelled) return;
+        const parsed = (yaml.load(data.content) as MostlyAiConfig) ?? {};
+        if (parsed.model_settings && parsed.model_settings.per_table !== undefined) {
+          delete parsed.model_settings.per_table;
+          const content = yaml.dump(parsed, { lineWidth: 100, noRefs: true });
+          await api.put("/configs/mostly_ai", { content });
+        }
+      } catch (err) {
+        console.error("Failed to reset training per-table settings on mount:", err);
+      }
+      if (cancelled) return;
+      queryClient.invalidateQueries({ queryKey: ["config", "mostly_ai"] });
+      queryClient.invalidateQueries({ queryKey: ["training-preflight"] });
+      setClearedOnEntry(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [queryClient]);
+
+  // Changing the data source after entry resets the model config to its default
+  // template, as if the page had just been opened. A preset bakes data-derived
+  // values into mostly_ai.yaml (notably the auto-sized batch, plus per-table
+  // overrides), so carrying them over to a different dataset would be wrong.
+  // Remounting the config panel (via `configResetKey`) also returns the mode
+  // selector to "Libre" and unlocks the fields.
+  const [configResetKey, setConfigResetKey] = useState(0);
+  const settledSelectionRef = useRef<string | null>(null);
+  const effectiveSelectionKey = `${effectiveSource}:${effectiveBrcId}:${effectiveInspectionId}`;
+  useEffect(() => {
+    if (!effectiveInspectionId) return; // wait until a source is settled
+    // First settled selection is the page-entry state — don't reset over it.
+    if (settledSelectionRef.current === null) {
+      settledSelectionRef.current = effectiveSelectionKey;
+      return;
+    }
+    if (settledSelectionRef.current === effectiveSelectionKey) return;
+    settledSelectionRef.current = effectiveSelectionKey;
+    let cancelled = false;
+    (async () => {
+      try {
+        // Delete the override so the backend recreates it from the template.
+        await api.delete("/configs/mostly_ai");
+      } catch (err) {
+        console.error("Failed to reset model config on source change:", err);
+      }
+      if (cancelled) return;
+      queryClient.invalidateQueries({ queryKey: ["config", "mostly_ai"] });
+      queryClient.invalidateQueries({ queryKey: ["training-preflight"] });
+      setConfigResetKey((k) => k + 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveSelectionKey, effectiveInspectionId, queryClient]);
+
+  // Reset the Preparación form to its defaults — used when the user jumps to a
+  // past model from the history, which discards whatever they were configuring.
+  const resetPreparation = useCallback(async () => {
+    setTrainingSource(completedBrcs.length > 0 ? "brc" : "upload");
+    setSelectedBrcId(completedBrcs[0]?.brc_id ?? "");
+    setSelectedInspectionId(completedInspections[0]?.inspection_id ?? "");
+    try {
+      const { data } = await api.get<ConfigContent>("/configs/mostly_ai");
+      const parsed = (yaml.load(data.content) as MostlyAiConfig) ?? {};
+      if (parsed.model_settings && parsed.model_settings.per_table !== undefined) {
+        delete parsed.model_settings.per_table;
+        const content = yaml.dump(parsed, { lineWidth: 100, noRefs: true });
+        await api.put("/configs/mostly_ai", { content });
+      }
+    } catch (err) {
+      console.error("Failed to reset per-table settings:", err);
+    }
+    queryClient.invalidateQueries({ queryKey: ["config", "mostly_ai"] });
+    queryClient.invalidateQueries({ queryKey: ["training-preflight"] });
+  }, [completedBrcs, completedInspections, setSelectedInspectionId, queryClient]);
+
+  // Selecting a past model from the history loads its results and resets the
+  // preparation form — gated behind a confirmation dialog.
+  const selectRun = useConfirmSelect((id) => {
+    lc.setActiveId(id);
+    void resetPreparation();
+  }, lc.activeId);
 
   const columns: HistoryColumn<ModelSummary>[] = [
     {
       key: "name",
       header: "Nombre",
-      width: "24%",
+      width: "16%",
       render: (m) => (
         <div className="space-y-0.5">
           <p
@@ -260,20 +412,19 @@ export default function EntrenamientoPage() {
     {
       key: "status",
       header: "Estado",
-      width: "11%",
+      width: "14%",
       render: (m) => (
-        <Badge
-          variant={statusBadgeVariant(m.status)}
+        <StatusBadge
+          status={m.status}
+          errorMessage={m.error_message}
           className={cn(m.status === "completed" && "!bg-blue-500/20 !text-blue-400")}
-        >
-          {translateStatus(m.status)}
-        </Badge>
+        />
       ),
     },
     {
       key: "tables",
       header: "Tablas / Entrada",
-      width: "26%",
+      width: "18%",
       render: (m) => {
         const brcLabel = m.brc_id ? (m.brc_name || m.brc_id) : null;
         return (
@@ -294,22 +445,11 @@ export default function EntrenamientoPage() {
     {
       key: "rows",
       header: "Filas",
-      width: "13%",
+      width: "6%",
       align: "right",
       render: (m) => (
         <span className="tabular-nums">
           {m.train_size != null ? m.train_size.toLocaleString() : "—"}
-        </span>
-      ),
-    },
-    {
-      key: "accuracy",
-      header: "Precisión",
-      width: "13%",
-      align: "right",
-      render: (m) => (
-        <span className="tabular-nums">
-          {m.accuracy != null ? `${(m.accuracy * 100).toFixed(1)}%` : "—"}
         </span>
       ),
     },
@@ -320,57 +460,48 @@ export default function EntrenamientoPage() {
       currentSlug="entrenamiento"
       canAdvance={lc.hasCompleted}
       outline={ENTRENAMIENTO_OUTLINE}
-      instructions={ENTRENAMIENTO_INSTRUCTIONS}
+      instructions={entrenamientoInstructions}
       instructionsOpen={instructionsOpen}
       instructionsSections={openSections}
       onInstructionsToggleSection={toggleSection}
       onInstructionsClose={() => setInstructionsOpen(false)}
       onInstructionsMeasure={handleHelpMeasure}
-      instructionsBannerHeight={bannerHeight}
+      instructionsBannerHeight={WIZARD_BANNER_HEIGHT}
     >
-      <div className="space-y-6">
-        <div
-          ref={bannerRef}
-          className="sticky top-0 z-20 -mx-8 -mt-6 border-b bg-background/95 px-8 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80"
-        >
-          <h1 className="text-2xl font-semibold tracking-tight">Entrenamiento</h1>
-          <p className="text-sm text-muted-foreground">
+      <WizardBanner
+        title="Entrenamiento"
+        subtitle={
+          <>
             Lanza un entrenamiento a partir de una carga de datos completada.
             Puedes encadenar varios entrenamientos; cada uno aparecerá en el
             catálogo de abajo y estará disponible en el paso de{" "}
             <b>Generación</b>.
-          </p>
-          {lc.activeId && lc.active && (
-            <div className="mt-3 flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Nombre:</span>
-              <EditableName
-                name={lc.active.model_name || lc.active.model_id}
-                existingNames={lc.list.map((x) => x.model_name || x.model_id)}
-                onSave={(name) => lc.rename(lc.active!.model_id, name)}
-                size="sm"
-              />
-            </div>
-          )}
-          {!instructionsOpen && (
-            // Yellow "Manual de instrucciones" button on the banner's right
-            // edge — matches the placement and styling used on the
-            // Inspección page so the manual UX feels consistent across the
-            // wizard.
-            <button
-              type="button"
-              onClick={() => setInstructionsOpen(true)}
-              aria-label="Abrir manual de instrucciones"
-              className="absolute right-8 top-1/2 flex -translate-y-1/2 items-center gap-2 rounded-lg bg-[#FFDB00] px-4 py-2.5 text-sm font-bold text-[#00215C] shadow-md transition-colors hover:bg-[#f0cf00]"
-            >
-              <BookOpen className="h-5 w-5" />
-              Manual de instrucciones
-            </button>
-          )}
-        </div>
-
+          </>
+        }
+        instructionsOpen={instructionsOpen}
+        onOpenManual={() => setInstructionsOpen(true)}
+        info={
+          <ActiveRunName
+            label="del modelo"
+            name={
+              lc.activeId && lc.active
+                ? lc.active.model_name || lc.active.model_id
+                : null
+            }
+            placeholder="entrenamiento aún no iniciado"
+            existingNames={lc.list.map((x) => x.model_name || x.model_id)}
+            onSave={
+              lc.active
+                ? async (name) => lc.rename(lc.active!.model_id, name)
+                : undefined
+            }
+          />
+        }
+      />
+      <div className="space-y-6">
         <WorkflowGroup
           id="preparacion"
-          label="Preparación"
+          label="Configuración"
           open={openSections.preparacion ?? true}
           onOpenChange={(o) => setSectionOpen("preparacion", o)}
           className="scroll-mt-24"
@@ -378,16 +509,18 @@ export default function EntrenamientoPage() {
         >
           <div id="nuevo-entrenamiento" className="scroll-mt-24">
             <Card>
-              <CardContent className="flex flex-col gap-3 p-4">
+              <CardHeader>
+                <CardTitle className="text-base">Selector de reglas</CardTitle>
+                <CardDescription>
+                  Elige sobre qué datos se entrenará el modelo: una configuración ya preprocesada con sus reglas de negocio aplicadas, o los datos preprocesados de la carga sin reglas. Selecciona después el conjunto concreto en el desplegable.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 p-4 pt-0">
                 <div className="flex flex-col gap-3 md:flex-row md:items-end">
                   <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
                     <Sparkles className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Label>Nuevo entrenamiento</Label>
-                      <Tooltip content="Elige primero la fuente: datos cargados (las reglas de rules.yaml se aplican en vivo durante el entrenamiento) o una ejecución del histórico de Configuración (BRC) cuyo dataset ya tiene las reglas PRE aplicadas." />
-                    </div>
                     <div
                       role="radiogroup"
                       aria-label="Fuente del entrenamiento"
@@ -409,7 +542,7 @@ export default function EntrenamientoPage() {
                             disabled={disabled}
                             onClick={() => updateTrainingSource(opt.value)}
                             className={cn(
-                              "rounded px-3 py-1.5 font-medium transition-colors disabled:opacity-50",
+                              "flex items-center gap-1.5 rounded px-3 py-1.5 font-medium transition-colors disabled:opacity-50",
                               active
                                 ? "bg-primary text-primary-foreground"
                                 : "text-muted-foreground hover:bg-muted",
@@ -421,11 +554,29 @@ export default function EntrenamientoPage() {
                             }
                           >
                             {opt.label}
+                            {opt.value === "brc" && (
+                              <span
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center"
+                              >
+                                <Tooltip
+                                  content="Avanzado · usa una configuración de reglas de negocio aplicadas"
+                                  side="top"
+                                >
+                                  <Sparkles
+                                    className={cn(
+                                      "h-3.5 w-3.5 shrink-0",
+                                      active ? "opacity-80" : "text-violet-400",
+                                    )}
+                                  />
+                                </Tooltip>
+                              </span>
+                            )}
                           </button>
                         );
                       })}
                     </div>
-                    {trainingSource === "upload" ? (
+                    {effectiveSource === "upload" ? (
                       inspectionsQuery.isLoading ? (
                         <Skeleton className="h-9 w-full" />
                       ) : completedInspections.length === 0 ? (
@@ -434,11 +585,11 @@ export default function EntrenamientoPage() {
                           <b>Carga de Datos</b>.
                         </p>
                       ) : (
-                        <select
+                        <NativeSelect
                           id="inspection-select"
                           value={selectedInspectionId}
-                          onChange={(e) => setSelectedInspectionId(e.target.value)}
-                          className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+                          onValueChange={setSelectedInspectionId}
+                          className="h-9 rounded-md px-3 font-mono text-xs"
                         >
                           {completedInspections.map((i) => {
                             const tableSummary = Object.keys(i.tables ?? {}).join(", ");
@@ -449,7 +600,7 @@ export default function EntrenamientoPage() {
                               </option>
                             );
                           })}
-                        </select>
+                        </NativeSelect>
                       )
                     ) : brcsQuery.isLoading ? (
                       <Skeleton className="h-9 w-full" />
@@ -459,28 +610,29 @@ export default function EntrenamientoPage() {
                         <b>Configuración</b> o entrena desde datos cargados.
                       </p>
                     ) : (
-                      <select
+                      <NativeSelect
                         id="brc-select"
                         value={selectedBrcId}
-                        onChange={(e) => setSelectedBrcId(e.target.value)}
-                        className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+                        onValueChange={setSelectedBrcId}
+                        className="h-9 rounded-md px-3 font-mono text-xs"
                       >
                         {completedBrcs.map((b) => {
                           const uploadLabel =
                             inspectionNameById[b.inspection_id] || b.inspection_id;
+                          const total = totalRuleCount(b);
                           return (
                             <option key={b.brc_id} value={b.brc_id}>
                               {b.brc_name || b.brc_id}
-                              {b.rules_count ? ` · ${b.rules_count} regla(s)` : ""}
+                              {total ? ` · ${total} regla(s)` : ""}
                               {` · ${uploadLabel}`}
                             </option>
                           );
                         })}
-                      </select>
+                      </NativeSelect>
                     )}
                   </div>
                 </div>
-                {trainingSource === "brc" && (
+                {effectiveSource === "brc" && (
                   <div id="reglas-preprocesamiento" className="scroll-mt-24">
                     <RulesBanner
                       brcId={selectedBrcId || null}
@@ -493,30 +645,80 @@ export default function EntrenamientoPage() {
           </div>
 
           <div id="configuracion-modelo" className="scroll-mt-24">
-            <ConfigPanel configId="mostly_ai" />
+            {clearedOnEntry ? (
+              <ConfigPanel
+                key={configResetKey}
+                configId="mostly_ai"
+                tableNames={effectiveTableNames}
+                presetRowCount={effectiveRowCount}
+                onSaved={refreshPreflight}
+              />
+            ) : (
+              <Skeleton className="h-64 w-full" />
+            )}
           </div>
 
           <div id="ejecutar-entrenamiento" className="scroll-mt-24">
             <Card>
-              <CardContent className="flex flex-col gap-2 p-4 md:flex-row md:items-center">
-                <div className="flex-1 flex items-start gap-2">
-                  <p className="text-sm text-muted-foreground pt-0.5">
-                    Configura los parámetros del modelo y haz clic en ejecutar.
-                  </p>
-                  <Tooltip content="El entrenamiento creará un modelo de machine learning basado en los datos de la carga de datos seleccionada. Este modelo aprenderá patrones y será usado para generar datos sintéticos en el siguiente paso." side="left" />
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Ejecución del entrenamiento
+                </CardTitle>
+                <CardDescription>
+                  Revisa la configuración del modelo y lanza el entrenamiento
+                  sobre los datos seleccionados. El modelo aprenderá los patrones
+                  y se usará para generar datos sintéticos en el siguiente paso.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {preflightIssues.length > 0 && (
+                  <div className="space-y-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-600 dark:text-amber-400">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      Esta configuración hará fallar el entrenamiento
+                    </div>
+                    {preflightIssues.map((issue) => (
+                      <div key={issue.id} className="text-xs text-foreground/90">
+                        <span className="font-medium">
+                          {issue.title}
+                          {issue.tables.length > 0 && (
+                            <span className="font-mono font-normal">
+                              {" "}
+                              ({issue.tables.join(", ")})
+                            </span>
+                          )}
+                          .
+                        </span>{" "}
+                        {issue.guidance}
+                      </div>
+                    ))}
+                    <p className="text-[11px] text-muted-foreground">
+                      Corrige la configuración del modelo (arriba) y guarda para
+                      volver a comprobar.
+                    </p>
+                  </div>
+                )}
+                <CurrentConfigSummary />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    disabled={
+                      !effectiveInspectionId ||
+                      lc.isStarting ||
+                      lc.isRunning ||
+                      preflightIssues.length > 0
+                    }
+                    onClick={() => setStartDialogOpen(true)}
+                  >
+                    <Play className="mr-2 h-4 w-4" />
+                    {lc.isStarting
+                      ? "Iniciando…"
+                      : lc.isRunning
+                        ? "Entrenamiento en curso…"
+                        : "Iniciar entrenamiento"}
+                  </Button>
+                  <Tooltip content="El entrenamiento creará un modelo de machine learning basado en los datos seleccionados. Este modelo aprenderá patrones y será usado para generar datos sintéticos en el siguiente paso." />
                 </div>
-                <Button
-                  type="button"
-                  disabled={!effectiveInspectionId || lc.isStarting || lc.isRunning}
-                  onClick={() => setStartDialogOpen(true)}
-                >
-                  <Play className="mr-2 h-4 w-4" />
-                  {lc.isStarting
-                    ? "Iniciando…"
-                    : lc.isRunning
-                      ? "Entrenamiento en curso…"
-                      : "Iniciar entrenamiento"}
-                </Button>
               </CardContent>
             </Card>
           </div>
@@ -542,6 +744,17 @@ export default function EntrenamientoPage() {
               metadata={
                 lc.active && (
                   <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground">Nombre:</span>
+                      <EditableName
+                        name={lc.active.model_name || lc.active.model_id}
+                        existingNames={lc.list.map(
+                          (x) => x.model_name || x.model_id,
+                        )}
+                        onSave={(name) => lc.rename(lc.active!.model_id, name)}
+                        size="sm"
+                      />
+                    </div>
                     <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
                       {lc.active.tables && (
                         <span>
@@ -554,12 +767,10 @@ export default function EntrenamientoPage() {
                           Filas: {lc.active.train_size.toLocaleString()}
                         </span>
                       )}
-                      {lc.active.accuracy != null && (
-                        <span className="tabular-nums">
-                          Precisión: {(lc.active.accuracy * 100).toFixed(2)}%
-                        </span>
-                      )}
                     </div>
+                    {lc.activeId && (
+                      <TrainingConfigSummary modelId={lc.activeId} />
+                    )}
                     {lc.active.status === "completed" && lc.activeId && (
                       <TimeProfilingPanel kind="models" id={lc.activeId} />
                     )}
@@ -615,7 +826,7 @@ export default function EntrenamientoPage() {
               getRowId={(m) => m.model_id}
               getTimestamp={(m) => m.timestamp}
               getDuration={(m) => m.duration_seconds}
-              onSelect={(id) => lc.setActiveId(id)}
+              onSelect={selectRun.request}
               actionsCell={(m) => (
                 <>
 
@@ -680,6 +891,15 @@ export default function EntrenamientoPage() {
         onCancel={() => setStartDialogOpen(false)}
       />
 
+      <ConfirmDialog
+        open={selectRun.pendingId !== null}
+        title="¿Ver un entrenamiento anterior?"
+        description="Se cargarán sus resultados y se descartarán los cambios sin guardar en la preparación, que volverá a sus valores por defecto."
+        confirmLabel="Ver entrenamiento"
+        onConfirm={selectRun.confirm}
+        onCancel={selectRun.cancel}
+      />
+
       <WizardConfirmDialogs
         texts={{
           delete: {
@@ -695,7 +915,9 @@ export default function EntrenamientoPage() {
           purge: {
             title: "¿Purgar todos los modelos?",
             description:
-              "Se eliminarán TODOS los modelos, incluidos los completados correctamente. Esta acción no se puede deshacer.",
+              "Se eliminarán TODOS los modelos, incluidos los completados correctamente. ¿Quieres eliminar también sus generaciones y evaluaciones asociadas, o dejarlas huérfanas? Esta acción no se puede deshacer.",
+            cascadeLabel: "Purgar modelos y sus dependencias",
+            orphanLabel: "Purgar solo modelos (dejar generaciones huérfanas)",
           },
         }}
         confirmDeleteId={confirmDeleteId}
@@ -706,7 +928,8 @@ export default function EntrenamientoPage() {
         onCleanup={lc.cleanup}
         confirmPurge={confirmPurge}
         setConfirmPurge={setConfirmPurge}
-        onPurge={lc.purge}
+        onPurge={() => lc.purge(false)}
+        onPurgeCascade={() => lc.purge(true)}
         deleteConflict={lc.deleteConflict}
         onDeleteConflictCascade={() => lc.resolveDeleteConflict("cascade")}
         onDeleteConflictForce={() => lc.resolveDeleteConflict("force")}

@@ -20,7 +20,7 @@ from backend.src.config.general import (
 _DATA_ROOT = Path(__file__).resolve().parents[2] / "data"
 UPLOADS_DIR = _DATA_ROOT / "uploads"
 
-ALLOWED_EXTENSIONS = {"csv", "parquet", "json"}
+ALLOWED_EXTENSIONS = {"csv", "parquet", "json", "xls", "xlsx"}
 
 
 class UploadConflictError(Exception):
@@ -113,6 +113,9 @@ def save_uploaded_file(filename: str, stream: BinaryIO) -> DataFile:
         UploadSizeLimitError: If the upload exceeds the storage quota.
     """
     if not filename or "/" in filename or "\\" in filename or filename in {".", ".."}:
+        raise UploadNameError(filename)
+
+    if len(filename) > 100:
         raise UploadNameError(filename)
 
     extension = Path(filename).suffix.lstrip(".").lower()
@@ -317,6 +320,16 @@ def read_file_preview(
                     total_rows = 1
                 if n > 0 and skip == 0:
                     rows.append([_stringify(payload.get(c)) for c in columns])
+        elif extension in ["xls", "xlsx"]:
+            import pandas as pd
+
+            df = pd.read_excel(target)
+            columns = [str(c) for c in df.columns]
+            if include_total:
+                total_rows = len(df)
+            if n > 0:
+                for _, record in df.iloc[skip : skip + n].iterrows():
+                    rows.append([_stringify(record.get(c)) for c in columns])
     except Exception as e:
         raise FilePreviewError(str(e)) from e
 

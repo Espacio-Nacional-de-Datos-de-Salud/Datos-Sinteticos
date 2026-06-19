@@ -15,15 +15,29 @@ model_settings:
   max_training_time: null
   max_sample_size: null
   max_epochs: 1
-  enable_model_report: True
+  enable_model_report: False
   batch_size: 16
   model: "MOSTLY_AI/Medium"
   enable_flexible_generation: True
+  # Protección de valores extremos por sujeto (clave raíz). Con menos de 20
+  # sujetos en entrenamiento MostlyAI descarta los límites min/max y genera
+  # columnas numéricas/fecha 100% nulas. Poner en False solo para pruebas
+  # con datasets pequeños; mantener True con datos reales.
+  value_protection: True
 
   # # Configuración de privacidad diferencial
   # differential_privacy:
-  #   max_epsilon: null 
+  #   max_epsilon: null
   #   delta: 0.00001
   #   noise_multiplier: 1.5
   #   max_grad_norm: 1.0
   #   value_protection_epsilon: 1.0
+
+  # # Overrides por tabla: cualquier ajuste de model_settings puede redefinirse
+  # # para una tabla concreta; un valor null lo elimina para esa tabla. El motor
+  # # no soporta privacidad diferencial en más de 2 tablas relacionadas mediante
+  # # claves de contexto (incompatibilidad conocida de Opacus/PyTorch con
+  # # tensores anidados); usa esto para desactivarla en las tablas más profundas.
+  # per_table:
+  #   farmacos:
+  #     differential_privacy: null

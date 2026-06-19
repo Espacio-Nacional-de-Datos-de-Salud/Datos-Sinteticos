@@ -74,9 +74,7 @@ def create_brc(request: BRCCreateRequest, background_tasks: BackgroundTasks) -> 
     returned ``brc_id`` is immediately queryable; the actual rule
     application runs in the background.
     """
-    session = initialize_brc_session(
-        inspection_id=request.inspection_id, name=request.name
-    )
+    session = initialize_brc_session(inspection_id=request.inspection_id, name=request.name)
     rules_path = request.rules_config_path or str(resolve_config_path("rules"))
     background_tasks.add_task(
         run_brc_flow,
@@ -167,9 +165,7 @@ def get_brc_preview(
         card = load_brc_card(brc_id)
         inspection_id = card.get("inspection_id")
         if inspection_id:
-            md_path = os.path.join(
-                INSPECTIONS_DIR, inspection_id, INSPECTION_METADATA_FILENAME
-            )
+            md_path = os.path.join(INSPECTIONS_DIR, inspection_id, INSPECTION_METADATA_FILENAME)
             if os.path.exists(md_path):
                 try:
                     md = read_json(md_path)

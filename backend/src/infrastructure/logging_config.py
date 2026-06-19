@@ -20,6 +20,7 @@ _CONFIGURED_RUN_DIRS: set[str] = set()
 
 _pipeline_handler: logging.Handler | None = None
 _session_handler: logging.Handler | None = None
+_global_handler: logging.Handler | None = None
 
 _PROJECT_LOGGER_PREFIX = "backend.src."
 
@@ -63,6 +64,9 @@ def get_logger(name: str) -> logging.Logger:
         logger.addHandler(console_handler)
         logger.propagate = False
 
+    if _global_handler is not None and _global_handler not in logger.handlers:
+        logger.addHandler(_global_handler)
+
     if _pipeline_handler is not None and _pipeline_handler not in logger.handlers:
         logger.addHandler(_pipeline_handler)
 
@@ -70,6 +74,62 @@ def get_logger(name: str) -> logging.Logger:
         logger.addHandler(_session_handler)
 
     return logger
+
+
+def setup_global_file_log() -> logging.Handler | None:
+    """Attach a size-rotating ``backend.log`` capturing the whole process.
+
+    Unlike the per-run ``session.log`` (which only exists inside a tracker
+    context) this handler stays attached for the lifetime of the process, so
+    every backend log line is persisted somewhere — including failures that
+    happen outside any pipeline or run. Wire it once at process startup (API
+    ``lifespan`` and CLI ``main``).
+
+    Rotation is size-based: ``GLOBAL_LOG_MAX_BYTES`` per file with
+    ``GLOBAL_LOG_BACKUP_COUNT`` rotated copies, after which the oldest is
+    deleted automatically. Idempotent — a second call is a no-op.
+
+    Returns:
+        logging.Handler | None: The installed handler, or the existing one if
+            already configured.
+    """
+    global _global_handler
+    if _global_handler is not None:
+        return _global_handler
+
+    from logging.handlers import RotatingFileHandler
+
+    from backend.src.config.general import (
+        GLOBAL_LOG_BACKUP_COUNT,
+        GLOBAL_LOG_DIR,
+        GLOBAL_LOG_FILENAME,
+        GLOBAL_LOG_MAX_BYTES,
+    )
+
+    os.makedirs(GLOBAL_LOG_DIR, exist_ok=True)
+    handler = RotatingFileHandler(
+        os.path.join(GLOBAL_LOG_DIR, GLOBAL_LOG_FILENAME),
+        maxBytes=GLOBAL_LOG_MAX_BYTES,
+        backupCount=GLOBAL_LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    handler.setLevel(LOG_LEVEL)
+    handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
+    _global_handler = handler
+
+    logging.getLogger().addHandler(handler)
+    for name, item in list(logging.Logger.manager.loggerDict.items()):
+        if not isinstance(item, logging.Logger):
+            continue
+        if name.startswith(_PROJECT_LOGGER_PREFIX) or name == "backend.src":
+            if handler not in item.handlers:
+                item.addHandler(handler)
+
+    logger = get_logger(__name__)
+    logger.info(
+        "Global backend log initialised: %s", os.path.join(GLOBAL_LOG_DIR, GLOBAL_LOG_FILENAME)
+    )
+    return handler
 
 
 def set_session_handler(handler: logging.Handler) -> None:

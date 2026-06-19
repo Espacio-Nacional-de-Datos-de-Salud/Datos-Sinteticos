@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Plus, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { Tooltip } from "@/components/ui/tooltip";
+import { ADVANCED_CARD_CLASS } from "@/components/ui/advanced-section";
+import { cn } from "@/lib/utils";
 import {
   api,
   type ColumnKind,
@@ -10,6 +13,7 @@ import {
   getModelColumnTypes,
   getModelColumnValues,
   getModelColumns,
+  getModelKeyColumns,
   type ModelColumns,
   type ModelColumnTypes,
 } from "@/lib/api";
@@ -25,7 +29,7 @@ import {
 import { CollapseToggle } from "@/components/ui/collapse-toggle";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SELECT_CLASS } from "@/lib/ui";
+import { NativeSelect } from "@/components/ui/native-select";
 
 // A "condition" constrains one column of the table being generated. The modes
 // mirror the backend conditional-generation API:
@@ -173,6 +177,12 @@ function ConditionalConfigBody({
     queryFn: () => getModelColumns(modelId),
   });
 
+  const keyColumnsQuery = useQuery({
+    queryKey: ["model-key-columns", modelId],
+    enabled: active && !!modelId,
+    queryFn: () => getModelKeyColumns(modelId),
+  });
+
   const typesQuery = useQuery({
     queryKey: ["model-column-types", modelId],
     enabled: active && !!modelId,
@@ -234,7 +244,16 @@ function ConditionalConfigBody({
     }
   }, [active, config, tableNames, onChange]);
 
-  const tableColumns = activeTable ? columnsByTable[activeTable] ?? [] : [];
+  // Key columns (PKs/FKs) are collected globally across the schema, so a
+  // denormalized key like `person_id` is excluded from every table it appears
+  // in — not just the table that declares it as a key.
+  const keyColumns = useMemo(
+    () => new Set(keyColumnsQuery.data ?? []),
+    [keyColumnsQuery.data],
+  );
+  const tableColumns = (activeTable ? columnsByTable[activeTable] ?? [] : []).filter(
+    (col) => !keyColumns.has(col),
+  );
 
   const typesByColumn: Record<string, ColumnKind> = useMemo(() => {
     const all: ModelColumnTypes = typesQuery.data ?? {};
@@ -492,20 +511,20 @@ function ConditionalConfigBody({
         </div>
         <div>
           <Label className="text-[11px]">¿Cómo se reparten los valores?</Label>
-          <select
+          <NativeSelect
             value={c.generator}
-            onChange={(e) =>
+            onValueChange={(v) =>
               updateCondition(idx, {
-                generator: e.target.value as NumericGenerator,
+                generator: v as NumericGenerator,
               })
             }
-            className={SELECT_CLASS}
+            className="h-9"
           >
             <option value="uniform">Uniforme — todos por igual en el rango</option>
             <option value="normal">
               Normal — concentrados alrededor de una media
             </option>
-          </select>
+          </NativeSelect>
         </div>
         {c.generator === "normal" && (
           <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/40 p-2">
@@ -565,17 +584,17 @@ function ConditionalConfigBody({
         {tableNames.length > 1 && (
           <div className="space-y-1">
             <Label className="text-xs">Tabla</Label>
-            <select
+            <NativeSelect
               value={activeTable}
-              onChange={(e) => setTable(e.target.value)}
-              className={SELECT_CLASS}
+              onValueChange={setTable}
+              className="h-9"
             >
               {tableNames.map((name) => (
                 <option key={name} value={name}>
                   {name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         )}
 
@@ -594,10 +613,10 @@ function ConditionalConfigBody({
             return (
               <div key={idx} className="space-y-3 rounded-lg border bg-card p-3">
                 <div className="flex items-center gap-2">
-                  <select
+                  <NativeSelect
                     value={c.column}
-                    onChange={(e) => pickColumn(idx, e.target.value)}
-                    className={SELECT_CLASS}
+                    onValueChange={(v) => pickColumn(idx, v)}
+                    className="h-9 w-auto min-w-0 flex-1"
                     disabled={tableColumns.length === 0}
                   >
                     <option value="">Elige una columna…</option>
@@ -610,7 +629,7 @@ function ConditionalConfigBody({
                         {column}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                   <button
                     type="button"
                     aria-label="Eliminar condición"
@@ -697,12 +716,13 @@ export function ConditionalConfigPanel({
   const [open, setOpen] = useState(defaultOpen);
   const active = isConditionalConfigActive(config);
   return (
-    <Card className={className}>
+    <Card className={cn(ADVANCED_CARD_CLASS, className)}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            <span>Opcional</span>
+          <div className="flex items-center gap-1.5 text-xs text-violet-500 dark:text-violet-300">
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>Opcional · avanzado</span>
+            <Tooltip content="Avanzado y opcional: guía la generación para que cumpla condiciones sobre columnas concretas." side="top" />
             {active && (
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
                 activa

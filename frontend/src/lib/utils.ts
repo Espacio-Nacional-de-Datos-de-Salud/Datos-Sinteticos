@@ -5,14 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Formats the YYYYMMDD_HHMMSS UTC timestamp the backend stamps on jobs into a
+// Formats the YYYYMMDD_HHMMSS local timestamp the backend stamps on jobs into a
 // readable Spanish long-form date, e.g. "21 may 2026, 14:30".
 export function formatJobDate(ts: string | undefined | null): string {
   if (!ts) return "—"
   const m = /^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/.exec(ts)
   if (!m) return "—"
   const [, y, mo, d, h, mi, s] = m
-  const date = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s))
+  const date = new Date(+y, +mo - 1, +d, +h, +mi, +s)
   if (Number.isNaN(date.getTime())) return "—"
   return date.toLocaleString("es-ES", {
     day: "numeric",

@@ -7,13 +7,13 @@ management."""
 import json
 import os
 import re
-from enum import Enum
 
 import pandas as pd
 
 from backend.src.config.general import (
     METADATA_FILENAME,
 )
+from backend.src.domain.encoding_types import ModelEncodingType
 from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
 from backend.src.infrastructure.date_parsing import parse_dates
 from backend.src.infrastructure.errors import MetadataNotFoundError, RuleManagerNotFoundError
@@ -23,28 +23,10 @@ logger = get_logger(__name__)
 
 LAT_LONG_REGEX = re.compile(r"^\s*-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?\s*$")
 
-
-class ModelEncodingType(str, Enum):
-    """Column encoding types supported by the Mostly AI SDK.
-
-    Enumeration of data encoding types for training the synthesis engine.
-    Taken from the Mostly AI SDK to avoid unnecessary external dependencies.
-    """
-
-    auto = "AUTO"
-    tabular_categorical = "TABULAR_CATEGORICAL"
-    tabular_numeric_auto = "TABULAR_NUMERIC_AUTO"
-    tabular_numeric_discrete = "TABULAR_NUMERIC_DISCRETE"
-    tabular_numeric_binned = "TABULAR_NUMERIC_BINNED"
-    tabular_numeric_digit = "TABULAR_NUMERIC_DIGIT"
-    tabular_character = "TABULAR_CHARACTER"
-    tabular_datetime = "TABULAR_DATETIME"
-    tabular_datetime_relative = "TABULAR_DATETIME_RELATIVE"
-    tabular_lat_long = "TABULAR_LAT_LONG"
-    language_text = "LANGUAGE_TEXT"
-    language_categorical = "LANGUAGE_CATEGORICAL"
-    language_numeric = "LANGUAGE_NUMERIC"
-    language_datetime = "LANGUAGE_DATETIME"
+# ``ModelEncodingType`` now lives in ``backend.src.domain.encoding_types``; it is
+# imported above both because this module uses it and so existing
+# ``from backend.src.infrastructure.utils import ModelEncodingType`` imports keep
+# working.
 
 
 def auto_detect_encoding_type(x: pd.Series) -> ModelEncodingType:
@@ -75,7 +57,10 @@ def auto_detect_encoding_type(x: pd.Series) -> ModelEncodingType:
     if len(non_null) > 0 and non_null.nunique() <= 2:
         return ModelEncodingType.tabular_categorical
 
-    x = x.astype(str)
+    # Drop nulls BEFORE stringifying: astype(str) turns NaN/NaT into the
+    # literal strings "nan"/"NaT", which fail the datetime parse below and
+    # would misclassify any datetime column containing nulls as character.
+    x = x.dropna().astype(str)
     x = x[x.str.strip() != ""]  # filter out empty and whitespace-only strings
 
     # if all values are null or empty, default to categorical
@@ -83,7 +68,7 @@ def auto_detect_encoding_type(x: pd.Series) -> ModelEncodingType:
         return ModelEncodingType.tabular_categorical
 
     # if all non-null values can be converted to datetime -> datetime encoding
-    if parse_dates(x, errors="coerce").notna().all():
+    if parse_dates(x, errors="coerce", log_warnings=False).notna().all():
         return ModelEncodingType.tabular_datetime
 
     # if all values match lat/long pattern -> lat_long (geo) encoding
@@ -99,6 +84,24 @@ def auto_detect_encoding_type(x: pd.Series) -> ModelEncodingType:
         else:  # if values are of different lengths -> text encoding
             return ModelEncodingType.language_text
 
+    return ModelEncodingType.tabular_categorical
+
+
+def detect_series_encoding(series: pd.Series, *, refine: bool = True) -> ModelEncodingType:
+    """Detect the encoding type for a single column from its values and dtype.
+
+    Booleans and 2-value binary flags are states, not magnitudes, so they stay
+    categorical regardless of dtype. Numeric dtypes map to numeric-auto; the
+    rest go through :func:`auto_detect_encoding_type` unless ``refine`` is
+    False (used for PK columns, which skip the deeper heuristics).
+    """
+    non_null = series.dropna()
+    if pd.api.types.is_bool_dtype(series) or (len(non_null) > 0 and non_null.nunique() <= 2):
+        return ModelEncodingType.tabular_categorical
+    if pd.api.types.is_numeric_dtype(series):
+        return ModelEncodingType.tabular_numeric_auto
+    if refine:
+        return auto_detect_encoding_type(series)
     return ModelEncodingType.tabular_categorical
 
 
@@ -147,6 +150,53 @@ def detect_incompatible_type_mix(
         "numeric_fraction": round(numeric_fraction, 4),
         "text_fraction": round(1.0 - numeric_fraction, 4),
         "text_samples": values[~numeric_mask].drop_duplicates().head(5).tolist(),
+    }
+
+
+# Columns missing at least this share of their values are flagged for attention.
+# 0.40 follows Jakobsen et al. (2017): above ~40% missing, a variable's results are
+# "hypothesis-generating only". It is a *warning* threshold, not a drop threshold —
+# the column is kept and the user decides what to do.
+HIGH_NULL_FRACTION_WARNING_THRESHOLD = 0.40
+
+
+def detect_high_null_fraction(
+    x: pd.Series, threshold: float = HIGH_NULL_FRACTION_WARNING_THRESHOLD
+) -> dict | None:
+    """Flag columns whose missing (null/blank) share meets or exceeds ``threshold``.
+
+    High missingness is not fatal for synthesis (Mostly AI models nulls natively),
+    but it (a) can derail naive type auto-detection — e.g. a heavily right-censored
+    date column falling back to character encoding — and (b) degrades the utility of
+    the synthetic column. Detection is purely informational and non-destructive: the
+    column stays in the schema and is surfaced as a warning so the user can review
+    the auto-detected type and decide whether to continue or clean the data
+    themselves. Nothing is excluded or transformed automatically.
+
+    "Missing" counts true nulls plus empty/whitespace-only strings, so textual blanks
+    are treated the same as ``NaN``.
+
+    Args:
+        x: Column to analyse.
+        threshold: Minimum missing fraction (0–1) that triggers the flag.
+
+    Returns:
+        A summary dict (``null_fraction``, ``threshold``) when the column meets the
+        threshold; otherwise ``None``.
+    """
+    total = len(x)
+    if total == 0:
+        return None
+
+    is_null = x.isna()
+    is_blank_str = x.astype(str).str.strip().eq("") & ~is_null
+    null_fraction = float((is_null | is_blank_str).mean())
+    if null_fraction < threshold:
+        return None
+
+    return {
+        "null_fraction": round(null_fraction, 4),
+        "threshold": threshold,
     }
 
 

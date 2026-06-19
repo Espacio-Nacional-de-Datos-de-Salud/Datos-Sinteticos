@@ -80,14 +80,31 @@ class SimulationTracker(BaseRunTracker):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def save_sim_card(self, sample_size: int | None = None) -> None:
+    def save_sim_card(
+        self,
+        sample_size: int | None = None,
+        mother_table: str | None = None,
+        mother_table_size: int | None = None,
+        target_table: str | None = None,
+        target_table_rows: int | None = None,
+    ) -> None:
         """Write ``sim_card.json`` linking this simulation to its parent model.
 
         Written at the start of the run with ``status: "in_progress"``.
         The status is updated to ``"completed"`` or ``"failed"`` on context exit.
 
         Args:
-            sample_size (int | None): Number of synthetic records requested.
+            sample_size (int | None): Global row count requested. Only set for
+                single-/subject-table runs; ``None`` for multi-table generation.
+            mother_table (str | None): Name of the mother (root subject) table
+                whose size drives the run. Persisted so the catalog can show a
+                meaningful "Tamaño" when no global ``sample_size`` was given.
+                Per-table sizes are deliberately *not* stored: only the mother
+                table's count is enforceable (children cascade from it).
+            mother_table_size (int | None): Resolved row count of ``mother_table``.
+            target_table (str | None): Fixed-target mode only — the table whose
+                compliant row count is enforced while the mother floats.
+            target_table_rows (int | None): Requested row count of ``target_table``.
         """
         self.write_initial_card(
             {
@@ -98,6 +115,10 @@ class SimulationTracker(BaseRunTracker):
                 "pipeline_id": self.pipeline_id,
                 "job_name": self.job_name,
                 "sample_size": sample_size,
+                "mother_table": mother_table,
+                "mother_table_size": mother_table_size,
+                "target_table": target_table,
+                "target_table_rows": target_table_rows,
                 "synthetic_data_file_format": self.synthetic_data_file_format,
             }
         )
@@ -134,6 +155,63 @@ class SimulationTracker(BaseRunTracker):
                 table_name,
                 file_path,
                 len(dataframe),
+            )
+
+    def save_auxiliary_columns(
+        self,
+        raw_results: dict[str, pd.DataFrame],
+        final_results: dict[str, pd.DataFrame],
+        metadata: dict,
+    ) -> None:
+        """Identify and save simulated auxiliary columns that were dropped in POST.
+
+        Args:
+            raw_results (dict[str, pd.DataFrame]): Raw synthetic data before POST.
+            final_results (dict[str, pd.DataFrame]): Final synthetic data after POST.
+            metadata (dict): Table schema metadata containing primary keys.
+        """
+        table_pks = {}
+        for table in metadata.get("tables", []):
+            name = table.get("name")
+            pk = table.get("primary_key")
+            if name and pk:
+                table_pks[name] = pk
+
+        aux_dir = os.path.join(self.output_directory, "auxiliary_columns")
+        has_aux = False
+
+        for table_name, raw_df in raw_results.items():
+            final_df = final_results.get(table_name)
+            if final_df is None or raw_df.empty:
+                continue
+
+            # Identify columns in raw that are not in final (excluding temp/added cols)
+            aux_cols = [c for c in raw_df.columns if c not in final_df.columns]
+            if not aux_cols:
+                continue
+
+            if not has_aux:
+                os.makedirs(aux_dir, exist_ok=True)
+                has_aux = True
+
+            # Extract the auxiliary columns aligned with final_df's index (so rejection drops match)
+            valid_indices = [idx for idx in final_df.index if idx in raw_df.index]
+            extracted = raw_df.loc[valid_indices, aux_cols].copy()
+
+            # Include the primary key if it exists in final_df for easy mapping
+            pk = table_pks.get(table_name)
+            if pk and pk in final_df.columns:
+                extracted.insert(0, pk, final_df.loc[valid_indices, pk])
+
+            file_path = os.path.join(aux_dir, f"{table_name}.csv")
+            # Save without index unless no PK is found, to preserve row alignment
+            save_index = (pk is None or pk not in final_df.columns)
+            extracted.to_csv(file_path, index=save_index)
+            logger.info(
+                "Auxiliary columns for '%s' saved to '%s' (%d rows).",
+                table_name,
+                file_path,
+                len(extracted),
             )
 
     def save_sanity_report(self, report_dataframe: pd.DataFrame) -> None:

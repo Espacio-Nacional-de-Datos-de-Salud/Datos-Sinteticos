@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
+import pandas as pd
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
@@ -65,7 +66,11 @@ from backend.src.runs.catalog.inspections import (
 )
 from backend.src.sessions.configs import resolve_config_path
 from backend.src.sessions.files import FilePreviewError, read_file_preview
-from backend.src.sessions.inspection import initialize_inspection_session, run_inspection_flow
+from backend.src.sessions.inspection import (
+    initialize_inspection_session,
+    load_inspection_artifacts,
+    run_inspection_flow,
+)
 from backend.src.sessions.rules import RULES_SNAPSHOT_FILENAME, apply_inspection_rules
 
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
@@ -182,9 +187,38 @@ def cleanup_inspections(
 
 
 @router.delete("/purge", response_model=CleanupResult)
-def purge_inspections() -> CleanupResult:
+def purge_inspections(
+    cascade: bool = Query(
+        False,
+        description=(
+            "When true, also purge every downstream artifact — business-rule "
+            "configurations, trained models, simulations, and evaluations — so "
+            "nothing is left orphaned. When false, only inspection folders are "
+            "deleted and their downstream artifacts become orphaned."
+        ),
+    ),
+) -> CleanupResult:
     """Delete every inspection folder regardless of status (destructive)."""
     deleted = purge_all_inspections_catalog()
+    if cascade:
+        from backend.src.runs.catalog.evaluations import (
+            purge_all_evaluations as purge_all_evaluations_catalog,
+        )
+        from backend.src.runs.catalog.models import (
+            purge_all_models as purge_all_models_catalog,
+        )
+        from backend.src.runs.catalog.simulations import (
+            purge_all_simulations as purge_all_simulations_catalog,
+        )
+        from backend.src.sessions.business_rules_configurations import purge_all_brcs
+
+        deleted = (
+            deleted
+            + purge_all_brcs()
+            + purge_all_models_catalog()
+            + purge_all_simulations_catalog()
+            + purge_all_evaluations_catalog()
+        )
     return CleanupResult(deleted_ids=deleted, empty=[], orphans=[], duplicates=[], skipped_ids=[])
 
 
@@ -295,6 +329,174 @@ def get_inspection_rules(inspection_id: InspectionId) -> str:
             detail=f"Rules snapshot not found for inspection '{inspection_id}'.",
         )
     return path.read_text(encoding="utf-8")
+
+
+class ComplianceRow(BaseModel):
+    rule_index: int
+    rule_type: str
+    table: str
+    origin_col: str | None = None
+    target_col: str | None = None
+    source_col: str | None = None
+    checked: int
+    failing: int
+    pct_compliant: float | None = None
+    null_rows: int = 0
+    pct_null: float | None = None
+    nonnull_failing: int = 0
+    pct_nonnull_noncompliant: float | None = None
+    skipped: bool = False
+    skip_reason: str | None = None
+
+
+class ComplianceReport(BaseModel):
+    inspection_id: str
+    sample_size: int
+    rows: list[ComplianceRow]
+
+
+# Rule yaml-types that can be checked on original data (all columns present).
+# Derived rules (date_to_age, numeric_threshold, numeric_bucket,
+# date_composition) produce new columns that don't exist pre-PRE — skip them.
+_CHECKABLE_RULE_TYPES = {
+    "date_inequality",
+    "numeric_inequality",
+    "semantic_ranking_consistency",
+    "semantic_proportional_consistency",
+    "foreign_keys_consistency_rule",
+}
+
+
+@router.get("/{inspection_id}/rules/compliance", response_model=ComplianceReport)
+def get_inspection_rules_compliance(
+    inspection_id: InspectionId,
+    sample_size: int = Query(default=10_000, ge=100, le=500_000),
+) -> ComplianceReport:
+    """Evaluate each logical rule in the live rules.yaml against the inspection's real data.
+
+    Returns per-rule compliance: how many rows satisfy the rule vs. total checked.
+    Only rules whose types can be evaluated on pre-PRE data are included
+    (inequality and FK rules). Derived rules are skipped — they produce columns
+    that don't exist in the original dataset.
+
+    ``sample_size`` caps rows per table before running checks.
+    """
+    from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
+    from backend.src.domain.preprocessing.utils import format_relationships
+    from backend.src.domain.rules_config import extract_rules_and_rejection_config
+
+    folder = Path(INSPECTIONS_DIR) / inspection_id
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"Inspection '{inspection_id}' not found.")
+
+    try:
+        _, data, meta = load_inspection_artifacts(inspection_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    # Sample each table to cap evaluation cost.
+    sampled: dict[str, pd.DataFrame] = {
+        tbl: df.sample(min(sample_size, len(df)), random_state=0) if len(df) > sample_size else df
+        for tbl, df in data.items()
+    }
+
+    # Always evaluate against the live rules.yaml — the compliance badge
+    # appears on the live-rules banner, not on snapshot/BRC views.
+    rules_path = str(resolve_config_path("rules"))
+    extracted_rules, _ = extract_rules_and_rejection_config(rules_path)
+
+    # LogicalRuleManager expects the (child, parent) -> [(fk, pk)] lookup form,
+    # not the raw {"fks": [...]} metadata shape. Joining cross-table rules
+    # (e.g. date_inequality across person/visit) crashes without this conversion.
+    relationships = format_relationships(meta.get("relationships", {}))
+    rule_manager = LogicalRuleManager()
+    rule_manager.relationships = relationships
+
+    import yaml as _yaml
+
+    with open(rules_path) as f:
+        raw_entries = (_yaml.safe_load(f) or {}).get("rules", [])
+
+    rows: list[ComplianceRow] = []
+    for idx, (rule, raw) in enumerate(zip(extracted_rules, raw_entries)):
+        rule_type = raw.get("type", "")
+        if rule_type not in _CHECKABLE_RULE_TYPES:
+            continue
+
+        rule_manager.rules = [rule]
+        report = rule_manager.run_rules_sanity_checks(sampled)
+
+        # Second pass in null-tolerant mode: failures here are *demonstrable*
+        # violations only (a value that breaks the rule), so the difference vs.
+        # the strict pass is the number of rows that failed merely for being
+        # null/unverifiable. Rules without ``allow_null`` (e.g. semantic) report
+        # the same count both ways, leaving null_rows = 0.
+        report_tol = None
+        if hasattr(rule, "allow_null"):
+            _prev_allow_null = rule.allow_null
+            rule.allow_null = True
+            try:
+                report_tol = rule_manager.run_rules_sanity_checks(sampled)
+            finally:
+                rule.allow_null = _prev_allow_null
+
+        if report.empty:
+            rows.append(
+                ComplianceRow(
+                    rule_index=idx,
+                    rule_type=rule_type,
+                    table=rule.table_target or "",
+                    origin_col=getattr(rule, "origin_col", None),
+                    target_col=getattr(rule, "target_col", None),
+                    source_col=getattr(rule, "source_col", None),
+                    checked=0,
+                    failing=0,
+                    skipped=True,
+                    skip_reason="No se pudo evaluar la regla",
+                )
+            )
+            continue
+
+        row = report.iloc[0]
+        total = int(row["total_rows"])
+        failed = int(row["failed_rows"])
+        status_val = str(row["status"])
+
+        # Demonstrable (non-null) violations from the tolerant pass; nulls are
+        # the gap between strict and tolerant failures.
+        nonnull_failing = failed
+        if report_tol is not None and not report_tol.empty:
+            nonnull_failing = int(report_tol.iloc[0]["failed_rows"])
+        nonnull_failing = max(0, min(nonnull_failing, failed))
+        null_rows = max(0, failed - nonnull_failing)
+        nonnull_total = max(0, total - null_rows)
+        rows.append(
+            ComplianceRow(
+                rule_index=idx,
+                rule_type=rule_type,
+                table=rule.table_target or "",
+                origin_col=getattr(rule, "origin_col", None),
+                target_col=getattr(rule, "target_col", None),
+                source_col=getattr(rule, "source_col", None),
+                checked=total,
+                failing=failed,
+                pct_compliant=round((total - failed) / total * 100, 1) if total > 0 else None,
+                null_rows=null_rows,
+                pct_null=round(null_rows / total * 100, 1) if total > 0 else None,
+                nonnull_failing=nonnull_failing,
+                pct_nonnull_noncompliant=(
+                    round(nonnull_failing / total * 100, 1) if total > 0 else None
+                ),
+                skipped=status_val == "SKIPPED",
+                skip_reason=str(row.get("details", "")) if status_val == "SKIPPED" else None,
+            )
+        )
+
+    return ComplianceReport(
+        inspection_id=inspection_id,
+        sample_size=sample_size,
+        rows=rows,
+    )
 
 
 def _load_inspection_metadata(inspection_id: InspectionId) -> tuple[Path, Autodetect]:
@@ -419,6 +621,24 @@ def put_inspection_training_exclusions(
     """
     path, current = _load_inspection_metadata(inspection_id)
     current.excluded_columns = {t: cols for t, cols in body.excluded_columns.items() if cols}
+    _write_inspection_metadata(path, current)
+    return current
+
+
+@router.put("/{inspection_id}/autodetect/rules-exclusions", response_model=Autodetect)
+def put_inspection_rules_exclusions(
+    inspection_id: InspectionId, body: ExcludeColumnsRequest
+) -> Autodetect:
+    """Set the **Reglas de negocio (BRC) phase** column-drop list.
+
+    Stored separately from ``excluded_columns`` (the Carga de Datos list) so a
+    drop chosen for one rule set never leaks back into Carga de Datos or into a
+    different rule set on the same upload. These columns stay in the cached
+    parquet and are dropped (unioned with ``excluded_columns``) only when a BRC
+    run materialises. Fully reversible.
+    """
+    path, current = _load_inspection_metadata(inspection_id)
+    current.rules_excluded_columns = {t: cols for t, cols in body.excluded_columns.items() if cols}
     _write_inspection_metadata(path, current)
     return current
 

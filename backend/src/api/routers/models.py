@@ -12,9 +12,11 @@ from backend.src.api.schemas.models import (
     CleanupResult,
     DeletedModel,
     ModelSummary,
+    ModelTrainingConfig,
     RenameRequest,
     TrainingCreateRequest,
     TrainingJob,
+    TrainingPreflightIssue,
 )
 from backend.src.config.general import MODEL_CARD_FILENAME, MODELS_DIR
 from backend.src.domain.id_validation import ModelId
@@ -41,6 +43,8 @@ from backend.src.runs.catalog.models import (
     list_model_column_types,
     list_model_column_values,
     list_model_columns,
+    list_model_key_columns,
+    read_model_training_config,
 )
 from backend.src.runs.catalog.models import (
     purge_all_models as purge_all_models_catalog,
@@ -50,6 +54,7 @@ from backend.src.runs.catalog.models import (
 )
 from backend.src.sessions.configs import resolve_config_path
 from backend.src.sessions.training import (
+    collect_training_preflight,
     initialize_training_session,
     run_training_flow,
     run_training_flow_from_inspection,
@@ -64,6 +69,23 @@ router = APIRouter(prefix="/models", tags=["Models"])
 def get_models() -> list[dict]:
     """Returns all trained models available in the catalog."""
     return list_available_models()
+
+
+# NOTE: declared before the ``/{model_id}`` routes so FastAPI does not try to
+# parse "training-preflight" as a model id.
+@router.get("/training-preflight", response_model=list[TrainingPreflightIssue])
+def get_training_preflight(inspection_id: str = Query(...)) -> list[dict]:
+    """Known problems that would make a training run on this inspection fail.
+
+    Evaluates the registered preflight checks (batch size, undersized
+    sequential tables, differential privacy on context-key chains, …) against
+    the inspection's tables/relationships and the *current* Mostly AI config.
+    An empty list means no known blocker.
+    """
+    try:
+        return collect_training_preflight(inspection_id)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.post(
@@ -165,9 +187,27 @@ def cleanup_models(
 
 
 @router.delete("/purge", response_model=CleanupResult)
-def purge_models() -> CleanupResult:
+def purge_models(
+    cascade: bool = Query(
+        False,
+        description=(
+            "When true, also purge every downstream simulation and evaluation "
+            "so nothing is left orphaned. When false, only model folders are "
+            "deleted and their downstream artifacts become orphaned."
+        ),
+    ),
+) -> CleanupResult:
     """Delete every model folder regardless of status (destructive)."""
     deleted = purge_all_models_catalog()
+    if cascade:
+        from backend.src.runs.catalog.evaluations import (
+            purge_all_evaluations as purge_all_evaluations_catalog,
+        )
+        from backend.src.runs.catalog.simulations import (
+            purge_all_simulations as purge_all_simulations_catalog,
+        )
+
+        deleted = deleted + purge_all_simulations_catalog() + purge_all_evaluations_catalog()
     return CleanupResult(deleted_ids=deleted, empty=[], orphans=[], skipped_ids=[])
 
 
@@ -211,6 +251,19 @@ def get_model(model_id: ModelId) -> dict:
         if model["model_id"] == model_id:
             return model
     raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found.")
+
+
+@router.get("/{model_id}/config", response_model=ModelTrainingConfig)
+def get_model_config(model_id: ModelId) -> dict:
+    """Returns the headline training parameters the model was launched with.
+
+    Reads the archived ``mostly_config.json`` so the UI can show a compact
+    configuration summary. Fields the run did not record come back as ``null``.
+    """
+    try:
+        return read_model_training_config(model_id)
+    except ModelNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
 
 
 @router.get("/{model_id}/time-profiling", response_model=TimeProfilingReport)
@@ -288,6 +341,20 @@ def get_model_column_types(model_id: ModelId) -> dict[str, dict[str, str]]:
     fit a column. Returns an empty dict when encoding metadata is unavailable.
     """
     return list_model_column_types(model_id)
+
+
+@router.get(
+    "/{model_id}/key-columns",
+    response_model=list[str],
+)
+def get_model_key_columns(model_id: ModelId) -> list[str]:
+    """Returns every PK/FK column name in the model's schema (collected globally).
+
+    Used by the conditional-generation UI to exclude key columns from the
+    condition picker — including denormalized key columns (e.g. ``person_id``)
+    that appear in child tables without being a declared foreign key there.
+    """
+    return list_model_key_columns(model_id)
 
 
 @router.get(

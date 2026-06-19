@@ -21,7 +21,7 @@ def align_dtypes(real: pd.DataFrame, syn: pd.DataFrame) -> tuple[pd.DataFrame, p
     - int real, float syn     → cast real to float.
     - anything else that differs → cast real to syn dtype; warn on failure.
     """
-    real = real.copy()
+    real = real
     for col in real.columns:
         if col not in syn.columns:
             continue

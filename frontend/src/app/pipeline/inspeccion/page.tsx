@@ -21,40 +21,54 @@
 
 "use client";
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen } from "lucide-react";
 
-import { DatasetPreviewCard } from "@/components/dataset/dataset-preview-card";
+import { PreprocessedPreviewCard } from "@/components/inspection/preprocessed-preview-card";
 import { DetectedTablesCard } from "@/components/inspection/detected-tables-card";
 import { FilePickerCard } from "@/components/inspection/file-picker-card";
 import { HistoryCard } from "@/components/inspection/history-card";
-import { TimeProfilingPanel } from "@/components/pipeline-step/time-profiling-panel";
 import { InspectionBanner } from "@/components/inspection/inspection-banner";
+import { ProfilingCard } from "@/components/inspection/profiling-card";
 import { RelationshipsCard } from "@/components/inspection/relationships-card";
 import { SelectionPreviewCard } from "@/components/inspection/selection-preview-card";
 import { TypesCard } from "@/components/inspection/types-card";
 import { useInspeccionPage } from "@/components/inspection/use-inspeccion-page";
 import { WizardShell } from "@/components/layout/wizard-shell";
+import { WIZARD_BANNER_HEIGHT } from "@/components/layout/wizard-banner";
 import { WorkflowGroup } from "@/components/layout/workflow-group";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { JobProgressPanel } from "@/components/jobs/job-progress";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tooltip } from "@/components/ui/tooltip";
 import { NamePromptDialog } from "@/components/ui/name-prompt-dialog";
 import { DeleteConflictDialog } from "@/components/pipeline-step/delete-conflict-dialog";
+import { PurgeChoiceDialog } from "@/components/pipeline-step/purge-choice-dialog";
 import { INSPECCION_INSTRUCTIONS } from "@/components/inspection/instructions-content";
 import { api, API_BASE_URL, type FilePreview, type ProfilingReports } from "@/lib/api";
-import { ALLOW_SERVER_FILES as ALLOW_SERVER_FILES_FLAG } from "@/lib/features";
-import { useIsDev } from "@/lib/mode";
+import { useManualOpen } from "@/lib/use-manual-open";
+import { useConfirmSelect } from "@/components/pipeline-step/use-confirm-select";
 
 const INSPECCION_OUTLINE = [
-  { id: "preparacion", label: "Preparación", level: 1 },
-  { id: "seleccion-ficheros", label: "Selección de ficheros", level: 2 },
-  { id: "resultados", label: "Resultados", level: 1 },
+  { id: "preparacion", label: "Selección de ficheros", level: 1 },
+  { id: "seleccion-ficheros", label: "Seleccionar ficheros", level: 2 },
+  { id: "visualizacion-columnas", label: "Visualización y eliminación de columnas", level: 2 },
+  { id: "ejecutar-carga", label: "Ejecución de la carga", level: 2 },
+  { id: "resultados", label: "Autodetección", level: 1 },
   { id: "tablas-detectadas", label: "Tablas detectadas", level: 2 },
   { id: "relaciones-detectadas", label: "Relaciones detectadas", level: 2 },
   { id: "tipos-codificacion", label: "Tipos de codificación", level: 2 },
-  { id: "datos-preprocesados", label: "Datos preprocesados", level: 2 },
+  { id: "datos-preprocesados", label: "Datos preprocesados", level: 1 },
+  { id: "visualizacion-datos", label: "Visualización de datos", level: 2 },
+  { id: "profiling", label: "Perfilado", level: 1 },
+  { id: "informes-profiling", label: "Informes de perfilado", level: 2 },
   { id: "historial", label: "Historial", level: 1 },
   { id: "inspecciones-previas", label: "Cargas de Datos previas", level: 2 },
 ] as const;
@@ -78,31 +92,16 @@ export default function InspeccionPage() {
   // confirms a name.
   const [startDialog, setStartDialog] = useState(false);
 
-  // Instructions manual state.
-  const [instructionsOpen, setInstructionsOpen] = useState(false);
-  // Page banner height — the manual's sticky "Resumen" block is sized to
-  // match it so the two banners are the same height.
-  const bannerRef = useRef<HTMLDivElement | null>(null);
-  const [bannerHeight, setBannerHeight] = useState<number | undefined>();
-  useLayoutEffect(() => {
-    const el = bannerRef.current;
-    if (!el) return;
-    // Round to whole pixels — a fractional height feeds the panel's overview
-    // block and would jitter, retriggering measurement endlessly.
-    const update = () => {
-      const h = Math.round(el.getBoundingClientRect().height);
-      setBannerHeight((prev) => (prev === h ? prev : h));
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  // Instructions manual state. Shared across pipeline pages so the manual
+  // stays open as the user navigates, like a book they left open.
+  const [instructionsOpen, setInstructionsOpen] = useManualOpen();
   // Open/collapsed state per page section — shared between the WorkflowGroups
   // and the help panel so the two collapse in sync.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     preparacion: true,
     resultados: true,
+    "datos-preprocesados": false,
+    profiling: false,
     historial: false,
   });
   // When a section opens, scroll the page to it — same UX as the main page
@@ -147,12 +146,10 @@ export default function InspeccionPage() {
       ? { marginBottom: helpReserve[id] + 16 }
       : undefined;
 
-  // Server-files browsing is a dev-only convenience: in production the user
-  // can only pick files they uploaded themselves. The legacy NEXT_PUBLIC_*
-  // flag still acts as an override for CI / Docker, but the runtime Dev/Prod
-  // toggle is the primary on/off switch now — flip it from the header.
-  const isDev = useIsDev();
-  const allowServerFiles = ALLOW_SERVER_FILES_FLAG || isDev;
+  // Server-files browsing is an advanced convenience: besides uploading their
+  // own files, users can browse files already present on the server. The upload
+  // component signals it as an optional/advanced option.
+  const allowServerFiles = true;
 
   // Quick preview (columns + first rows) for the currently-selected files,
   // so the user can sanity-check what will be inspected before committing.
@@ -175,6 +172,20 @@ export default function InspeccionPage() {
     },
   });
 
+  // Profiling reports for the active inspection — powers the standalone
+  // "Profiling" drawer (same card as the Profiling page, wired to the active
+  // carga de datos instead of a separate dropdown selection).
+  const profilingQuery = useQuery({
+    queryKey: ["inspections", insp.inspectionId, "profiling-reports"],
+    enabled: !!insp.inspectionId && insp.isCompleted,
+    queryFn: async () => {
+      const { data } = await api.get<ProfilingReports>(
+        `/inspections/${insp.inspectionId}/profiling`,
+      );
+      return data;
+    },
+  });
+
   const toggleSelected = (path: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -193,6 +204,22 @@ export default function InspeccionPage() {
       return next;
     });
   };
+
+  // Reset the Preparación form to its defaults — used when the user jumps to a
+  // past run from the history, which discards whatever they were setting up.
+  const resetPreparation = useCallback(() => {
+    setSelected(new Set());
+    setCsvDelimiter(",");
+    setEnableProfiling(true);
+    setExcludedColumns({});
+  }, []);
+
+  // Selecting a past carga de datos from the history loads its results and
+  // resets the preparation form — gated behind a confirmation dialog.
+  const selectRun = useConfirmSelect((id) => {
+    insp.selectActive(id);
+    resetPreparation();
+  }, insp.inspectionId);
 
   // The file picker's start button opens the name dialog; the actual launch
   // happens once the user confirms (with an optional functional name).
@@ -225,127 +252,119 @@ export default function InspeccionPage() {
       onInstructionsToggleSection={toggleSection}
       onInstructionsClose={() => setInstructionsOpen(false)}
       onInstructionsMeasure={handleHelpMeasure}
-      instructionsBannerHeight={bannerHeight}
+      instructionsBannerHeight={WIZARD_BANNER_HEIGHT}
     >
       <InspectionBanner
-        rootRef={bannerRef}
         inspectionId={insp.inspectionId}
         inspection={insp.inspectionQuery.data}
-        isLoading={insp.inspectionQuery.isLoading}
-        isError={insp.inspectionQuery.isError}
         existingNames={(insp.inspectionsQuery.data ?? []).map(
           (x) => x.inspection_name || x.inspection_id,
         )}
         onRename={insp.renameInspection}
-        actions={
-          instructionsOpen ? null : (
-            <button
-              type="button"
-              onClick={() => setInstructionsOpen(true)}
-              aria-label="Abrir manual de instrucciones"
-              className="flex items-center gap-2 rounded-lg bg-[#FFDB00] px-4 py-2.5 text-sm font-bold text-[#00215C] shadow-md transition-colors hover:bg-[#f0cf00]"
-            >
-              <BookOpen className="h-5 w-5" />
-              Manual de instrucciones
-            </button>
-          )
-        }
+        instructionsOpen={instructionsOpen}
+        onOpenManual={() => setInstructionsOpen(true)}
       />
       <div className="space-y-6">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            La carga de datos es el primer paso para generar datos sintéticos:
-            analiza los ficheros de origen para entender su estructura antes de
-            entrenar ningún modelo.
-          </p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Selecciona los ficheros ya disponibles en el servidor o sube los
-            tuyos. Al iniciar la carga de datos, el sistema detecta automáticamente
-            las <span className="font-medium text-foreground">tablas</span> que
-            contienen, las{" "}
-            <span className="font-medium text-foreground">
-              claves primarias y foráneas
-            </span>{" "}
-            que las relacionan y el{" "}
-            <span className="font-medium text-foreground">
-              tipo de cada columna
-            </span>
-            . Después podrás revisar y corregir todo lo detectado, definir
-            reglas de negocio y consultar los datos preprocesados que recibirá
-            el modelo.
-          </p>
-        </div>
-
         <WorkflowGroup
           id="preparacion"
-          label="Preparación"
+          label="Selección de ficheros"
           open={openSections.preparacion ?? true}
           onOpenChange={(o) => setSectionOpen("preparacion", o)}
           className="scroll-mt-24"
           style={helpGap("preparacion")}
         >
-          <div id="seleccion-ficheros" className="scroll-mt-24 space-y-4">
-            <FilePickerCard
-              selected={selected}
-              onToggleSelected={toggleSelected}
-              onSelectionChange={setSelected}
-              onClearUploadsFromSelection={clearUploadsFromSelection}
-              allowServerFiles={allowServerFiles}
-              csvDelimiter={csvDelimiter}
-              onCsvDelimiterChange={setCsvDelimiter}
-            />
+          <div className="space-y-4">
+            <div id="seleccion-ficheros" className="scroll-mt-24">
+              <FilePickerCard
+                selected={selected}
+                onToggleSelected={toggleSelected}
+                onSelectionChange={setSelected}
+                onClearUploadsFromSelection={clearUploadsFromSelection}
+                allowServerFiles={allowServerFiles}
+                csvDelimiter={csvDelimiter}
+                onCsvDelimiterChange={setCsvDelimiter}
+              />
+            </div>
 
-            <SelectionPreviewCard
-              previews={selected.size > 0 ? (selectedPreviewQuery.data ?? []) : []}
-              hasSelection={selected.size > 0}
-              isLoading={selected.size > 0 && selectedPreviewQuery.isLoading}
-              isError={selected.size > 0 && selectedPreviewQuery.isError}
-              csvDelimiter={csvDelimiter}
-              excludedColumns={excludedColumns}
-              onToggleColumn={(table, col) => {
-                setExcludedColumns((prev) => {
-                  const next = { ...prev };
-                  const set = new Set(next[table] ?? []);
-                  if (set.has(col)) set.delete(col);
-                  else set.add(col);
-                  next[table] = set;
-                  return next;
-                });
-              }}
-              startAction={
-                <div className="space-y-3">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={enableProfiling}
-                      onChange={(e) => setEnableProfiling(e.target.checked)}
-                    />
-                    <span>Generar informes de profiling</span>
-                  </label>
+            <div id="visualizacion-columnas" className="scroll-mt-24">
+              <SelectionPreviewCard
+                previews={selected.size > 0 ? (selectedPreviewQuery.data ?? []) : []}
+                hasSelection={selected.size > 0}
+                isLoading={selected.size > 0 && selectedPreviewQuery.isLoading}
+                isError={selected.size > 0 && selectedPreviewQuery.isError}
+                csvDelimiter={csvDelimiter}
+                excludedColumns={excludedColumns}
+                onToggleColumn={(table, col) => {
+                  setExcludedColumns((prev) => {
+                    const next = { ...prev };
+                    const set = new Set(next[table] ?? []);
+                    if (set.has(col)) set.delete(col);
+                    else set.add(col);
+                    next[table] = set;
+                    return next;
+                  });
+                }}
+              />
+            </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={selected.size === 0 || insp.isStarting}
-                      onClick={() => setStartDialog(true)}
-                    >
-                      {insp.isStarting
-                        ? "Iniciando…"
-                        : `Iniciar Carga de Datos (${selected.size})`}
-                    </Button>
-                    <Tooltip content="Analiza los archivos seleccionados para detectar automáticamente tablas, relaciones y tipos de datos. El sistema identificará claves primarias, foráneas y otros patrones en tus datos." side="right" />
-                  </div>
+            <Card id="ejecutar-carga" className="scroll-mt-24">
+              <CardHeader>
+                <CardTitle className="text-base">Ejecución de la carga</CardTitle>
+                <CardDescription>
+                  Elige las opciones de análisis e inicia la carga de datos.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={enableProfiling}
+                    onChange={(e) => setEnableProfiling(e.target.checked)}
+                  />
+                  <span>Generar informes de perfilado</span>
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={selected.size === 0 || insp.isStarting}
+                    onClick={() => setStartDialog(true)}
+                  >
+                    {insp.isStarting
+                      ? "Iniciando…"
+                      : `Iniciar Carga de Datos (${selected.size})`}
+                  </Button>
+                  <Tooltip content="Analiza los archivos seleccionados para detectar automáticamente tablas, relaciones y tipos de datos. El sistema identificará claves primarias, foráneas y otros patrones en tus datos." side="right" />
                 </div>
-              }
-            />
+
+                {/* Run progress lives here (not in the banner) so the top bar
+                    stays consistent with the other wizard steps. */}
+                {insp.inspectionId && insp.inspectionQuery.data && (
+                  <div className="space-y-1">
+                    <JobProgressPanel
+                      status={insp.inspectionQuery.data.status}
+                      progress={insp.inspectionQuery.data.progress}
+                      startedAtMs={insp.inspectionQuery.data.started_at_ms ?? null}
+                      errorMessage={insp.inspectionQuery.data.error_message}
+                    />
+                    {insp.inspectionQuery.data.file_paths.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {insp.inspectionQuery.data.file_paths.length} fichero(s)
+                        en la carga de datos.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </WorkflowGroup>
 
         <WorkflowGroup
           id="resultados"
-          label="Resultados"
+          label="Autodetección"
           open={openSections.resultados ?? true}
           onOpenChange={(o) => setSectionOpen("resultados", o)}
           className="scroll-mt-24"
@@ -380,20 +399,50 @@ export default function InspeccionPage() {
                   {...insp.types}
                 />
               </div>
-              {insp.inspectionId && (
-                <div id="datos-preprocesados" className="scroll-mt-24">
-                  <WorkflowGroup label="Datos preprocesados" defaultOpen={false}>
-                    <PreprocessedDataCard inspectionId={insp.inspectionId} />
-                  </WorkflowGroup>
-                </div>
-              )}
-              {insp.inspectionId && (
-                <div id="tiempos-inspeccion" className="scroll-mt-24">
-                  <TimeProfilingPanel kind="inspections" id={insp.inspectionId} />
-                </div>
-              )}
             </>
           )}
+        </WorkflowGroup>
+
+        <WorkflowGroup
+          id="datos-preprocesados"
+          label="Datos preprocesados"
+          open={openSections["datos-preprocesados"] ?? false}
+          onOpenChange={(o) => setSectionOpen("datos-preprocesados", o)}
+          className="scroll-mt-24"
+          style={helpGap("datos-preprocesados")}
+        >
+          <div id="visualizacion-datos" className="scroll-mt-24">
+            {insp.isCompleted && insp.inspectionId ? (
+              <PreprocessedPreviewCard inspectionId={insp.inspectionId} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Inicia y completa una carga de datos para ver los datos
+                preprocesados.
+              </p>
+            )}
+          </div>
+        </WorkflowGroup>
+
+        <WorkflowGroup
+          id="profiling"
+          label="Perfilado"
+          open={openSections.profiling ?? false}
+          onOpenChange={(o) => setSectionOpen("profiling", o)}
+          className="scroll-mt-24"
+          style={helpGap("profiling")}
+        >
+          <div id="informes-profiling" className="scroll-mt-24">
+            <ProfilingCard
+              inspectionId={
+                insp.isCompleted ? (insp.inspectionId ?? null) : null
+              }
+              query={{
+                data: profilingQuery.data,
+                isLoading: profilingQuery.isLoading,
+                isError: profilingQuery.isError,
+              }}
+            />
+          </div>
         </WorkflowGroup>
 
         <WorkflowGroup
@@ -410,7 +459,7 @@ export default function InspeccionPage() {
               isLoading={insp.inspectionsQuery.isLoading}
               isError={insp.inspectionsQuery.isError}
               activeId={insp.inspectionId}
-              onSelect={insp.selectActive}
+              onSelect={selectRun.request}
               onDelete={(id) => setConfirmDelete(id)}
               onRename={insp.renameInspection}
               onCleanup={() => setConfirmCleanup(true)}
@@ -424,6 +473,14 @@ export default function InspeccionPage() {
           </div>
         </WorkflowGroup>
 
+        <ConfirmDialog
+          open={selectRun.pendingId !== null}
+          title="¿Ver una carga de datos anterior?"
+          description="Se cargarán sus resultados y se descartarán los cambios sin guardar en la preparación, que volverá a sus valores por defecto."
+          confirmLabel="Ver carga de datos"
+          onConfirm={selectRun.confirm}
+          onCancel={selectRun.cancel}
+        />
         <NamePromptDialog
           open={startDialog}
           title="Iniciar carga de datos"
@@ -443,13 +500,18 @@ export default function InspeccionPage() {
           }}
           onCancel={() => setConfirmDelete(null)}
         />
-        <ConfirmDialog
+        <PurgeChoiceDialog
           open={confirmPurge}
           title="¿Purgar todas las cargas de datos?"
-          description="Se eliminarán TODAS las cargas de datos, incluidas las completadas correctamente. Esta acción no se puede deshacer."
-          confirmLabel="Purgar"
-          onConfirm={() => {
-            insp.purgeInspections();
+          description="Se eliminarán TODAS las cargas de datos, incluidas las completadas correctamente. ¿Quieres eliminar también sus reglas de negocio, modelos, generaciones y evaluaciones asociadas, o dejarlas huérfanas? Esta acción no se puede deshacer."
+          cascadeLabel="Purgar todo (cargas y dependencias)"
+          orphanLabel="Purgar solo cargas (dejar dependencias huérfanas)"
+          onCascade={() => {
+            insp.purgeInspections(true);
+            setConfirmPurge(false);
+          }}
+          onOrphan={() => {
+            insp.purgeInspections(false);
             setConfirmPurge(false);
           }}
           onCancel={() => setConfirmPurge(false)}
@@ -474,58 +536,5 @@ export default function InspeccionPage() {
         />
       </div>
     </WizardShell>
-  );
-}
-
-function PreprocessedDataCard({ inspectionId }: { inspectionId: string }) {
-  const tablesQuery = useQuery({
-    queryKey: ["inspections", inspectionId, "preprocessed", "tables"],
-    queryFn: async () => {
-      const { data } = await api.get<string[]>(
-        `/inspections/${inspectionId}/preprocessed`,
-      );
-      return data;
-    },
-  });
-
-  const profilingQuery = useQuery({
-    queryKey: ["inspections", inspectionId, "profiling"],
-    queryFn: async () => {
-      const { data } = await api.get<ProfilingReports>(
-        `/inspections/${inspectionId}/profiling`,
-      );
-      return data;
-    },
-  });
-
-  const profilingTables = useMemo(
-    () => new Set((profilingQuery.data?.reports ?? []).map((r) => r.table)),
-    [profilingQuery.data],
-  );
-
-  const getProfilingUrl = (table: string) =>
-    profilingTables.has(table)
-      ? `${API_BASE_URL}/inspections/${inspectionId}/profiling/${encodeURIComponent(table)}`
-      : null;
-
-  return (
-    <DatasetPreviewCard
-      title="Datos preprocesados"
-      description="Vista previa del dataset que se usará para entrenar el modelo."
-      cacheKey={`inspections/${inspectionId}/preprocessed/preview`}
-      tables={tablesQuery.data ?? []}
-      isLoadingTables={tablesQuery.isLoading}
-      isError={tablesQuery.isError}
-      fetcher={async (table, params) => {
-        const { data } = await api.get<FilePreview>(
-          `/inspections/${inspectionId}/preprocessed/${encodeURIComponent(table)}`,
-          { params },
-        );
-        return data;
-      }}
-      downloadHref={`/inspections/${inspectionId}/download/preprocessed`}
-      getProfilingUrl={getProfilingUrl}
-      emptyMessage="No hay datos preprocesados disponibles para esta carga de datos."
-    />
   );
 }

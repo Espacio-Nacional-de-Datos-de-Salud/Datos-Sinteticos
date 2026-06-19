@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { DownloadMenu } from "@/components/pipeline-step/download-menu";
 import { EditableName } from "@/components/jobs/editable-name";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/jobs/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -30,10 +30,10 @@ import {
   deleteBrc,
   getBrcRulesSnapshot,
   renameBrc,
+  totalRuleCount,
   type BRCSummary,
 } from "@/lib/brc";
 import { extractDetail } from "@/lib/errors";
-import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
 import { formatDuration, formatJobDate } from "@/lib/utils";
 
 // Historial global de ejecuciones BRC.
@@ -107,20 +107,19 @@ export function BRCHistoryCard({
             No hay ejecuciones previas de reglas de negocio.
           </p>
         ) : (
-          <Table className="table-fixed">
+          <Table className="min-w-[820px] table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead style={{ width: "21%" }}>Nombre</TableHead>
-                <TableHead style={{ width: "13%" }} className="pr-4">
+                <TableHead style={{ width: "23%" }}>Nombre</TableHead>
+                <TableHead style={{ width: "15%" }} className="pr-4">
                   Estado
                 </TableHead>
-                <TableHead style={{ width: "27%" }}>
+                <TableHead style={{ width: "25%" }}>
                   Tablas / Carga de Datos
                 </TableHead>
                 <TableHead style={{ width: "7%" }}>Reglas</TableHead>
-                <TableHead style={{ width: "14%" }}>Fecha</TableHead>
-                <TableHead style={{ width: "8%" }}>Duración</TableHead>
-                <TableHead style={{ width: "10%" }} className="text-right">
+                <TableHead style={{ width: "18%" }}>Fecha</TableHead>
+                <TableHead style={{ width: "12%" }} className="text-right">
                   Acciones
                 </TableHead>
               </TableRow>
@@ -169,9 +168,7 @@ export function BRCHistoryCard({
                       </p>
                     </TableCell>
                     <TableCell className="pr-4">
-                      <Badge variant={statusBadgeVariant(run.status)}>
-                        {translateStatus(run.status)}
-                      </Badge>
+                      <StatusBadge status={run.status} errorMessage={run.error_message} />
                     </TableCell>
                     <TableCell className="min-w-0 overflow-hidden">
                       <span
@@ -187,13 +184,11 @@ export function BRCHistoryCard({
                         {inspectionName}
                       </span>
                     </TableCell>
-                    <TableCell className="text-xs">{run.rules_count}</TableCell>
+                    <TableCell className="text-xs">{totalRuleCount(run)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatJobDate(run.timestamp)}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatDuration(run.duration_seconds)}
-                    </TableCell>
+
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <button
@@ -220,7 +215,7 @@ export function BRCHistoryCard({
                               href: `/business-rules-configurations/${run.brc_id}/download/dataset`,
                             },
                             {
-                              label: "Informes profiling (.zip)",
+                              label: "Informes de perfilado (.zip)",
                               href: `/business-rules-configurations/${run.brc_id}/download/profiling`,
                             },
                           ]}
@@ -254,7 +249,7 @@ export function BRCHistoryCard({
         title="¿Eliminar ejecución?"
         description={
           pendingDelete
-            ? `Se eliminará la carpeta de la ejecución "${pendingDelete}" del servidor (parquet, profiling y snapshot). No se puede deshacer.`
+            ? `Se eliminará la carpeta de la ejecución "${pendingDelete}" del servidor (parquet, perfilado y snapshot). No se puede deshacer.`
             : ""
         }
         confirmLabel="Eliminar"

@@ -1,96 +1,61 @@
 "use client";
 
-import { JobProgressPanel } from "@/components/jobs/job-progress";
-import { EditableName } from "@/components/jobs/editable-name";
+import { ActiveRunName } from "@/components/jobs/active-run-name";
+import { WizardBanner } from "@/components/layout/wizard-banner";
 import type { InspectionSummary } from "@/lib/api";
 
-// Full-width sticky header for the Inspección page. Pinned to the top of the
-// scroll container so the user always sees which inspection is active, its
-// status and the tables involved while scrolling through the wizard.
+// Carga de Datos banner. A thin wrapper around the shared WizardBanner that
+// fills the `info` slot with the active-run name (or its not-started
+// placeholder), exactly like Entrenamiento / Generación / Auditoría. The
+// run's progress and detected tables live in the page body, not here, so the
+// top bar stays consistent across every wizard step.
 export function InspectionBanner({
   inspectionId,
   inspection,
-  isLoading,
-  isError,
   existingNames,
   onRename,
-  actions,
-  rootRef,
+  instructionsOpen,
+  onOpenManual,
 }: {
   inspectionId: string | null;
   inspection: InspectionSummary | undefined;
-  isLoading: boolean;
-  isError: boolean;
   existingNames: string[];
   onRename: (id: string, name: string) => void;
-  /** Optional controls rendered at the banner's top-right (e.g. manual flap). */
-  actions?: React.ReactNode;
-  /** Ref to the banner root, for measuring its height. */
-  rootRef?: React.Ref<HTMLDivElement>;
+  instructionsOpen?: boolean;
+  onOpenManual?: () => void;
 }) {
-  const tables = Object.keys(inspection?.tables ?? {});
+  const active = inspectionId && inspection ? inspection : null;
 
   return (
-    <div
-      ref={rootRef}
-      className="sticky top-0 z-20 -mx-8 -mt-6 mb-6 border-b bg-background/95 px-8 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80"
-    >
-      {actions && (
-        <div className="absolute right-8 top-1/2 -translate-y-1/2">{actions}</div>
-      )}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Carga de Datos</h1>
-          {inspectionId && inspection ? (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Nombre:</span>
-              <EditableName
-                name={inspection.inspection_name || inspection.inspection_id}
-                existingNames={existingNames}
-                onSave={async (name) => onRename(inspectionId, name)}
-                size="sm"
-              />
-              <span className="font-mono text-xs text-muted-foreground" suppressHydrationWarning>
-                id: {inspectionId}
-              </span>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Aún no has iniciado una carga de datos en esta sesión.
-            </p>
-          )}
-        </div>
-
-        {inspectionId && inspection && (
-          <div className="min-w-[16rem] flex-1 space-y-2">
-            <JobProgressPanel
-              status={inspection.status}
-              progress={inspection.progress}
-              startedAtMs={inspection.started_at_ms ?? null}
-            />
-            {inspection.file_paths.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {inspection.file_paths.length} fichero(s) en la carga de datos.
-              </p>
-            )}
-            {tables.length > 0 && (
-              <p className="text-xs">
-                <span className="text-muted-foreground">Tablas: </span>
-                <span className="font-mono">{tables.join(", ")}</span>
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
-      {inspectionId && isLoading && (
-        <p className="mt-2 text-xs text-muted-foreground">Cargando estado…</p>
-      )}
-      {inspectionId && isError && (
-        <p className="mt-2 text-xs text-destructive">
-          No se pudo cargar el estado de la carga de datos.
-        </p>
-      )}
-    </div>
+    <WizardBanner
+      title="Carga de Datos"
+      subtitle={
+        <>
+          La carga de datos es el primer paso para generar datos sintéticos:
+          analiza los ficheros de origen para detectar automáticamente las{" "}
+          <span className="font-medium text-foreground">tablas</span>, las{" "}
+          <span className="font-medium text-foreground">
+            claves primarias y foráneas
+          </span>{" "}
+          que las relacionan y el{" "}
+          <span className="font-medium text-foreground">tipo de cada columna</span>
+          . Después podrás revisar lo detectado, definir reglas de negocio y
+          consultar los datos preprocesados.
+        </>
+      }
+      instructionsOpen={instructionsOpen}
+      onOpenManual={onOpenManual}
+      info={
+        <ActiveRunName
+          label="de la carga de datos"
+          name={active ? active.inspection_name || active.inspection_id : null}
+          placeholder="carga de datos aún no iniciada"
+          existingNames={existingNames}
+          onSave={
+            inspectionId ? async (name) => onRename(inspectionId, name) : undefined
+          }
+        />
+      }
+    />
   );
 }

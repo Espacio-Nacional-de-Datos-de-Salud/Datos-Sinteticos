@@ -8,10 +8,9 @@
 //   • `AxisSingleValueEditor`  — single-value editor (variant mode). Each
 //     variant patches a field with exactly one value, no enumeration.
 //
-// Implementation note: the per-kind inputs are intentionally small / native.
-// We don't pull in a combobox library — the existing pipelines page uses
-// raw `<select>` elements styled via the shared `SELECT_CLASS`, and this
-// matches that look.
+// Implementation note: the per-kind inputs are intentionally small. Dropdowns
+// use the shared `<NativeSelect>` wrapper (Base UI Select under the hood) so the
+// popup looks identical across platforms, matching the rest of the pipelines UI.
 
 "use client";
 
@@ -28,7 +27,7 @@ import type {
   ModelSummary,
   SimulationSummary,
 } from "@/lib/api";
-import { SELECT_CLASS } from "@/lib/ui";
+import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 
 import {
@@ -214,11 +213,10 @@ export function AxisSingleValueEditor({
 
   if (kind === "tri") {
     return (
-      <select
-        className={SELECT_CLASS}
+      <NativeSelect
+        className="h-9"
         value={typeof value?.raw === "string" ? value.raw : ""}
-        onChange={(e) => {
-          const v = e.target.value;
+        onValueChange={(v) => {
           if (v === "true" || v === "false") {
             onChange({ label: v === "true" ? "on" : "off", raw: v });
           } else {
@@ -229,7 +227,7 @@ export function AxisSingleValueEditor({
         <option value="">—</option>
         <option value="true">Activado</option>
         <option value="false">Desactivado</option>
-      </select>
+      </NativeSelect>
     );
   }
 
@@ -242,11 +240,11 @@ export function AxisSingleValueEditor({
   ) {
     const options = enumOptionsFor(kind, catalogues);
     return (
-      <select
-        className={SELECT_CLASS}
+      <NativeSelect
+        className="h-9"
         value={typeof value?.raw === "string" ? value.raw : ""}
-        onChange={(e) => {
-          const opt = options.find((o) => o.raw === e.target.value);
+        onValueChange={(val) => {
+          const opt = options.find((o) => o.raw === val);
           onChange(opt ? { label: opt.label, raw: opt.raw } : null);
         }}
       >
@@ -256,7 +254,7 @@ export function AxisSingleValueEditor({
             {o.label}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     );
   }
 
@@ -439,11 +437,11 @@ function EnumMultiEditor({
           onRemove={(idx) => onChange(values.filter((_, i) => i !== idx))}
         />
       )}
-      <select
-        className={SELECT_CLASS}
+      <NativeSelect
+        className="h-9"
         value=""
-        onChange={(e) => {
-          const next = options.find((o) => o.raw === e.target.value);
+        onValueChange={(val) => {
+          const next = options.find((o) => o.raw === val);
           if (next) onChange([...values, next]);
         }}
       >
@@ -453,7 +451,7 @@ function EnumMultiEditor({
             {o.label}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </div>
   );
 }
@@ -585,11 +583,10 @@ function FilesPickerList({
           ))}
         </ul>
       )}
-      <select
-        className={SELECT_CLASS}
+      <NativeSelect
+        className="h-9"
         value=""
-        onChange={(e) => {
-          const next = e.target.value;
+        onValueChange={(next) => {
           if (next) onChange([...selected, next]);
         }}
       >
@@ -599,7 +596,7 @@ function FilesPickerList({
             {f.name}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </div>
   );
 }

@@ -2,6 +2,7 @@ from collections.abc import Iterable
 
 import pandas as pd
 
+from backend.src.config.evaluation import EXACT_MATCH_SHOW_FILTERED_ROWS
 from backend.src.domain.evaluation.custom_metrics.base import MetricEvaluator
 from backend.src.infrastructure.logging_config import get_logger
 
@@ -14,18 +15,22 @@ def _crp_and_matches(
     cols: Iterable[str],
     syn_total: int,
     extract_rows: bool = False,
+    include_rows: bool = False,
 ) -> dict:
     """Compute CRP for ``cols`` and optionally extract matching rows.
 
-    Returns ``{"count", "proportion", "synthetic_indices"?, "rows"?}``.
-    ``synthetic_indices`` and ``rows`` are only included when ``extract_rows`` is True.
+    Returns ``{"count", "proportion", "synthetic_indices"?, "rows"?}``. The
+    count/proportion are always computed; ``synthetic_indices`` and ``rows``
+    (verbatim real-data records) are only included when both ``extract_rows``
+    and ``include_rows`` are True — ``include_rows`` reflects the privacy
+    toggle that controls whether matching rows are surfaced in the report.
     """
     cols = list(cols)
     real_sub = real_str[cols].drop_duplicates()
     matches = pd.merge(syn_indexed[["__syn_idx__"] + cols], real_sub, on=cols, how="inner")
     count = len(matches)
     out = {"count": count, "proportion": count / syn_total if syn_total else 0.0}
-    if extract_rows and count > 0:
+    if extract_rows and include_rows and count > 0:
         out["synthetic_indices"] = matches["__syn_idx__"].tolist()
         out["rows"] = matches.drop(columns=["__syn_idx__"]).to_dict(orient="records")
     return out
@@ -54,8 +59,16 @@ class ExactMatchRows(MetricEvaluator):
         syn_str = synthetic_data[shared_cols].astype(str)
         syn_indexed = syn_str.reset_index().rename(columns={"index": "__syn_idx__"})
         syn_total = len(synthetic_data)
+        include_rows = EXACT_MATCH_SHOW_FILTERED_ROWS
 
-        full = _crp_and_matches(syn_indexed, real_str, shared_cols, syn_total, extract_rows=True)
+        full = _crp_and_matches(
+            syn_indexed,
+            real_str,
+            shared_cols,
+            syn_total,
+            extract_rows=True,
+            include_rows=include_rows,
+        )
         score = full["proportion"]
         full_count = full["count"]
 
@@ -77,6 +90,7 @@ class ExactMatchRows(MetricEvaluator):
                         remaining,
                         syn_total,
                         extract_rows=True,
+                        include_rows=include_rows,
                     )
                 loo[excluded] = crp
 

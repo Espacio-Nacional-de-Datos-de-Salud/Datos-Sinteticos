@@ -76,7 +76,7 @@ class ModelTracker(BaseRunTracker):
 
     Example:
         >>> with ModelTracker(data_files, mostly_cfg, rules_cfg) as tracker:
-        ...     engine = MostlyAIEngine(config_path=mostly_cfg)
+        ...     engine = create_engine(config_path=mostly_cfg)
         ...     generator = engine.train(data, metadata, tracker.output_directory)
         ...     tracker.save_generator(generator)
     """
@@ -198,6 +198,11 @@ class ModelTracker(BaseRunTracker):
         self.patch_card(training_table_sizes=table_sizes)
         logger.info("Model card updated with training table sizes: %s", table_sizes)
 
+    def save_modeling_configuration(self, modeling_configuration: dict) -> None:
+        """Persist the resolved modeling configuration to ``model_card.json``."""
+        self.patch_card(modeling_configuration=modeling_configuration)
+        logger.info("Model card updated with modeling configuration.")
+
     def save_qa_reports(self, generator_id: str) -> None:
         """Copy MostlyAI QA report HTML files to the model output directory.
 
@@ -297,10 +302,21 @@ class ModelTracker(BaseRunTracker):
                 mostly_statistics["tables"][table_name] = {}
             mostly_statistics["tables"][table_name]["detected_model_type"] = model_type
 
+        if tables_model_types:
+            if all(model_type == "SequentialModel" for model_type in tables_model_types.values()):
+                detected_modeling_mode = "sequential"
+            elif all(model_type == "FlatModel" for model_type in tables_model_types.values()):
+                detected_modeling_mode = "flat"
+            else:
+                detected_modeling_mode = "mixed"
+            mostly_statistics["detected_modeling_mode"] = detected_modeling_mode
+        else:
+            detected_modeling_mode = None
+
         self.patch_card(mostly_statistics=mostly_statistics)
         logger.info("Model card updated with mostly statistics.")
 
-        # Update metadata.json with the detected types
+        # Update metadata.json with the detected types and overall mode
         metadata_path = os.path.join(self.output_directory, METADATA_FILENAME)
         if os.path.exists(metadata_path) and tables_model_types:
             try:
@@ -312,6 +328,9 @@ class ModelTracker(BaseRunTracker):
                         t_name = table_meta.get("name")
                         if t_name in tables_model_types:
                             table_meta["detected_model_type"] = tables_model_types[t_name]
+
+                if detected_modeling_mode is not None:
+                    metadata["detected_modeling_mode"] = detected_modeling_mode
 
                 with open(metadata_path, "w", encoding="utf-8") as file_handle:
                     json.dump(metadata, file_handle, indent=4)

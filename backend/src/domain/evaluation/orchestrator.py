@@ -73,6 +73,10 @@ def run_evaluation(
             job_name=job_name or "",
             evaluation_id=evaluation_id,
             training_parameters=training_parameters,
+            evaluation_parameters={
+                "target_column": TSTR_TARGET_COLUMN,
+                "task_type": TSTR_TASK_TYPE,
+            },
         ) as tracker:
             runner = EvaluationRunner(eval_results_dir=eval_dir)
             with profiler.phase(ProfilerPhase.RUN_METRICS):

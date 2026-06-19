@@ -19,8 +19,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { RotateCcw, Trash2 } from "lucide-react";
 import type { FilePreview } from "@/lib/api";
-import { ColumnExclusionHint } from "./column-exclusion-hint";
 import { TableExplorerDialog } from "./table-explorer-dialog";
 
 // Sanity-check view of the files the user has selected. Each row shows
@@ -35,7 +35,6 @@ export function SelectionPreviewCard({
   csvDelimiter,
   excludedColumns,
   onToggleColumn,
-  startAction,
   readOnly = false,
 }: {
   previews: FilePreview[];
@@ -46,8 +45,6 @@ export function SelectionPreviewCard({
   csvDelimiter: string;
   excludedColumns: Record<string, Set<string>>;
   onToggleColumn: (table: string, col: string) => void;
-  /** Start-inspection controls rendered at the bottom of the card. */
-  startAction?: React.ReactNode;
   /** When true, hides the per-column exclusion toggles and the hint badge.
    *  Used by views (e.g. Configuración right rail) where the column delete
    *  action is exposed elsewhere and would be confusing to duplicate. */
@@ -57,13 +54,12 @@ export function SelectionPreviewCard({
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
-          <CardTitle className="text-base">Vista previa de la selección</CardTitle>
-          {!readOnly && <ColumnExclusionHint align="right" />}
+          <CardTitle className="text-base">Visualización y eliminación de columnas</CardTitle>
         </div>
         <CardDescription>
           {readOnly
             ? "Revisa los datos. Para excluir columnas usa la sección «Eliminar columnas» del cuerpo principal."
-            : "Revisa los datos antes de inspeccionar. Expande una tabla y pulsa una columna para excluirla."}
+            : <>Revisa los datos antes de inspeccionar. <strong>Expande</strong> una tabla y <strong>usa el icono de papelera</strong> para <strong>excluir una columna.</strong></>}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -91,7 +87,6 @@ export function SelectionPreviewCard({
               readOnly={readOnly}
             />
           ))}
-        {startAction && <div className="border-t pt-3">{startAction}</div>}
       </CardContent>
     </Card>
   );
@@ -174,26 +169,40 @@ function SelectionPreviewRow({
               {preview.columns.map((col) => {
                 const excluded = excludedCols.has(col);
                 return (
-                  <button
+                  <span
                     key={col}
-                    type="button"
-                    onClick={() => onToggleColumn(col)}
-                    title={excluded ? `Incluir '${col}'` : `Excluir '${col}'`}
                     className={
-                      "flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] transition-all " +
+                      "flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs " +
                       (excluded
-                        ? "border-red-200 bg-red-50 text-red-400 line-through dark:border-red-900 dark:bg-red-950/30 dark:text-red-500"
-                        : "border-border bg-background text-foreground hover:border-primary hover:bg-primary/5")
+                        ? "border-destructive/40 bg-destructive/5 text-muted-foreground"
+                        : "bg-card")
                     }
                   >
                     <span
                       className={
-                        "inline-block h-2 w-2 shrink-0 rounded-full " +
-                        (excluded ? "bg-red-400" : "bg-emerald-500")
+                        "font-mono " + (excluded ? "line-through" : "")
                       }
-                    />
-                    {col}
-                  </button>
+                    >
+                      {col}
+                    </span>
+                    <button
+                      type="button"
+                      title={excluded ? `Incluir '${col}'` : `Excluir '${col}'`}
+                      onClick={() => onToggleColumn(col)}
+                      className={
+                        "rounded p-0.5 " +
+                        (excluded
+                          ? "text-muted-foreground/70 hover:bg-foreground/10 hover:text-foreground"
+                          : "text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive")
+                      }
+                    >
+                      {excluded ? (
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </span>
                 );
               })}
             </div>

@@ -11,11 +11,19 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import yaml from "js-yaml";
-import { Plus, RotateCcw, Save, Settings, Trash2, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Plus,
+  RotateCcw,
+  Save,
+  Settings,
+  Trash2,
+  X,
+} from "lucide-react";
 import {
   api,
   type Autodetect,
@@ -33,6 +41,7 @@ import {
 } from "@/components/ui/card";
 import { CollapseToggle } from "@/components/ui/collapse-toggle";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -89,7 +98,19 @@ export type RuleType =
   | "foreign_keys_consistency_rule"
   | "date_to_age"
   | "numeric_threshold"
-  | "numeric_bucket";
+  | "numeric_bucket"
+  | "date_composition";
+
+const DATE_PART_NAMES = ["year", "month", "day", "hour", "minute", "second"] as const;
+type DatePart = (typeof DATE_PART_NAMES)[number];
+const DATE_PART_LABELS: Record<DatePart, string> = {
+  year: "Año",
+  month: "Mes",
+  day: "Día",
+  hour: "Hora",
+  minute: "Minuto",
+  second: "Segundo",
+};
 
 type Rule = {
   type: RuleType;
@@ -122,23 +143,38 @@ type Rule = {
   labels?: string[];
   include_lowest?: boolean;
   right?: boolean;
+  // date_composition
+  canonical_col?: string;
+  part_cols?: Partial<Record<DatePart, string>>;
   // Per-rule generation mode. When true the rule is enforced via rejection
   // sampling (re-draw rows that violate it) rather than the default "forced"
   // application during preprocessing/post-processing.
   rejection_sampling?: boolean;
 };
 
-type RulesFile = { rules: Rule[] };
+type RejectionSamplingSettings = {
+  max_attempts?: number;
+  overgenerate_factor?: number;
+};
+
+type RulesFile = { rules: Rule[]; rejection_sampling?: RejectionSamplingSettings };
+
+// Defaults mirror the backend (_resolve_rejection_sampling_config).
+const DEFAULT_REJECTION_SAMPLING: Required<RejectionSamplingSettings> = {
+  max_attempts: 5,
+  overgenerate_factor: 2,
+};
 
 const RULE_TYPE_LABELS: Record<RuleType, string> = {
   date_inequality: "Relación entre fechas",
   numeric_inequality: "Relación entre números",
-  semantic_ranking_consistency: "Consistencia semántica (ranking)",
-  semantic_proportional_consistency: "Consistencia semántica (proporcional)",
+  semantic_ranking_consistency: "Consistencia semántica (flexible)",
+  semantic_proportional_consistency: "Consistencia semántica (fijo)",
   foreign_keys_consistency_rule: "Consistencia de claves foráneas",
   date_to_age: "Derivar edad o lapso desde fecha",
   numeric_threshold: "Columna derivada: umbral numérico",
-  numeric_bucket: "Columna estratificada: buckets numéricos",
+  numeric_bucket: "Columna estratificada: intervalos numéricos",
+  date_composition: "Componer fecha desde columnas año/mes/día",
 };
 
 const RULE_TYPE_HELP: Record<RuleType, string> = {
@@ -147,9 +183,9 @@ const RULE_TYPE_HELP: Record<RuleType, string> = {
   numeric_inequality:
     "Garantiza que un valor numérico objetivo cumpla un orden (≥ o ≤) respecto a un origen o constante.",
   semantic_ranking_consistency:
-    "Restringe qué combinaciones (origen, objetivo) son válidas en un categórico, con intervalos equiespaciados.",
+    "Restringe qué combinaciones (origen, objetivo) son válidas en un categórico; el modelo aprende libremente las proporciones.",
   semantic_proportional_consistency:
-    "Como el ranking, pero los intervalos respetan la frecuencia real de cada categoría.",
+    "Como la flexible, pero además fuerza las proporciones reales de cada categoría.",
   foreign_keys_consistency_rule:
     "Reconstruye una FK redundante copiando el valor desde la tabla padre marcada como contexto.",
   date_to_age:
@@ -157,7 +193,9 @@ const RULE_TYPE_HELP: Record<RuleType, string> = {
   numeric_threshold:
     "Crea una columna booleana comparando una columna numérica con un umbral (≥, >, ≤, <).",
   numeric_bucket:
-    "Crea una columna categórica estratificando una columna numérica por intervalos (bins). Útil para generalizar el modelo.",
+    "Crea una columna categórica estratificando una columna numérica por intervalos. Útil para generalizar el modelo.",
+  date_composition:
+    "Tratar columnas año/mes/día como derivadas de una fecha canónica: se eliminan en el entreno y se reconstruyen tras la generación para evitar incoherencias.",
 };
 
 const DERIVED_RULE_TYPES: RuleType[] = [
@@ -166,18 +204,61 @@ const DERIVED_RULE_TYPES: RuleType[] = [
   "numeric_bucket",
 ];
 
+// Rules that live in the "Reglas lógicas / de negocio" panel. date_composition
+// fits here because it doesn't create new columns nor destroy semantic info —
+// it just declares a deterministic relationship between a canonical date and
+// its split parts (year/month/day…), conceptually a business rule.
 const LOGICAL_RULE_TYPES: RuleType[] = [
   "date_inequality",
   "numeric_inequality",
   "semantic_ranking_consistency",
   "semantic_proportional_consistency",
-  "foreign_keys_consistency_rule",
+  "date_composition",
 ];
+
+// Subset of logical rules that support the forced/rejection-sampling toggle.
+// date_composition is always deterministic (drop in PRE, re-derive in POST),
+// so it's excluded from this UI control.
+const REJECTION_SAMPLING_RULE_TYPES: RuleType[] = [
+  "date_inequality",
+  "numeric_inequality",
+  "semantic_ranking_consistency",
+  "semantic_proportional_consistency",
+];
+
+// Count of date_composition candidate warnings emitted during inspection that
+// don't yet have a corresponding rule registered. Used to surface a warning
+// badge on the rules panel header so the user notices the suggestions
+// without having to expand the panel first (same pattern as types-card).
+export function countDateCompositionSuggestions(
+  autodetect: Autodetect | null | undefined,
+  registered: { type: string; table_target?: string; canonical_col?: string }[],
+): number {
+  if (!autodetect?.warnings?.length) return 0;
+  const seen = new Set<string>();
+  for (const w of autodetect.warnings) {
+    if (w.kind !== "date_composition_candidate") continue;
+    const d = (w.details ?? {}) as { canonical_col?: string };
+    if (!d.canonical_col) continue;
+    const key = `${w.table}::${d.canonical_col}`;
+    if (seen.has(key)) continue;
+    const covered = registered.some(
+      (r) =>
+        r.type === "date_composition" &&
+        r.table_target === w.table &&
+        r.canonical_col === d.canonical_col,
+    );
+    if (!covered) seen.add(key);
+  }
+  return seen.size;
+}
 
 function ruleTypesForMode(mode: RuleMode): RuleType[] {
   if (mode === "derived") return DERIVED_RULE_TYPES;
   if (mode === "logical") return LOGICAL_RULE_TYPES;
-  return Object.keys(RULE_TYPE_LABELS) as RuleType[];
+  return (Object.keys(RULE_TYPE_LABELS) as RuleType[]).filter(
+    (t) => t !== "foreign_keys_consistency_rule",
+  );
 }
 
 function ruleMatchesMode(rule: Rule, mode: RuleMode): boolean {
@@ -271,6 +352,7 @@ const RULE_TYPE_FIELDS: Record<RuleType, (keyof Rule)[]> = {
     "drop_origin",
     "reconstruct_origin",
   ],
+  date_composition: ["table_target", "canonical_col", "part_cols"],
 };
 
 function summarizeRule(r: Rule): string {
@@ -303,6 +385,11 @@ function summarizeRule(r: Rule): string {
       const bins = r.bins?.length ? `[${r.bins.join(", ")}]` : "?";
       return `${tgt}.${dst} = bucket(${src}, ${bins})`;
     }
+    if (r.type === "date_composition") {
+      const parts = Object.values(r.part_cols ?? {}).filter(Boolean);
+      const partsLabel = parts.length ? `[${parts.join(", ")}]` : "?";
+      return `${tgt}.${partsLabel} ← decompose(${r.canonical_col ?? "?"})`;
+    }
   }
   return `${left} → ${right}`;
 }
@@ -322,6 +409,9 @@ function RulesEditorBody({
   // rules in the same file (and vice versa).
   const [rules, setRules] = useState<Rule[]>([]);
   const [hiddenRules, setHiddenRules] = useState<Rule[]>([]);
+  // Top-level rejection-sampling settings (global, not per-rule). Preserved
+  // across saves and editable below; null until the config loads.
+  const [rejection, setRejection] = useState<RejectionSamplingSettings | null>(null);
   const [draftYaml, setDraftYaml] = useState<string>("");
   const [yamlMode, setYamlMode] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -369,6 +459,7 @@ function RulesEditorBody({
       queueMicrotask(() => {
         setRules(all.filter((r) => ruleMatchesMode(r, mode)));
         setHiddenRules(all.filter((r) => !ruleMatchesMode(r, mode)));
+        setRejection(parsed.rejection_sampling ?? null);
         setDraftYaml(configQuery.data.content);
         setParseError(null);
       });
@@ -421,9 +512,76 @@ function RulesEditorBody({
     [columnsByTableWithDerived],
   );
 
+  // Inspection-time warnings of kind "date_composition_candidate" become
+  // one-click suggestions in the derived/all rules panels. They surface
+  // canonical↔parts groupings that the detector found in the data but the
+  // user has not registered yet. Hidden once a matching rule exists.
+  const suggestions = useMemo(() => {
+    if (mode === "derived") return [];
+    type Suggestion = {
+      table: string;
+      canonical_col: string;
+      part_cols: Partial<Record<DatePart, string>>;
+      confidence?: number;
+    };
+    const seen = new Map<string, Suggestion>();
+    for (const w of autodetect?.warnings ?? []) {
+      if (w.kind !== "date_composition_candidate") continue;
+      const d = (w.details ?? {}) as {
+        canonical_col?: string;
+        part_cols?: Record<string, string>;
+        confidence?: number;
+      };
+      if (!d.canonical_col || !d.part_cols) continue;
+      const key = `${w.table}::${d.canonical_col}`;
+      if (seen.has(key)) continue;
+      const parts: Partial<Record<DatePart, string>> = {};
+      for (const [k, v] of Object.entries(d.part_cols)) {
+        if ((DATE_PART_NAMES as readonly string[]).includes(k) && v) {
+          parts[k as DatePart] = v;
+        }
+      }
+      seen.set(key, {
+        table: w.table,
+        canonical_col: d.canonical_col,
+        part_cols: parts,
+        confidence: d.confidence,
+      });
+    }
+    // Drop suggestions already covered by an existing rule (same canonical col).
+    return [...seen.values()].filter(
+      (s) =>
+        !rules.some(
+          (r) =>
+            r.type === "date_composition" &&
+            r.table_target === s.table &&
+            r.canonical_col === s.canonical_col,
+        ),
+    );
+  }, [autodetect, rules, mode]);
+
+  const acceptSuggestion = (s: {
+    table: string;
+    canonical_col: string;
+    part_cols: Partial<Record<DatePart, string>>;
+  }) => {
+    setRules((prev) => [
+      ...prev,
+      {
+        type: "date_composition",
+        table_target: s.table,
+        canonical_col: s.canonical_col,
+        part_cols: s.part_cols,
+      },
+    ]);
+  };
+
   const buildYaml = (rs: Rule[]): string =>
     yaml.dump(
       {
+        // Preserve the global rejection-sampling block. Without this, saving
+        // rules from the form would silently wipe max_attempts/overgenerate.
+        ...(rejection ? { rejection_sampling: rejection } : {}),
         rules: [...hiddenRules, ...rs].map((r) => {
           // Only emit fields relevant to this rule type. The backend rule
           // dataclasses reject unknown kwargs (TypeError), and
@@ -453,6 +611,7 @@ function RulesEditorBody({
       const all = parsed.rules ?? [];
       setRules(all.filter((r) => ruleMatchesMode(r, mode)));
       setHiddenRules(all.filter((r) => !ruleMatchesMode(r, mode)));
+      setRejection(parsed.rejection_sampling ?? null);
       setYamlMode(false);
       setParseError(null);
     } catch (e) {
@@ -471,6 +630,8 @@ function RulesEditorBody({
     onSuccess: () => {
       toast.success("Reglas guardadas");
       queryClient.invalidateQueries({ queryKey: ["config", configId] });
+      queryClient.invalidateQueries({ queryKey: ["rules-banner"] });
+      queryClient.invalidateQueries({ queryKey: ["rules-compliance"] });
       onSaved?.();
     },
     onError: (err) => toast.error(`No se pudo guardar: ${extractDetail(err)}`),
@@ -483,6 +644,8 @@ function RulesEditorBody({
     onSuccess: () => {
       toast.success("Reglas restauradas");
       queryClient.invalidateQueries({ queryKey: ["config", configId] });
+      queryClient.invalidateQueries({ queryKey: ["rules-banner"] });
+      queryClient.invalidateQueries({ queryKey: ["rules-compliance"] });
     },
     onError: (err) => toast.error(`No se pudo restaurar: ${extractDetail(err)}`),
   });
@@ -534,6 +697,52 @@ function RulesEditorBody({
             className="h-[60vh] w-full rounded-md border bg-muted/30 p-3 font-mono text-xs"
           />
         )}
+        {configQuery.data && !yamlMode && suggestions.length > 0 && (
+          <div className="mb-3 rounded-md border border-amber-300/60 bg-amber-50/60 p-3 dark:border-amber-700/40 dark:bg-amber-950/20">
+            <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
+              Sugerencias detectadas durante la inspección
+            </p>
+            <p className="mt-0.5 text-[11px] text-amber-800/80 dark:text-amber-300/80">
+              Estas columnas año/mes/día parecen derivar de una fecha canónica.
+              Añade la regla para que se eliminen del entreno y se reconstruyan
+              tras la generación; déjalo así si la divergencia es intencionada.
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {suggestions.map((s, i) => {
+                const parts = Object.values(s.part_cols).filter(Boolean);
+                return (
+                  <li
+                    key={`${s.table}-${s.canonical_col}-${i}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200/70 bg-background/60 p-2 dark:border-amber-800/40"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="font-mono text-xs">
+                        {s.table}.{s.canonical_col}
+                      </span>
+                      <span className="ml-2 text-[11px] text-muted-foreground">
+                        ← {parts.join(", ")}
+                        {typeof s.confidence === "number" && (
+                          <span className="ml-1">
+                            ({Math.round(s.confidence * 100)}% coincidencia)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => acceptSuggestion(s)}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      Añadir regla
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
         {configQuery.data && !yamlMode && (
           <div className="space-y-3">
             {rules.length === 0 && !adding && (
@@ -548,6 +757,7 @@ function RulesEditorBody({
                   initial={r}
                   tableNames={tableNamesWithDerived}
                   columnsByTable={columnsByTableWithDerived}
+                  autodetect={autodetect}
                   mode={mode}
                   onCancel={() => setEditingIndex(null)}
                   onSubmit={(rule) => onUpdateRule(idx, rule)}
@@ -565,6 +775,7 @@ function RulesEditorBody({
               <RuleForm
                 tableNames={tableNamesWithDerived}
                 columnsByTable={columnsByTableWithDerived}
+                autodetect={autodetect}
                 mode={mode}
                 onCancel={() => setAdding(false)}
                 onSubmit={onAddRule}
@@ -696,6 +907,35 @@ export function RulesPanel({
   description,
 }: PanelProps) {
   const [open, setOpen] = useState(defaultOpen);
+
+  // Fetch the live rules so we can show a suggestion-count badge on the
+  // collapsed header — same queryKey as RulesEditorBody so the panel and
+  // body share a single network request.
+  const headerConfigQuery = useQuery({
+    queryKey: ["config", configId],
+    queryFn: async () => {
+      const { data } = await api.get<ConfigContent>(
+        `/configs/${encodeURIComponent(configId)}`,
+      );
+      return data;
+    },
+  });
+  const registeredRules: Rule[] = useMemo(() => {
+    if (!headerConfigQuery.data) return [];
+    try {
+      const parsed = (yaml.load(headerConfigQuery.data.content) as RulesFile) ?? {
+        rules: [],
+      };
+      return parsed.rules ?? [];
+    } catch {
+      return [];
+    }
+  }, [headerConfigQuery.data]);
+  const suggestionCount =
+    mode === "derived"
+      ? 0
+      : countDateCompositionSuggestions(autodetect, registeredRules);
+
   const resolvedTitle =
     title ??
     (mode === "derived"
@@ -706,7 +946,7 @@ export function RulesPanel({
   const resolvedDescription =
     description ??
     (mode === "derived"
-      ? "Define columnas nuevas a partir de columnas existentes (edad a partir de fecha, umbral booleano, estratificación por buckets)."
+      ? "Define columnas nuevas a partir de columnas existentes (edad a partir de fecha, umbral booleano, estratificación por intervalos)."
       : mode === "logical"
         ? "Define restricciones entre columnas o entre una columna y un valor (orden de fechas, consistencia semántica, claves foráneas). Para cada regla, elige si se aplica forzada o por muestreo por rechazo."
         : "Definen restricciones que el modelo debe respetar (orden de fechas, consistencia entre categóricas, etc.). Se aplican durante la inspección y la generación.");
@@ -720,7 +960,25 @@ export function RulesPanel({
               {configId.split("/").pop() || "rules.yaml"}
             </span>
           </div>
-          <CardTitle className="text-base">{resolvedTitle}</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-base">{resolvedTitle}</CardTitle>
+            {suggestionCount > 0 && (
+              <Tooltip
+                side="top"
+                content={
+                  suggestionCount === 1
+                    ? "La inspección detectó 1 sugerencia de regla. Abre el panel para revisarla."
+                    : `La inspección detectó ${suggestionCount} sugerencias de regla. Abre el panel para revisarlas.`
+                }
+              >
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/70 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                  <AlertTriangle className="h-3 w-3" />
+                  {suggestionCount}{" "}
+                  {suggestionCount === 1 ? "sugerencia" : "sugerencias"}
+                </span>
+              </Tooltip>
+            )}
+          </div>
           <CardDescription>{resolvedDescription}</CardDescription>
         </div>
         <CollapseToggle
@@ -770,7 +1028,7 @@ function RuleCard({
             >
               {RULE_TYPE_LABELS[rule.type] ?? rule.type}
             </Badge>
-            {LOGICAL_RULE_TYPES.includes(rule.type) && (
+            {REJECTION_SAMPLING_RULE_TYPES.includes(rule.type) && (
               <Badge
                 variant="outline"
                 className={
@@ -780,7 +1038,7 @@ function RuleCard({
                     : "")
                 }
               >
-                {rule.rejection_sampling ? "Muestreo por rechazo" : "Forzado"}
+                {rule.rejection_sampling ? "Muestreo por rechazo" : "Determinista"}
               </Badge>
             )}
             {isDerived && rule.aux_col && (
@@ -818,6 +1076,7 @@ function RuleForm({
   initial,
   tableNames,
   columnsByTable,
+  autodetect,
   mode = "all",
   onCancel,
   onSubmit,
@@ -825,6 +1084,7 @@ function RuleForm({
   initial?: Rule;
   tableNames: string[];
   columnsByTable: Record<string, string[]>;
+  autodetect?: Autodetect | null;
   mode?: RuleMode;
   onCancel: () => void;
   onSubmit: (rule: Rule) => void;
@@ -840,10 +1100,36 @@ function RuleForm({
   const update = (patch: Partial<Rule>) =>
     setDraft((prev) => ({ ...prev, ...patch }));
 
+  // Unique per-instance radio group name. A hardcoded name made every mounted
+  // RuleForm share one document-wide radio group, so the browser unchecked the
+  // controlled radios and both options rendered blank.
+  const rejectionModeName = useId();
+
   const showInequality =
     draft.type === "date_inequality" || draft.type === "numeric_inequality";
   const showFK = draft.type === "foreign_keys_consistency_rule";
-  const showDerived = DERIVED_RULE_TYPES.includes(draft.type);
+  const showDateComposition = draft.type === "date_composition";
+  const isSemantic =
+    draft.type === "semantic_ranking_consistency" ||
+    draft.type === "semantic_proportional_consistency";
+  const showDerived =
+    DERIVED_RULE_TYPES.includes(draft.type) && !showDateComposition;
+
+  // Collapse both semantic subtypes into a single top-level entry in the main
+  // dropdown. semantic_ranking_consistency acts as the group representative.
+  const dropdownTypes = allowedTypes.filter(
+    (t) => t !== "semantic_proportional_consistency",
+  );
+  const dropdownValue = isSemantic ? "semantic_ranking_consistency" : draft.type;
+
+  const dateCompositionParts = Object.entries(draft.part_cols ?? {}).filter(
+    ([, v]) => !!v,
+  );
+  const dateCompositionValid =
+    !!draft.table_target &&
+    !!draft.canonical_col &&
+    dateCompositionParts.length > 0 &&
+    dateCompositionParts.every(([, v]) => v !== draft.canonical_col);
 
   const derivedValid =
     !!draft.table_target &&
@@ -861,49 +1147,113 @@ function RuleForm({
     draft.constraint !== undefined &&
     draft.constraint !== null &&
     String(draft.constraint).trim() !== "";
-  const valid = showDerived
-    ? derivedValid
-    : showInequality
-      ? !!draft.table_target &&
-      !!draft.target_col &&
-      ((!!draft.table_origin && !!draft.origin_col) || hasConstraint)
-      : !!draft.table_target &&
-      !!draft.target_col &&
-      (showFK
-        ? !!draft.table_origin
-        : !!draft.table_origin && !!draft.origin_col);
+  const valid = showDateComposition
+    ? dateCompositionValid
+    : showDerived
+      ? derivedValid
+      : showInequality
+        ? !!draft.table_target &&
+        !!draft.target_col &&
+        ((!!draft.table_origin && !!draft.origin_col) || hasConstraint)
+        : !!draft.table_target &&
+        !!draft.target_col &&
+        (showFK
+          ? !!draft.table_origin
+          : !!draft.table_origin && !!draft.origin_col);
 
   return (
     <div className="rounded-md border bg-muted/30 p-3 space-y-3">
       <div>
         <Label className="text-xs">Tipo de regla</Label>
-        <select
-          value={draft.type}
-          onChange={(e) =>
+        <NativeSelect
+          value={dropdownValue}
+          onValueChange={(v) =>
             setDraft({
-              type: e.target.value as RuleType,
+              type: v as RuleType,
               constraint_operator: ">=",
             })
           }
-          className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+          className="mt-1 h-8 rounded-lg"
         >
-          {allowedTypes.map((t) => (
+          {dropdownTypes.map((t) => (
             <option key={t} value={t}>
-              {RULE_TYPE_LABELS[t]}
+              {t === "semantic_ranking_consistency"
+                ? "Consistencia semántica"
+                : RULE_TYPE_LABELS[t]}
             </option>
           ))}
-        </select>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {RULE_TYPE_HELP[draft.type]}
-        </p>
+        </NativeSelect>
+        {!isSemantic && (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {RULE_TYPE_HELP[draft.type]}
+          </p>
+        )}
       </div>
 
-      {showDerived ? (
+      {isSemantic && (
+        <div className="rounded-md border bg-background p-2 text-xs">
+          <Label className="text-xs">Subtipo</Label>
+          <div className="mt-1 flex flex-col gap-1">
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                name="semantic-subtype"
+                className="mt-0.5"
+                checked={draft.type === "semantic_proportional_consistency"}
+                onChange={() => update({ type: "semantic_proportional_consistency" })}
+              />
+              <span className="flex flex-1 items-start gap-1.5">
+                <span>
+                  <span className="font-medium">Fijo</span>
+                  <span className="ml-1 text-muted-foreground">
+                    — fuerza las proporciones del dato real.
+                  </span>
+                </span>
+                <Tooltip
+                  side="right"
+                  content="Las proporciones sintéticas quedan ancladas a las reales: el modelo reproduce la frecuencia con que aparece cada categoría en los datos originales."
+                />
+              </span>
+            </label>
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                name="semantic-subtype"
+                className="mt-0.5"
+                checked={draft.type === "semantic_ranking_consistency"}
+                onChange={() => update({ type: "semantic_ranking_consistency" })}
+              />
+              <span className="flex flex-1 items-start gap-1.5">
+                <span>
+                  <span className="font-medium">Flexible</span>
+                  <span className="ml-1 text-muted-foreground">
+                    — el modelo ajusta las proporciones libremente.
+                  </span>
+                </span>
+                <Tooltip
+                  side="right"
+                  content="Solo se garantiza que las combinaciones sean semánticamente válidas (p. ej. diagnóstico secundario coherente con el primario); las proporciones las aprende y simula el modelo a su criterio."
+                />
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {showDateComposition ? (
+        <DateCompositionFields
+          draft={draft}
+          update={update}
+          tableNames={tableNames}
+          columnsByTable={columnsByTable}
+        />
+      ) : showDerived ? (
         <DerivedRuleFields
           draft={draft}
           update={update}
           tableNames={tableNames}
           columnsByTable={columnsByTable}
+          autodetect={autodetect}
         />
       ) : showInequality ? (
         <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2">
@@ -927,19 +1277,19 @@ function RuleForm({
             </div>
             <div>
               <Label className="text-xs invisible">_</Label>
-              <select
+              <NativeSelect
                 aria-label="Operador"
                 value={draft.constraint_operator ?? ">="}
-                onChange={(e) =>
+                onValueChange={(v) =>
                   update({
-                    constraint_operator: e.target.value as ">=" | "<=",
+                    constraint_operator: v as ">=" | "<=",
                   })
                 }
-                className="mt-1 block h-8 w-12 rounded-lg border border-input bg-background text-center text-lg font-semibold leading-none"
+                className="mt-1 h-8 w-16 rounded-lg text-lg font-semibold"
               >
                 <option value=">=">≥</option>
                 <option value="<=">≤</option>
-              </select>
+              </NativeSelect>
             </div>
           </div>
 
@@ -1070,35 +1420,35 @@ function RuleForm({
         </div>
       )}
 
-      {LOGICAL_RULE_TYPES.includes(draft.type) && (
+      {REJECTION_SAMPLING_RULE_TYPES.includes(draft.type) && (
         <div className="rounded-md border bg-background p-2 text-xs">
           <Label className="text-xs">Modo de aplicación</Label>
           <div className="mt-1 flex flex-col gap-1">
             <label className="flex items-start gap-2">
               <input
                 type="radio"
-                name="rejection-mode"
+                name={rejectionModeName}
                 className="mt-0.5"
                 checked={!draft.rejection_sampling}
                 onChange={() => update({ rejection_sampling: false })}
               />
               <span className="flex flex-1 items-start gap-1.5">
                 <span>
-                  <span className="font-medium">Forzado</span>
+                  <span className="font-medium">Determinista</span>
                   <span className="ml-1 text-muted-foreground">
-                    — aplicar la regla durante el preprocesado/postprocesado.
+                    — reconstrucción automática vía columnas auxiliares (PRE/POST).
                   </span>
                 </span>
                 <Tooltip
                   side="right"
-                  content="Eficiente computacionalmente: la regla se aplica de forma determinista. Riesgo: si los datos reales no cumplen la regla, al forzarla se distorsionan las distribuciones para que se cumpla por construcción — los datos sintéticos dejan de reflejar la realidad."
+                  content="El modelo aprende sobre una columna auxiliar continua; durante POST se reconstruye la columna original de forma determinista. Eficiente, pero si los datos reales no cumplen la regla las distribuciones se ajustan por construcción."
                 />
               </span>
             </label>
             <label className="flex items-start gap-2">
               <input
                 type="radio"
-                name="rejection-mode"
+                name={rejectionModeName}
                 className="mt-0.5"
                 checked={!!draft.rejection_sampling}
                 onChange={() => update({ rejection_sampling: true })}
@@ -1137,21 +1487,76 @@ function RuleForm({
   );
 }
 
+// Encoding-type sets used to filter "Columna objetivo" by rule type.
+// date_to_age needs a date/datetime origin; numeric_threshold and
+// numeric_bucket need a numeric origin.
+const DATE_ENCODING_TYPES = new Set([
+  "TABULAR_DATETIME",
+  "TABULAR_DATETIME_RELATIVE",
+  "LANGUAGE_DATETIME",
+]);
+const NUMERIC_ENCODING_TYPES = new Set([
+  "TABULAR_NUMERIC_AUTO",
+  "TABULAR_NUMERIC_DISCRETE",
+  "TABULAR_NUMERIC_BINNED",
+  "TABULAR_NUMERIC_DIGIT",
+]);
+
 function DerivedRuleFields({
   draft,
   update,
   tableNames,
   columnsByTable,
+  autodetect,
 }: {
   draft: Rule;
   update: (patch: Partial<Rule>) => void;
   tableNames: string[];
   columnsByTable: Record<string, string[]>;
+  autodetect?: Autodetect | null;
 }) {
-  const targetCols = draft.table_target
+  const allCols = draft.table_target
     ? (columnsByTable[draft.table_target] ?? [])
     : [];
+
+  // Filter the column list by encoding type when autodetect is available.
+  // Falls back to the full list if no encoding info exists for this table.
+  const targetCols = (() => {
+    const encTypes =
+      autodetect?.encoding_types?.[draft.table_target ?? ""] ?? {};
+    const hasEnc = Object.keys(encTypes).length > 0;
+    if (!hasEnc) return allCols;
+    const allowed =
+      draft.type === "date_to_age"
+        ? DATE_ENCODING_TYPES
+        : draft.type === "numeric_threshold" || draft.type === "numeric_bucket"
+          ? NUMERIC_ENCODING_TYPES
+          : null;
+    if (!allowed) return allCols;
+    return allCols.filter((c) => encTypes[c] === undefined || allowed.has(encTypes[c]));
+  })();
+
   const hasSchema = tableNames.length > 0;
+
+  const [binsStr, setBinsStr] = useState(() => (draft.bins ?? []).join(", "));
+  const [labelsStr, setLabelsStr] = useState(() => (draft.labels ?? []).join(", "));
+
+  // Helper function to prevent unnecessary parent updates
+  const areArraysEqual = (a: any[] | undefined, b: any[] | undefined) => {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    if (a.length !== b.length) return false;
+    return a.every((val, idx) => val === b[idx]);
+  };
+
+  // 2. Sync local state if external draft changes (e.g., switching rules)
+  useEffect(() => {
+    setBinsStr((draft.bins ?? []).join(", "));
+  }, [draft.bins]);
+
+  useEffect(() => {
+    setLabelsStr((draft.labels ?? []).join(", "));
+  }, [draft.labels]);
 
   return (
     <div className="space-y-3">
@@ -1159,17 +1564,17 @@ function DerivedRuleFields({
         <div>
           <Label className="text-xs">Tabla objetivo</Label>
           {hasSchema ? (
-            <select
+            <NativeSelect
               value={draft.table_target ?? ""}
-              onChange={(e) =>
+              onValueChange={(v) =>
                 update({
-                  table_target: e.target.value,
+                  table_target: v,
                   origin_col: undefined,
                   reference_date_col: undefined,
                   reference_date_table: undefined,
                 })
               }
-              className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+              className="mt-1 h-8 rounded-lg"
             >
               <option value="">— elegir —</option>
               {tableNames.map((t) => (
@@ -1177,7 +1582,7 @@ function DerivedRuleFields({
                   {t}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           ) : (
             <Input
               value={draft.table_target ?? ""}
@@ -1202,10 +1607,10 @@ function DerivedRuleFields({
             )}
           </Label>
           {hasSchema && targetCols.length > 0 ? (
-            <select
+            <NativeSelect
               value={draft.origin_col ?? ""}
-              onChange={(e) => update({ origin_col: e.target.value })}
-              className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+              onValueChange={(v) => update({ origin_col: v })}
+              className="mt-1 h-8 rounded-lg"
             >
               <option value="">— elegir —</option>
               {targetCols.map((c) => (
@@ -1213,7 +1618,7 @@ function DerivedRuleFields({
                   {c}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           ) : (
             <Input
               value={draft.origin_col ?? ""}
@@ -1256,17 +1661,17 @@ function DerivedRuleFields({
                 content="Granularidad del valor derivado. «Años» es la opción clásica para edad. Usa «Días» o «Meses» para duraciones cortas (estancias, episodios) — de lo contrario un episodio de 5 días redondea a 0 años."
               />
             </Label>
-            <select
+            <NativeSelect
               value={draft.unit ?? "years"}
-              onChange={(e) =>
-                update({ unit: e.target.value as "years" | "months" | "days" })
+              onValueChange={(v) =>
+                update({ unit: v as "years" | "months" | "days" })
               }
-              className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+              className="mt-1 h-8 rounded-lg"
             >
               <option value="years">Años</option>
               <option value="months">Meses</option>
               <option value="days">Días</option>
-            </select>
+            </NativeSelect>
           </div>
           <div>
             <label className="flex items-center gap-2 text-sm">
@@ -1294,20 +1699,20 @@ function DerivedRuleFields({
         <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
           <div>
             <Label className="text-xs">Operador</Label>
-            <select
+            <NativeSelect
               value={draft.operator ?? ">="}
-              onChange={(e) =>
+              onValueChange={(v) =>
                 update({
-                  operator: e.target.value as ">=" | ">" | "<=" | "<",
+                  operator: v as ">=" | ">" | "<=" | "<",
                 })
               }
-              className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+              className="mt-1 h-8 rounded-lg"
             >
               <option value=">=">≥</option>
               <option value=">">&gt;</option>
               <option value="<=">≤</option>
               <option value="<">&lt;</option>
-            </select>
+            </NativeSelect>
           </div>
           <div>
             <Label className="text-xs">Umbral</Label>
@@ -1332,7 +1737,7 @@ function DerivedRuleFields({
                 onChange={(e) =>
                   update({ true_value: e.target.value || undefined })
                 }
-                placeholder="True"
+                placeholder="Verdadero"
                 className="mt-1"
               />
             </div>
@@ -1345,7 +1750,7 @@ function DerivedRuleFields({
                 onChange={(e) =>
                   update({ false_value: e.target.value || undefined })
                 }
-                placeholder="False"
+                placeholder="Falso"
                 className="mt-1"
               />
             </div>
@@ -1356,39 +1761,50 @@ function DerivedRuleFields({
       {draft.type === "numeric_bucket" && (
         <div className="space-y-2">
           <div>
-            <Label className="text-xs">Bordes de bins (coma o espacio)</Label>
+            <Label className="text-xs">Bordes de intervalo (coma o espacio)</Label>
             <Input
-              value={(draft.bins ?? []).join(", ")}
+              value={binsStr}
               onChange={(e) => {
-                const parts = e.target.value
+                const val = e.target.value;
+                setBinsStr(val);
+
+                const parts = val
                   .split(/[,\s]+/)
                   .map((s) => s.trim())
                   .filter((s) => s.length > 0);
                 const nums = parts
                   .map((s) => (s === "inf" || s === "Infinity" ? Infinity : Number(s)))
                   .filter((n) => !Number.isNaN(n));
-                update({ bins: nums });
+
+                
+                if (!areArraysEqual(nums, draft.bins)) {
+                  update({ bins: nums });
+                }
               }}
-              placeholder="0, 18, 65, Infinity"
+              placeholder="0, 18, 65, inf"
               className="mt-1 font-mono"
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Se necesitan al menos 2 valores. Usa &quot;Infinity&quot; para
+              Se necesitan al menos 2 valores. Usa <code>inf</code> para
               límites abiertos.
             </p>
           </div>
           <div>
             <Label className="text-xs">Etiquetas (opcional)</Label>
             <Input
-              value={(draft.labels ?? []).join(", ")}
+              value={labelsStr}
               onChange={(e) => {
-                const parts = e.target.value
+                const val = e.target.value;
+                setLabelsStr(val);
+                const parts = val
                   .split(",")
                   .map((s) => s.trim())
                   .filter((s) => s.length > 0);
-                update({ labels: parts.length ? parts : undefined });
+                if (!areArraysEqual(parts, draft.labels ?? [])) {
+                  update({ labels: parts.length ? parts : undefined });
+                }
               }}
-              placeholder="child, adult, senior"
+              placeholder="menor, adulto, mayor"
               className="mt-1"
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
@@ -1405,7 +1821,7 @@ function DerivedRuleFields({
                   update({ include_lowest: e.target.checked })
                 }
               />
-              include_lowest
+              Incluir borde inferior
             </label>
             <label className="flex items-center gap-2 text-xs">
               <input
@@ -1413,7 +1829,7 @@ function DerivedRuleFields({
                 checked={draft.right ?? false}
                 onChange={(e) => update({ right: e.target.checked })}
               />
-              right (bins inclusivos por la derecha)
+              Cerrado por la derecha
             </label>
           </div>
         </div>
@@ -1454,6 +1870,147 @@ function DerivedRuleFields({
             content="Solo aplica si has marcado «Eliminar columna objetivo». En la fase POST, recompone la columna objetivo a partir de la derivada (cuando es invertible: p. ej. de «edad» se puede reconstruir una fecha de nacimiento aproximada usando la fecha de referencia). Activa si quieres que la columna objetivo aparezca también en los datos sintéticos finales sin que el modelo la haya aprendido directamente. Desactiva si solo necesitas la columna derivada en el output."
           />
         </label>
+      </div>
+    </div>
+  );
+}
+
+// Form fields for date_composition: pick the canonical datetime column and
+// map each part (year/month/day/...) to the split column it should
+// reconstruct. At least one part must be set; the rest are optional.
+function DateCompositionFields({
+  draft,
+  update,
+  tableNames,
+  columnsByTable,
+}: {
+  draft: Rule;
+  update: (patch: Partial<Rule>) => void;
+  tableNames: string[];
+  columnsByTable: Record<string, string[]>;
+}) {
+  const hasSchema = tableNames.length > 0;
+  const targetCols = draft.table_target
+    ? columnsByTable[draft.table_target] ?? []
+    : [];
+  const setPart = (part: DatePart, col: string) => {
+    const next = { ...(draft.part_cols ?? {}) } as Partial<Record<DatePart, string>>;
+    if (col) next[part] = col;
+    else delete next[part];
+    update({ part_cols: next });
+  };
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <Label className="text-xs">Tabla</Label>
+          {hasSchema ? (
+            <NativeSelect
+              value={draft.table_target ?? ""}
+              onValueChange={(v) =>
+                update({
+                  table_target: v,
+                  canonical_col: undefined,
+                  part_cols: undefined,
+                })
+              }
+              className="mt-1 h-8 rounded-lg"
+            >
+              <option value="">— elegir —</option>
+              {tableNames.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </NativeSelect>
+          ) : (
+            <Input
+              value={draft.table_target ?? ""}
+              onChange={(e) => update({ table_target: e.target.value })}
+              placeholder="nombre de tabla"
+              className="mt-1"
+            />
+          )}
+        </div>
+        <div>
+          <Label className="text-xs">
+            Fecha canónica
+            <Tooltip
+              side="top"
+              content="Columna con la fecha (o fecha-hora) completa. Las columnas de partes (año/mes/día...) se eliminan del entreno y se reconstruyen tras la generación desde esta columna."
+            />
+          </Label>
+          {hasSchema && targetCols.length > 0 ? (
+            <NativeSelect
+              value={draft.canonical_col ?? ""}
+              onValueChange={(v) =>
+                update({ canonical_col: v || undefined })
+              }
+              className="mt-1 h-8 rounded-lg"
+            >
+              <option value="">— elegir —</option>
+              {targetCols.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </NativeSelect>
+          ) : (
+            <Input
+              value={draft.canonical_col ?? ""}
+              onChange={(e) =>
+                update({ canonical_col: e.target.value || undefined })
+              }
+              placeholder="nombre de columna"
+              className="mt-1"
+            />
+          )}
+        </div>
+      </div>
+
+      <div>
+        <Label className="text-xs">
+          Columnas componente (al menos una)
+          <Tooltip
+            side="top"
+            content="Para cada parte que aparezca como columna separada en tus datos, indica la columna correspondiente. Se eliminarán en preprocesado y se rederivarán deterministamente desde la fecha canónica al final."
+          />
+        </Label>
+        <div className="mt-1 grid grid-cols-1 gap-2">
+          {DATE_PART_NAMES.map((part) => {
+            const value = draft.part_cols?.[part] ?? "";
+            return (
+              <div key={part}>
+                <Label className="text-[11px] text-muted-foreground">
+                  {DATE_PART_LABELS[part]}
+                </Label>
+                {hasSchema && targetCols.length > 0 ? (
+                  <NativeSelect
+                    value={value}
+                    onValueChange={(v) => setPart(part, v)}
+                    className="mt-1 h-8 rounded-lg"
+                  >
+                    <option value="">— ninguna —</option>
+                    {targetCols
+                      .filter((c) => c !== draft.canonical_col)
+                      .map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                  </NativeSelect>
+                ) : (
+                  <Input
+                    value={value}
+                    onChange={(e) => setPart(part, e.target.value)}
+                    placeholder="nombre de columna"
+                    className="mt-1"
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1571,17 +2128,16 @@ function DateToAgeReferenceFields({
           <div>
             <Label className="text-xs">Tabla</Label>
             {hasSchema ? (
-              <select
+              <NativeSelect
                 value={refTable}
-                onChange={(e) => {
-                  const t = e.target.value;
+                onValueChange={(t) => {
                   update({
                     reference_date_table:
                       t && t !== draft.table_target ? t : undefined,
                     reference_date_col: undefined,
                   });
                 }}
-                className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                className="mt-1 h-8 rounded-lg"
               >
                 {tableNames.map((t) => (
                   <option key={t} value={t}>
@@ -1589,7 +2145,7 @@ function DateToAgeReferenceFields({
                     {t === draft.table_target ? " (misma tabla)" : ""}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             ) : (
               <Input
                 value={refTable}
@@ -1610,12 +2166,12 @@ function DateToAgeReferenceFields({
           <div>
             <Label className="text-xs">Columna</Label>
             {hasSchema && refTableCols.length > 0 ? (
-              <select
+              <NativeSelect
                 value={draft.reference_date_col ?? ""}
-                onChange={(e) =>
-                  update({ reference_date_col: e.target.value || undefined })
+                onValueChange={(v) =>
+                  update({ reference_date_col: v || undefined })
                 }
-                className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                className="mt-1 h-8 rounded-lg"
               >
                 <option value="">— elegir —</option>
                 {refTableCols.map((c) => (
@@ -1623,7 +2179,7 @@ function DateToAgeReferenceFields({
                     {c}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             ) : (
               <Input
                 value={draft.reference_date_col ?? ""}
@@ -1675,10 +2231,10 @@ function TableColumnPicker({
       <div>
         <Label className="text-xs">{label}</Label>
         {hasSchema ? (
-          <select
+          <NativeSelect
             value={table ?? ""}
-            onChange={(e) => onChangeTable(e.target.value)}
-            className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+            onValueChange={onChangeTable}
+            className="mt-1 h-8 rounded-lg"
           >
             <option value="">— elegir —</option>
             {tableNames.map((t) => (
@@ -1686,7 +2242,7 @@ function TableColumnPicker({
                 {t}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         ) : (
           <Input
             value={table ?? ""}
@@ -1700,10 +2256,10 @@ function TableColumnPicker({
         <div>
           <Label className="text-xs">{columnLabel}</Label>
           {hasSchema && cols.length > 0 ? (
-            <select
+            <NativeSelect
               value={column ?? ""}
-              onChange={(e) => onChangeColumn(e.target.value)}
-              className="mt-1 h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+              onValueChange={onChangeColumn}
+              className="mt-1 h-8 rounded-lg"
             >
               <option value="">— elegir —</option>
               {cols.map((c) => (
@@ -1711,7 +2267,7 @@ function TableColumnPicker({
                   {c}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           ) : (
             <Input
               value={column ?? ""}

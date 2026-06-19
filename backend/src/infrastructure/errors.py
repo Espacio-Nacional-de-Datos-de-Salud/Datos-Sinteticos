@@ -28,6 +28,38 @@ class TrainingJobFailedError(Exception):
     (e.g. ``HTTP 400: Cannot export generator that is not trained``)."""
 
 
+class InsufficientTrainingDataError(TrainingJobFailedError):
+    """A table has too little data to train a usable model.
+
+    Raised by the pre-flight check *before* a job starts, so the user gets a
+    concise, actionable reason instead of an opaque engine crash deep inside
+    training (e.g. ``batch_size should be a positive integer value, but got
+    batch_size=0`` when a sequential table has too few subject rows). Subclasses
+    :class:`TrainingJobFailedError` so existing failure handling still applies."""
+
+
+class InvalidBatchSizeError(TrainingJobFailedError):
+    """The configured batch size is too small to train.
+
+    Raised by the pre-flight check when ``model_settings.batch_size`` is below
+    the minimum the engine can use. MostlyAI halves the batch size for the
+    validation split, so a value of 1 underflows to 0 and training crashes with
+    ``batch_size should be a positive integer value, but got batch_size=0`` — no
+    matter how much data is present. This is a property of the *setting*, not the
+    data. Subclasses :class:`TrainingJobFailedError` so existing failure handling
+    still applies."""
+
+
+class UnsupportedTrainingConfigurationError(TrainingJobFailedError):
+    """The requested training configuration hits a known engine limitation.
+
+    Raised by the pre-flight check when the table layout plus model settings
+    match a combination the engine cannot train (e.g. differential privacy on
+    three or more related tables linked through context keys, which crashes
+    inside Opacus/PyTorch). Subclasses :class:`TrainingJobFailedError` so
+    existing failure handling still applies."""
+
+
 class RelationshipNotDefinedError(Exception):
     """There is no defined relationship between two tables."""
 

@@ -159,6 +159,10 @@ def list_available_simulations() -> list[dict]:
             "timestamp": "",
             "model_id": None,
             "sample_size": None,
+            "mother_table": None,
+            "mother_table_size": None,
+            "target_table": None,
+            "target_table_rows": None,
             "tables": "",
             "training_table_sizes": {},
             "relationships": [],
@@ -176,9 +180,14 @@ def list_available_simulations() -> list[dict]:
                     "simulation_id"
                 )
                 sim_info["status"] = card.get("status", "")
+                sim_info["error_message"] = card.get("error_message")
                 sim_info["timestamp"] = card.get("timestamp", "")
                 sim_info["model_id"] = card.get("model_id")
                 sim_info["sample_size"] = card.get("sample_size")
+                sim_info["mother_table"] = card.get("mother_table")
+                sim_info["mother_table_size"] = card.get("mother_table_size")
+                sim_info["target_table"] = card.get("target_table")
+                sim_info["target_table_rows"] = card.get("target_table_rows")
                 sim_info["progress"] = card.get("progress")
             except Exception as exc:
                 logger.warning("Error reading sim_card from %s: %s", folder, exc)

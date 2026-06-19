@@ -158,9 +158,6 @@ def apply_inspection_rules(
     rule_manager_path = os.path.join(output_directory, INSPECTION_RULE_MANAGER_FILENAME)
     write_json(rule_manager_path, serialize_logical_rule_manager_to_dict(rule_manager), indent=2)
 
-    card["rules_pre_applied"] = True
-    write_json(card_path, card)
-
     return {
         "inspection_id": inspection_id,
         "rules_config_path": resolved_rules_path,

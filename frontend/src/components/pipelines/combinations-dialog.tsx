@@ -25,7 +25,7 @@ import { Layers, Plus, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SELECT_CLASS } from "@/lib/ui";
+import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 
 import {
@@ -351,16 +351,16 @@ export function CombinationsDialog({
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Formato de salida</Label>
-                    <select
-                      className={SELECT_CLASS}
+                    <NativeSelect
+                      className="h-9"
                       value={format}
-                      onChange={(e) =>
-                        setFormat(e.target.value as SyntheticDataFileFormat)
+                      onValueChange={(v) =>
+                        setFormat(v as SyntheticDataFileFormat)
                       }
                     >
                       <option value="csv">csv</option>
                       <option value="parquet">parquet</option>
-                    </select>
+                    </NativeSelect>
                   </div>
                 </div>
               </section>
@@ -416,7 +416,7 @@ export function CombinationsDialog({
               </div>
               <div className="mt-1 text-sm font-semibold">
                 {totalJobs > 0
-                  ? `Se generarán ${totalJobs} jobs`
+                  ? `Se generarán ${totalJobs} trabajos`
                   : "Aún no hay valores suficientes"}
                 {totalJobs > 0 && effectiveAxes.length > 1 && (
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
@@ -482,7 +482,7 @@ const HEAD_AXIS_FIELDS = new Set<AxisField>([
 
 function headValueHint(field: AxisField, count: number): string {
   const single = AXIS_LABELS[field];
-  if (count <= 1) return `${single} (1 valor = compartido en todos los jobs)`;
+  if (count <= 1) return `${single} (1 valor = compartido en todos los trabajos)`;
   return `${single} — ${count} valores · será un eje de variación`;
 }
 
@@ -550,11 +550,11 @@ function AxisRow({
   return (
     <div className="space-y-2 rounded-md border border-border bg-background p-3">
       <div className="flex items-center gap-2">
-        <select
-          className={SELECT_CLASS}
+        <NativeSelect
+          className="h-9 w-auto min-w-0 flex-1"
           value={axis.field}
-          onChange={(e) =>
-            onChange({ field: e.target.value as AxisField, values: [] })
+          onValueChange={(v) =>
+            onChange({ field: v as AxisField, values: [] })
           }
         >
           {fieldOptions.map((f) => (
@@ -562,7 +562,7 @@ function AxisRow({
               {AXIS_LABELS[f]}
             </option>
           ))}
-        </select>
+        </NativeSelect>
         <button
           type="button"
           aria-label="Quitar eje"

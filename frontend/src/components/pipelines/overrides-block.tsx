@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MOSTLY_AI_MODELS, type JobOverrides } from "@/components/pipelines/types";
 import type { ConfigFile } from "@/lib/api";
-import { SELECT_CLASS } from "@/lib/ui";
+import { NativeSelect } from "@/components/ui/native-select";
 
 const TRI_OPTIONS: { value: "" | "true" | "false"; label: string }[] = [
   { value: "", label: "Por defecto" },
@@ -74,10 +74,10 @@ export function OverridesBlock({
                 {overrides.rules_config ? "Editar selección" : "Editar reglas globales"}
               </button>
             </div>
-            <select
-              className={SELECT_CLASS}
+            <NativeSelect
+              className="h-9"
               value={overrides.rules_config}
-              onChange={(e) => setOverride("rules_config", e.target.value)}
+              onValueChange={(v) => setOverride("rules_config", v)}
             >
               <option value="">Usar reglas globales (rules.yaml)</option>
               {rulesConfigs.map((r) => (
@@ -85,7 +85,7 @@ export function OverridesBlock({
                   {r.id}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           {/* Mostly AI — model_settings.* */}
@@ -96,10 +96,10 @@ export function OverridesBlock({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Modelo</Label>
-                <select
-                  className={SELECT_CLASS}
+                <NativeSelect
+                  className="h-9"
                   value={overrides.model}
-                  onChange={(e) => setOverride("model", e.target.value)}
+                  onValueChange={(v) => setOverride("model", v)}
                 >
                   <option value="">Por defecto</option>
                   {MOSTLY_AI_MODELS.map((m) => (
@@ -107,7 +107,7 @@ export function OverridesBlock({
                       {m}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">max_epochs</Label>
@@ -123,21 +123,28 @@ export function OverridesBlock({
                 <Label className="text-xs">batch_size</Label>
                 <Input
                   type="number"
-                  min={1}
+                  min={2}
                   placeholder="por defecto"
                   value={overrides.batch_size}
                   onChange={(e) => setOverride("batch_size", e.target.value)}
+                  // Mínimo 2: el motor divide el batch a la mitad para la
+                  // validación y un valor de 1 haría fallar el entrenamiento.
+                  // Se ajusta al perder el foco (no por tecla, que rompería "10").
+                  onBlur={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isFinite(n) && n < 2) setOverride("batch_size", "2");
+                  }}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">enable_flexible_generation</Label>
-                <select
-                  className={SELECT_CLASS}
+                <NativeSelect
+                  className="h-9"
                   value={overrides.enable_flexible_generation}
-                  onChange={(e) =>
+                  onValueChange={(v) =>
                     setOverride(
                       "enable_flexible_generation",
-                      e.target.value as "" | "true" | "false",
+                      v as "" | "true" | "false",
                     )
                   }
                 >
@@ -146,26 +153,7 @@ export function OverridesBlock({
                       {o.label}
                     </option>
                   ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">enable_model_report</Label>
-                <select
-                  className={SELECT_CLASS}
-                  value={overrides.enable_model_report}
-                  onChange={(e) =>
-                    setOverride(
-                      "enable_model_report",
-                      e.target.value as "" | "true" | "false",
-                    )
-                  }
-                >
-                  {TRI_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+                </NativeSelect>
               </div>
             </div>
 
@@ -210,13 +198,13 @@ export function OverridesBlock({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">enable_data_profiling</Label>
-                <select
-                  className={SELECT_CLASS}
+                <NativeSelect
+                  className="h-9"
                   value={overrides.enable_data_profiling}
-                  onChange={(e) =>
+                  onValueChange={(v) =>
                     setOverride(
                       "enable_data_profiling",
-                      e.target.value as "" | "true" | "false",
+                      v as "" | "true" | "false",
                     )
                   }
                 >
@@ -225,7 +213,7 @@ export function OverridesBlock({
                       {o.label}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">default_csv_delimiter</Label>

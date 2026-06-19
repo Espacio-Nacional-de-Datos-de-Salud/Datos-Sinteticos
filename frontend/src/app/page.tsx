@@ -8,12 +8,13 @@ import {
   ArrowRight,
   ArrowUp,
   BookOpen,
-  Brain,
   ChevronDown,
   ChevronRight,
   Database,
   FileCog,
   Layers3,
+  Library,
+  ListChecks,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -21,6 +22,9 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { WorkflowDiagram } from "@/components/landing/workflow-diagram";
+import { IconLegend } from "@/components/landing/icon-legend";
+import { InfoGroup } from "@/components/landing/info-group";
 
 type SectionData = {
   id: string;
@@ -30,7 +34,54 @@ type SectionData = {
   Icon: LucideIcon;
 };
 
-const CONTENT_SECTIONS: SectionData[] = [
+const LIBRARIES = [
+  {
+    name: "MostlyAI",
+    logo: "/logos/mostlyai.png",
+    desc: "Motor de generación de datos sintéticos tabulares mediante deep learning.",
+    href: "https://mostly.ai/",
+  },
+  {
+    name: "FastAPI",
+    logo: "/logos/fastapi.svg",
+    desc: "Framework que expone la API del backend de la herramienta.",
+    href: "https://fastapi.tiangolo.com/",
+  },
+  {
+    name: "pandas",
+    logo: "/logos/pandas.svg",
+    desc: "Manipulación y análisis de los datos tabulares.",
+    href: "https://pandas.pydata.org/",
+  },
+  {
+    name: "ydata-profiling",
+    logo: "/logos/ydata.png",
+    desc: "Generación de los informes de profiling exploratorio.",
+    href: "https://github.com/ydataai/ydata-profiling",
+  },
+  {
+    name: "Next.js",
+    logo: "/logos/nextdotjs.svg",
+    desc: "Framework de React sobre el que se construye esta interfaz.",
+    href: "https://nextjs.org/",
+  },
+  {
+    name: "Tailwind CSS",
+    logo: "/logos/tailwindcss.svg",
+    desc: "Sistema de estilos de la interfaz de usuario.",
+    href: "https://tailwindcss.com/",
+  },
+] as const;
+
+const ALL_SECTIONS: SectionData[] = [
+  {
+    id: "guia-iconos",
+    title: "Guía de iconos",
+    summary:
+      "Referencia de los iconos y controles globales de la herramienta: dónde encontrarlos y qué hacen o indican.",
+    content: null,
+    Icon: ListChecks,
+  },
   {
     id: "flujo-de-trabajo",
     title: "Flujo de trabajo",
@@ -52,11 +103,6 @@ const CONTENT_SECTIONS: SectionData[] = [
           clásicos, MostlyAI aprende distribuciones conjuntas de columnas, relaciones entre tablas y
           dependencias temporales, produciendo datos que se comportan como los originales en análisis
           posteriores.
-        </p>
-        <p>
-          El motor incluye mecanismos de privacidad diferencial y genera automáticamente un{" "}
-          <strong>informe de calidad</strong> que cuantifica la fidelidad estadística y el riesgo de
-          re-identificación de cada modelo entrenado.
         </p>
       </div>
     ),
@@ -110,10 +156,6 @@ const CONTENT_SECTIONS: SectionData[] = [
           {
             term: "Utilidad",
             def: "Medida del rendimiento de modelos predictivos entrenados sobre datos sintéticos frente a los entrenados sobre datos reales. Alta utilidad implica que los datos sintéticos son un sustituto válido.",
-          },
-          {
-            term: "Informe de calidad",
-            def: "Documento generado automáticamente por MostlyAI tras cada entrenamiento que detalla las métricas de fidelidad y privacidad del modelo, permitiendo validar su idoneidad antes de usar los datos.",
           },
           {
             term: "Integridad referencial",
@@ -186,10 +228,6 @@ const CONTENT_SECTIONS: SectionData[] = [
           {
             title: "Generación condicional",
             desc: "Fija valores de determinadas columnas en la generación para producir subconjuntos de datos que cumplen condiciones específicas de negocio.",
-          },
-          {
-            title: "Control de tamaños de muestra",
-            desc: "Define el número exacto de filas a generar por tabla, independientemente del tamaño del conjunto de entrenamiento.",
           },
           {
             title: "Configuración del modelo",
@@ -287,35 +325,83 @@ const CONTENT_SECTIONS: SectionData[] = [
     ),
     Icon: FileCog,
   },
+  {
+    id: "tecnologias",
+    title: "Tecnologías y librerías",
+    summary:
+      "La herramienta se apoya en librerías de código abierto consolidadas en la comunidad de ciencia de datos y desarrollo web.",
+    content: (
+      <div className="space-y-4">
+        <p>
+          Esta herramienta combina librerías de código abierto ampliamente adoptadas, tanto para el
+          procesamiento y la generación de los datos como para la interfaz web. Estas son las
+          principales:
+        </p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {LIBRARIES.map((lib) => (
+            <a
+              key={lib.name}
+              href={lib.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex flex-col items-center gap-3 rounded-xl border border-[#d8e3f4] bg-white p-4 text-center shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#114da6]/40 hover:shadow-md dark:border-border dark:bg-card"
+            >
+              <span className="flex h-14 w-14 items-center justify-center rounded-lg bg-white p-2 ring-1 ring-black/5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={lib.logo}
+                  alt={`Logo de ${lib.name}`}
+                  className="h-full w-full object-contain"
+                  loading="lazy"
+                />
+              </span>
+              <span>
+                <span className="block text-sm font-semibold text-[#00215C] dark:text-white">
+                  {lib.name}
+                </span>
+                <span className="mt-1 block text-xs leading-relaxed text-slate-500 dark:text-muted-foreground">
+                  {lib.desc}
+                </span>
+              </span>
+            </a>
+          ))}
+        </div>
+      </div>
+    ),
+    Icon: Library,
+  },
 ];
 
-const WORKFLOW_STEPS = [
+// Purely descriptive sections (the Q&A / conceptual blocks) are collapsed into a
+// single group so the landing page doesn't sprawl. The interactive pieces
+// (icon guide, workflow) and the tech stack stay as their own top-level cards.
+const INFO_IDS = new Set([
+  "generador",
+  "que-son",
+  "conceptos-basicos",
+  "usos-principales",
+  "configuraciones-avanzadas",
+  "consideraciones",
+  "casos-de-uso",
+]);
+
+const INFO_SUBSECTIONS = ALL_SECTIONS.filter((s) => INFO_IDS.has(s.id));
+
+const byId = (id: string) => ALL_SECTIONS.find((s) => s.id === id)!;
+
+const CONTENT_SECTIONS: SectionData[] = [
+  byId("flujo-de-trabajo"),
+  byId("guia-iconos"),
   {
-    title: "Carga de Datos",
-    text: "Análisis inicial de tablas, claves, tipos y estructura de los datos de entrada.",
-    Icon: Database,
-  },
-  {
-    title: "Profiling",
-    text: "Lectura visual de informes para entender tablas, distribuciones y anomalías.",
+    id: "conceptos",
+    title: "Información y conceptos",
+    summary:
+      "Todo lo que conviene saber sobre los datos sintéticos: qué son, cómo funcionan, usos, configuraciones avanzadas, limitaciones y casos de uso.",
+    content: null,
     Icon: BookOpen,
   },
-  {
-    title: "Entrenamiento",
-    text: "Configuración y entrenamiento del generador a partir de una carga de datos validada.",
-    Icon: Brain,
-  },
-  {
-    title: "Generación",
-    text: "Producción de datos sintéticos con controles de tamaño, formato y condiciones.",
-    Icon: Sparkles,
-  },
-  {
-    title: "Auditoría",
-    text: "Evaluación final de utilidad, calidad y privacidad del resultado sintético.",
-    Icon: ShieldCheck,
-  },
-] as const;
+  byId("tecnologias"),
+];
 
 export default function LandingPage() {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
@@ -323,6 +409,9 @@ export default function LandingPage() {
   );
   const [activeId, setActiveId] = useState<string>(CONTENT_SECTIONS[0].id);
   const [showScrollHint, setShowScrollHint] = useState(true);
+  // Floating "Volver arriba" button — shown once the user has scrolled past the
+  // hero so it's reachable at any point, not just at the end of the page.
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lockUntilRef = useRef(0);
 
@@ -330,7 +419,10 @@ export default function LandingPage() {
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
-    const onScroll = () => setShowScrollHint(container.scrollTop < 80);
+    const onScroll = () => {
+      setShowScrollHint(container.scrollTop < 80);
+      setShowBackToTop(container.scrollTop > 320);
+    };
     onScroll();
     container.addEventListener("scroll", onScroll, { passive: true });
     return () => container.removeEventListener("scroll", onScroll);
@@ -393,7 +485,7 @@ export default function LandingPage() {
                 Generador de datos sintéticos tabulares del ENDS
               </h1>
               <p className="max-w-3xl text-base leading-8 text-white/76">
-                Bienvenido a la herramienta de generación de datos sintéticos impulsada por el ENDS.
+                Bienvenido a la herramienta de generación de datos sintéticos impulsada por el Espacio Nacional de Datos de Salud (ENDS).
                 Esta plataforma te permite crear conjuntos de datos sintéticos realistas y seguros,
                 ideales para investigación, desarrollo y testeo, sin comprometer la privacidad de los
                 datos reales.
@@ -408,13 +500,6 @@ export default function LandingPage() {
             >
               Empezar flujo
               <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link
-              href="/panel"
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/24 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/16"
-            >
-              Abrir panel
-              <Workflow className="h-4 w-4" />
             </Link>
           </div>
         </div>
@@ -439,15 +524,15 @@ export default function LandingPage() {
       </section>
 
       {/* ── Sticky tab bar ── */}
-      <div className="sticky top-0 z-20 border-b border-border/70 bg-background/95 px-8 py-4 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-wrap gap-2">
+      <div className="sticky top-0 z-20 border-b border-border/70 bg-background/95 px-8 py-2 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl flex-wrap gap-1.5">
           {CONTENT_SECTIONS.map((section) => (
             <button
               key={section.id}
               type="button"
               onClick={() => scrollToSection(section.id)}
               className={cn(
-                "rounded-full border px-3 py-1.5 text-sm transition-colors",
+                "rounded-full border px-2.5 py-1 text-xs transition-colors",
                 activeId === section.id
                   ? "border-primary bg-accent text-accent-foreground"
                   : "border-border bg-card text-muted-foreground hover:bg-accent/70 hover:text-foreground",
@@ -460,105 +545,62 @@ export default function LandingPage() {
       </div>
 
       {/* ── Content area ── */}
-      <div className="mx-auto w-full max-w-7xl space-y-5 px-8 py-8">
-          {CONTENT_SECTIONS.map((section) => {
-            const Icon = section.Icon;
-            const isOpen = openSections[section.id];
-            return (
-              <section
-                key={section.id}
-                id={section.id}
-                className="scroll-mt-28 rounded-3xl border border-[#d8e3f4] bg-white/92 shadow-[0_18px_48px_rgba(0,33,92,0.08)] backdrop-blur dark:border-border dark:bg-card dark:shadow-[0_18px_48px_rgba(0,0,0,0.4)]"
+      <div className="mx-auto w-full max-w-7xl space-y-3 px-8 py-6">
+        {CONTENT_SECTIONS.map((section) => {
+          const Icon = section.Icon;
+          const isOpen = openSections[section.id];
+          return (
+            <section
+              key={section.id}
+              id={section.id}
+              className="scroll-mt-28 rounded-2xl border border-[#d8e3f4] bg-white/92 shadow-[0_12px_32px_rgba(0,33,92,0.06)] backdrop-blur dark:border-border dark:bg-card dark:shadow-[0_12px_32px_rgba(0,0,0,0.4)]"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenSections((prev) => ({ ...prev, [section.id]: !prev[section.id] }));
+                  requestAnimationFrame(() => {
+                    document
+                      .getElementById(section.id)
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  });
+                }}
+                className="flex w-full items-center justify-between gap-4 px-5 py-3.5 text-left"
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenSections((prev) => ({ ...prev, [section.id]: !prev[section.id] }));
-                    requestAnimationFrame(() => {
-                      document
-                        .getElementById(section.id)
-                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    });
-                  }}
-                  className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left"
-                >
-                  <div className="flex min-w-0 items-center gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#00215C] text-[#FFDB00] dark:bg-[#FFDB00] dark:text-[#00215C]">
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <h2 className="text-2xl font-bold text-[#00215C] dark:text-white">{section.title}</h2>
-                      <p className="mt-1 text-sm text-slate-600 dark:text-muted-foreground">{section.summary}</p>
-                    </div>
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#00215C] text-[#FFDB00] dark:bg-[#FFDB00] dark:text-[#00215C]">
+                    <Icon className="h-4 w-4" />
                   </div>
-                  {isOpen ? (
-                    <ChevronDown className="h-5 w-5 shrink-0 text-[#114da6] dark:text-[#FFDB00]" />
-                  ) : (
-                    <ChevronRight className="h-5 w-5 shrink-0 text-[#114da6] dark:text-[#FFDB00]" />
-                  )}
-                </button>
-
-                {isOpen && (
-                  <div className="border-t border-border/70 px-6 py-6">
-                    {section.id === "flujo-de-trabajo" ? (
-                      <div>
-                        {/* Desktop: numbered nodes on a connecting track */}
-                        <div className="relative hidden lg:flex">
-                          {/* Solid connecting line behind the circles */}
-                          <div className="absolute left-[10%] right-[10%] top-6 h-0.5 bg-[#c9d7ec] dark:bg-border" />
-                          {WORKFLOW_STEPS.map((step, index) => {
-                            const StepIcon = step.Icon;
-                            return (
-                              <div
-                                key={step.title}
-                                className="relative flex flex-1 flex-col items-center px-3 text-center"
-                              >
-                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#00215C] text-base font-bold text-white ring-4 ring-white dark:bg-[#FFDB00] dark:text-[#00215C] dark:ring-card">
-                                  {index + 1}
-                                </div>
-                                <div className="mt-3 flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef3ff] text-[#114da6] dark:bg-accent dark:text-[#FFDB00]">
-                                  <StepIcon className="h-4 w-4" />
-                                </div>
-                                <h3 className="mb-1 mt-2 text-sm font-semibold text-[#00215C] dark:text-white">
-                                  {step.title}
-                                </h3>
-                                <p className="text-xs leading-relaxed text-slate-500 dark:text-muted-foreground">{step.text}</p>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {/* Mobile: vertical numbered list */}
-                        <div className="flex flex-col gap-3 lg:hidden">
-                          {WORKFLOW_STEPS.map((step, index) => {
-                            const StepIcon = step.Icon;
-                            return (
-                              <div key={step.title} className="flex items-start gap-3">
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#00215C] text-sm font-bold text-white dark:bg-[#FFDB00] dark:text-[#00215C]">
-                                  {index + 1}
-                                </span>
-                                <div className="flex-1 rounded-xl border border-[#d7e1f0] bg-white p-3 shadow-sm dark:border-border dark:bg-card">
-                                  <div className="mb-1 flex items-center justify-between">
-                                    <h3 className="text-sm font-semibold text-[#00215C] dark:text-white">{step.title}</h3>
-                                    <StepIcon className="h-4 w-4 shrink-0 text-[#114da6] dark:text-[#FFDB00]" />
-                                  </div>
-                                  <p className="text-xs leading-relaxed text-slate-500 dark:text-muted-foreground">{step.text}</p>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-[#d8e3f4] bg-[#f7fbff] p-5 text-sm leading-7 text-slate-700 dark:border-border dark:bg-accent/40 dark:text-muted-foreground">
-                        {section.content}
-                      </div>
-                    )}
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-bold text-[#00215C] dark:text-white">{section.title}</h2>
+                    <p className="mt-0.5 text-xs text-slate-600 dark:text-muted-foreground">{section.summary}</p>
                   </div>
+                </div>
+                {isOpen ? (
+                  <ChevronDown className="h-5 w-5 shrink-0 text-[#114da6] dark:text-[#FFDB00]" />
+                ) : (
+                  <ChevronRight className="h-5 w-5 shrink-0 text-[#114da6] dark:text-[#FFDB00]" />
                 )}
-              </section>
-            );
-          })}
+              </button>
+
+              {isOpen && (
+                <div className="border-t border-border/70 px-5 py-4">
+                  {section.id === "guia-iconos" ? (
+                    <IconLegend />
+                  ) : section.id === "flujo-de-trabajo" ? (
+                    <WorkflowDiagram />
+                  ) : section.id === "conceptos" ? (
+                    <InfoGroup sections={INFO_SUBSECTIONS} />
+                  ) : (
+                    <div className="rounded-2xl border border-[#d8e3f4] bg-[#f7fbff] p-5 text-sm leading-7 text-slate-700 dark:border-border dark:bg-accent/40 dark:text-muted-foreground">
+                      {section.content}
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          );
+        })}
 
         {/* Back-to-top: closes the page so the user doesn't have to scroll
             all the way back up the long content column by hand. */}
@@ -573,6 +615,23 @@ export default function LandingPage() {
           </button>
         </div>
       </div>
+
+      {/* Floating back-to-top — appears once scrolled past the hero so the
+          action is reachable at any scroll position, not only at the page end. */}
+      <button
+        type="button"
+        onClick={scrollToTop}
+        aria-label="Volver arriba"
+        className={cn(
+          "fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 rounded-full border border-[#114da6]/30 bg-white px-4 py-2.5 text-sm font-semibold text-[#00215C] shadow-lg transition-all hover:bg-[#eef3ff] dark:border-border dark:bg-card dark:text-white dark:hover:bg-accent",
+          showBackToTop
+            ? "opacity-100 translate-y-0"
+            : "pointer-events-none translate-y-3 opacity-0",
+        )}
+      >
+        <ArrowUp className="h-4 w-4" />
+        Volver arriba
+      </button>
     </div>
   );
 }

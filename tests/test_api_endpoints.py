@@ -172,6 +172,42 @@ def test_upload_files_returns_saved_file_metadata(
     assert (isolated_files_root / "uploads" / "new-data.csv").exists()
 
 
+def test_upload_excel_file_returns_saved_file_metadata(
+    client: TestClient, isolated_files_root: Path
+) -> None:
+    import io
+    import pandas as pd
+    df = pd.DataFrame({"col_a": [10, 20]})
+    excel_io = io.BytesIO()
+    df.to_excel(excel_io, index=False)
+    excel_io.seek(0)
+
+    response = client.post(
+        "/files/upload",
+        files=[("files", ("test.xlsx", excel_io.read(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))],
+    )
+
+    assert response.status_code == 201
+    assert response.json()[0]["name"] == "test.xlsx"
+    assert (isolated_files_root / "uploads" / "test.xlsx").exists()
+
+    preview_response = client.post(
+        "/files/preview",
+        json={
+            "paths": [str(isolated_files_root / "uploads" / "test.xlsx")],
+            "sample_rows": 2,
+            "include_total": True
+        }
+    )
+    assert preview_response.status_code == 200
+    previews = preview_response.json()
+    assert len(previews) == 1
+    assert previews[0]["table"] == "test"
+    assert previews[0]["columns"] == ["col_a"]
+    assert previews[0]["total_rows"] == 2
+
+
+
 def test_delete_uploads_returns_removed_names(
     client: TestClient, isolated_files_root: Path
 ) -> None:

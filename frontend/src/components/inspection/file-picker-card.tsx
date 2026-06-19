@@ -8,6 +8,7 @@ import { Database, Trash2, Upload } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   Card,
   CardContent,
@@ -19,10 +20,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, getUploadStats, type DataFile } from "@/lib/api";
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { UploadStorageBar } from "./upload-storage-bar";
 import { formatSize } from "./utils";
 
-const EXT_FILTERS = ["csv", "parquet", "json"] as const;
+const EXT_FILTERS = ["csv", "parquet", "json", "xls", "xlsx"] as const;
 type ExtFilter = (typeof EXT_FILTERS)[number] | "all";
 
 // File-selection card shown at the top of the Inspección page. Owns the
@@ -54,6 +56,7 @@ export function FilePickerCard({
     "uploads",
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [showConfirmDeleteAll, setShowConfirmDeleteAll] = useState(false);
 
   const filesQuery = useQuery({
     queryKey: ["files", extFilter],
@@ -226,7 +229,7 @@ export function FilePickerCard({
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".csv,.parquet,.json"
+              accept=".csv,.parquet,.json,.xls,.xlsx"
               className="hidden"
               onChange={onFilesPicked}
             />
@@ -252,7 +255,7 @@ export function FilePickerCard({
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => deleteUploads.mutate()}
+                  onClick={() => setShowConfirmDeleteAll(true)}
                   disabled={deleteUploads.isPending}
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
@@ -264,7 +267,7 @@ export function FilePickerCard({
             <UploadStorageBar stats={uploadStatsQuery.data} />
 
             {allowServerFiles && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {(
                   [
                     ["uploads", `Subidos (${uploadCount})`],
@@ -309,16 +312,16 @@ export function FilePickerCard({
             {hasCsvSelected && (
               <div className="flex items-center gap-2 text-xs">
                 <span className="shrink-0 text-muted-foreground">Separador CSV</span>
-                <select
+                <NativeSelect
                   value={csvDelimiter}
-                  onChange={(e) => onCsvDelimiterChange(e.target.value)}
-                  className="rounded-full border border-muted bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  onValueChange={onCsvDelimiterChange}
+                  className="h-7 w-auto rounded-full border-muted px-2 text-xs"
                 >
                   <option value=",">Coma ( , )</option>
                   <option value=";">Punto y coma ( ; )</option>
                   <option value="\t">Tabulador (\t)</option>
                   <option value="|">Barra vertical ( | )</option>
-                </select>
+                </NativeSelect>
               </div>
             )}
 
@@ -427,6 +430,18 @@ export function FilePickerCard({
           </CardContent>
         </TabsContent>
       </Tabs>
+      <ConfirmDialog
+        open={showConfirmDeleteAll}
+        title="¿Eliminar todos los archivos subidos?"
+        description="Esta acción eliminará de forma permanente todos los archivos que has subido. No se puede deshacer."
+        confirmLabel="Eliminar todo"
+        cancelLabel="Cancelar"
+        onConfirm={() => {
+          deleteUploads.mutate();
+          setShowConfirmDeleteAll(false);
+        }}
+        onCancel={() => setShowConfirmDeleteAll(false)}
+      />
     </Card>
   );
 }

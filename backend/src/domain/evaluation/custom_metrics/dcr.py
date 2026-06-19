@@ -42,6 +42,8 @@ class DCR(MetricEvaluator):
             logger.warning("Cannot calculate DCR, not enough data.")
             return {"score": float("inf")}
 
+        real_data, synthetic_data = self._sample_for_expensive_metric(real_data, synthetic_data)
+
         real_processed, syn_processed = self._encode_categorical_columns(real_data, synthetic_data)
         real_processed = real_processed.dropna()
         syn_processed = syn_processed.dropna()
@@ -54,13 +56,13 @@ class DCR(MetricEvaluator):
         real_scaled = scaler.fit_transform(real_processed)
         syn_scaled = scaler.transform(syn_processed)
 
-        # dcr.syn: each synthetic → nearest real
+        # dcr.syn: each synthetic -> nearest real
         nn = NearestNeighbors(n_neighbors=1, metric="euclidean")
         nn.fit(real_scaled)
         syn_distances, _ = nn.kneighbors(syn_scaled)
         syn_dcr = syn_distances[:, 0]
 
-        # dcr.real: each real → nearest other real (k=2, skip self at index 0)
+        # dcr.real: each real -> nearest other real (k=2, skip self at index 0)
         nn2 = NearestNeighbors(n_neighbors=2, metric="euclidean")
         nn2.fit(real_scaled)
         real_distances, _ = nn2.kneighbors(real_scaled)

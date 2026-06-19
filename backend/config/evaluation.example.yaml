@@ -13,7 +13,6 @@ metrics:
       - dcr
       - nndr
       - correlation_matrix_distance
-      - confidence_interval_overlap
       - distribution_comparison_report
     sanity:
       - common_rows_proportion
@@ -29,6 +28,12 @@ metrics:
       - k-anonymization
       - distinct l-diversity
       # - DomiasMIA_BNAF  # Membership inference attack - VERY HEAVY
+
+  # Exact-match (EMR) options. When show_filtered_rows is true and
+  # exact_match_rows is enabled, the report lists the real rows that the
+  # synthetic data copied verbatim. Off by default — those are real records.
+  exact_match:
+    show_filtered_rows: false
 
   # Subsets of quasi-identifiers for k-anonymity and l-diversity.
   # k-anonymity falls back to pairwise combinations if null.
@@ -50,62 +55,47 @@ metrics:
   sensitive_columns:
     - EXPIRE_FLAG
 
-  confidence_interval_level: 0.95
-  num_bootstrap_samples: 1000
   tvd_n_bins: 10
 
   tstr:
     target_column: "expire_flag"
     task_type: "classification"
 
-# ============================================================================
-# STATISTICS
-# ============================================================================
-# Built-in operations: mean, median, mode, variance, skewness, kurtosis,
-# range, quantile. All get bootstrap 95% CIs.
-#
-# Formula-based: operation "custom_formula" with formula key; use {col} as
-# placeholder. Supported: np, pd, min, max, sum, mean, std, var.
-#
-# Custom statistics: require CUSTOM_STATISTICS_MODULE env var pointing at a
-# module of Statistic subclasses (e.g.
-# src.evaluation.custom_metrics.custom_statistics).
-statistics:
-  - operation: "mean"
-    table: "dataset_prueba_tecnica_v2"
-    col: "gender"
-
-  - operation: "median"
-    table: "dataset_prueba_tecnica_v2"
-    col: "gender"
-
-  - operation: "mode"
-    table: "dataset_prueba_tecnica_v2"
-    col: "gender"
-
-  - operation: "variance"
-    table: "dataset_prueba_tecnica_v2"
-    col: "gender"
-
-  - operation: "skewness"
-    table: "dataset_prueba_tecnica_v2"
-    col: "gender"
-
-  - operation: "kurtosis"
-    table: "dataset_prueba_tecnica_v2"
-    col: "gender"
-
-  - operation: "quantile"
-    table: "dataset_prueba_tecnica_v2"
-    col: "gender"
-    quantile: 0.25
-
-  - operation: "quantile"
-    table: "dataset_prueba_tecnica_v2"
-    col: "gender"
-    quantile: 0.75
-
-  - operation: "age"
-    table: "dataset_prueba_tecnica_v2"
-    convert_to_categorical: False
-    columns: {"col": "dob", "col2": "admittime"}
+  # ──────────────────────────────────────────────────────────────────────────
+  # STATISTICAL UTILITY (utility_tests)
+  # ──────────────────────────────────────────────────────────────────────────
+  # Compares user-defined aggregations between real and synthetic data. Each
+  # test reports the real value, synthetic value, a symmetric relative
+  # discrepancy (|s - r| / (|s| + |r|), in 0..1) and a relative precision
+  # (1 - discrepancy, in 0..1). The axis score is the weighted mean of the
+  # per-test precisions. Disabled by default; enable and add tests.
+  #
+  # Per-test keys:
+  #   name           label shown in the report
+  #   metric         count | proportion | mean | median | sum | std | min | max |
+  #                  nunique | percentile | rate | ratio | custom_formula
+  #   table          table the aggregation runs on
+  #   column         required for column metrics (mean, std, percentile, …)
+  #   filter         optional pandas query, e.g. "EXPIRE_FLAG == 1"
+  #   percentile     required for metric: percentile (0–1)
+  #   formula        required for metric: custom_formula — an expression over the
+  #                  filtered table exposed as `df` (plus np, pd), e.g.
+  #                  "df['charges'].sum() / df['age'].mean()"
+  #   weight         optional contribution to the weighted mean (default 1.0)
+  #   rate/ratio     carry nested `numerator` and `denominator` metric specs
+  utility_tests:
+    enabled: false
+    tests:
+      - name: "Proporción de fallecidos"
+        metric: "proportion"
+        table: "dataset_prueba_tecnica_v2"
+        filter: "EXPIRE_FLAG == 1"
+        weight: 1.0
+      - name: "Edad media"
+        metric: "mean"
+        table: "dataset_prueba_tecnica_v2"
+        column: "age"
+      - name: "Coste medio por día de estancia"
+        metric: "custom_formula"
+        table: "dataset_prueba_tecnica_v2"
+        formula: "df['charges'].sum() / df['length_of_stay'].sum()"

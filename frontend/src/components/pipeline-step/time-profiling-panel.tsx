@@ -9,11 +9,12 @@
 // only meaningful to engineers debugging the pipeline).
 
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { api, type TimeProfilingReport } from "@/lib/api";
-import { useIsDev } from "@/lib/mode";
 import { cn, formatDuration } from "@/lib/utils";
 
 type Kind = "inspections" | "models" | "simulations" | "evaluations";
@@ -27,7 +28,6 @@ export function TimeProfilingPanel({
   id: string;
   title?: string;
 }) {
-  const isDev = useIsDev();
   const [open, setOpen] = useState(false);
 
   const query = useQuery({
@@ -39,10 +39,8 @@ export function TimeProfilingPanel({
     // Past runs never change their timing once finished.
     staleTime: Infinity,
     retry: false,
-    enabled: isDev,
+    enabled: true,
   });
-
-  if (!isDev) return null;
 
   if (query.isLoading) {
     return (
@@ -57,31 +55,31 @@ export function TimeProfilingPanel({
   const { total_seconds, phases, note } = query.data;
 
   return (
-    <div className="rounded border border-border bg-muted/40">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
-        aria-expanded={open}
-      >
-        <span className="flex items-center gap-1.5">
-          <ChevronRight
-            className={cn(
-              "h-3.5 w-3.5 text-muted-foreground transition-transform",
-              open && "rotate-90",
-            )}
-          />
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {title}
-          </span>
-        </span>
-        <span className="font-mono text-xs tabular-nums text-muted-foreground">
-          Total: {formatDuration(total_seconds)}
-        </span>
-      </button>
+    <Card>
+      <CardHeader className="pb-2">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex w-full items-center gap-2 text-left"
+        >
+          {open ? (
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
+          <CardTitle className="text-base">{title}</CardTitle>
+          <Badge
+            variant="outline"
+            className="border-muted-foreground/40 text-muted-foreground font-mono"
+          >
+            Total: {formatDuration(total_seconds)}
+          </Badge>
+        </button>
+      </CardHeader>
 
       {open && (
-        <div className="border-t border-border px-3 py-2">
+        <CardContent>
           {phases.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               {note || "Sin fases registradas."}
@@ -117,8 +115,8 @@ export function TimeProfilingPanel({
               ))}
             </ul>
           )}
-        </div>
+        </CardContent>
       )}
-    </div>
+    </Card>
   );
 }

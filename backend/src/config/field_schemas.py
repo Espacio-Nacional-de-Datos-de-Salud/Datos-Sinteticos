@@ -41,6 +41,13 @@ class FieldSchema:
     options: list[FieldOption] = field(default_factory=list)
     nullable: bool = False
     dynamic_options: str | None = None  # e.g. "columns" – resolved at render time
+    min: int | None = None  # only meaningful for kind == "number"
+    # True for model settings that can also be overridden for a single table via
+    # ``model_settings.per_table.<tabla>``; drives the guided per-table UI.
+    per_table: bool = False
+    # Optional sub-heading within a group. Consecutive fields sharing the same
+    # ``subgroup`` render under one heading, mirroring the manual's organisation.
+    subgroup: str = ""
 
 
 @dataclass
@@ -68,7 +75,7 @@ def _opt(value: str, label: str) -> FieldOption:
 # Schema field names that need snake_case → camelCase for the frontend.
 # We rename selectively (not a blanket camelize) because GroupToggle.defaults
 # carries user YAML keys that must stay snake_case.
-_API_KEY_RENAMES = {"dynamic_options": "dynamicOptions"}
+_API_KEY_RENAMES = {"dynamic_options": "dynamicOptions", "per_table": "perTable"}
 
 
 def _rename_api_keys(obj: Any) -> Any:
@@ -121,6 +128,15 @@ GENERAL_SCHEMA = ConfigSchema(
                     label="Tamaño de muestra por defecto",
                     kind="number",
                     help="Número de filas usadas cuando no se especifica explícitamente.",
+                ),
+                FieldSchema(
+                    path="settings.skip_data_cleaning_tables",
+                    label="Tablas sin limpieza automática",
+                    kind="json",
+                    help=(
+                        "Lista de tablas que omiten DataCleaner cuando ya llegan "
+                        'preprocesadas. Ejemplo: ["tabla_rae_cmbd_mod"].'
+                    ),
                 ),
                 FieldSchema(
                     path="settings.synthetic_data_file_format",
@@ -191,12 +207,15 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
                     label="Épocas máximas",
                     kind="number",
                     help="Número máximo de pasadas completas sobre los datos durante el entrenamiento.",
+                    per_table=True,
                 ),
                 FieldSchema(
                     path="model_settings.batch_size",
                     label="Tamaño de batch",
                     kind="number",
-                    help="Filas por lote en cada paso de entrenamiento. Valores mayores aceleran pero requieren más memoria.",
+                    min=2,
+                    help="Filas por lote en cada paso de entrenamiento. En modos predeterminados se calcula automáticamente en función de la cantidad de filas presentes en la mayor tabla real.",
+                    per_table=True,
                 ),
                 FieldSchema(
                     path="model_settings.max_training_time",
@@ -204,6 +223,7 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
                     kind="number",
                     nullable=True,
                     help="Detiene el entrenamiento al alcanzar este tiempo.",
+                    per_table=True,
                 ),
                 FieldSchema(
                     path="model_settings.max_sample_size",
@@ -211,12 +231,7 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
                     kind="number",
                     nullable=True,
                     help="Filas máximas usadas para entrenar.",
-                ),
-                FieldSchema(
-                    path="model_settings.enable_model_report",
-                    label="Generar informe del modelo",
-                    kind="boolean",
-                    help="Si está activado, Mostly AI produce un informe HTML con métricas del entrenamiento.",
+                    per_table=True,
                 ),
                 FieldSchema(
                     path="model_settings.model",
@@ -228,12 +243,14 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
                         _opt("MOSTLY_AI/Medium", "Mediano (M)"),
                         _opt("MOSTLY_AI/Large", "Grande (L)"),
                     ],
+                    per_table=True,
                 ),
                 FieldSchema(
                     path="model_settings.enable_flexible_generation",
                     label="Habilitar generación flexible",
                     kind="boolean",
                     help="Permite rebalanceo e imputación, pero puede reducir la precisión.",
+                    per_table=True,
                 ),
             ],
         ),
@@ -286,6 +303,26 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
                 ),
             ],
         ),
+        FieldGroup(
+            title="Ajustes por tabla",
+            description=(
+                "Personaliza ajustes del modelo para tablas concretas. Todo lo que "
+                "no personalices hereda la configuración global."
+            ),
+            fields=[
+                FieldSchema(
+                    path="model_settings.per_table",
+                    label="Ajustes por tabla",
+                    kind="json",
+                    nullable=True,
+                    help=(
+                        "Añade una tabla y elige qué ajustes personalizar; el resto "
+                        "hereda la configuración global. Útil p. ej. para desactivar la "
+                        "privacidad diferencial solo en las tablas más profundas."
+                    ),
+                ),
+            ],
+        ),
     ],
 )
 
@@ -312,9 +349,21 @@ EVALUATION_SCHEMA = ConfigSchema(
             description="¿Los datos sintéticos protegen frente a re-identificación e inferencia?",
             fields=[
                 FieldSchema(
+                    path="metrics.default.custom",
+                    label="Distancia a registros reales",
+                    kind="checklist",
+                    subgroup="Distancia a los datos reales",
+                    help="DCR y NNDR: miden cuán cerca quedan las filas sintéticas de filas reales.",
+                    options=[
+                        _opt("dcr", "DCR (Distance to Closest Record)"),
+                        _opt("nndr", "NNDR (Nearest Neighbor Distance Ratio)"),
+                    ],
+                ),
+                FieldSchema(
                     path="metrics.default.privacy",
                     label="k-anonimato y derivados",
                     kind="checklist",
+                    subgroup="Anonimato por grupos (k / l)",
                     help="Métricas de anonimato y ataques de inferencia de membresía. L-diversity requiere columnas sensibles y subconjuntos QI explícitos.",
                     options=[
                         _opt("k-anonymization", "k-anonymization"),
@@ -325,19 +374,10 @@ EVALUATION_SCHEMA = ConfigSchema(
                     ],
                 ),
                 FieldSchema(
-                    path="metrics.default.custom",
-                    label="Distancia a registros reales",
-                    kind="checklist",
-                    help="DCR y NNDR: miden cuán cerca quedan las filas sintéticas de filas reales.",
-                    options=[
-                        _opt("dcr", "DCR (Distance to Closest Record)"),
-                        _opt("nndr", "NNDR (Nearest Neighbor Distance Ratio)"),
-                    ],
-                ),
-                FieldSchema(
                     path="metrics.default.sanity",
                     label="Filas exactas (EMR)",
                     kind="checklist",
+                    subgroup="Copias exactas",
                     help="Proporción de filas sintéticas idénticas a alguna fila real. Debe ser 0.",
                     options=[
                         _opt("common_rows_proportion", "Common Rows Proportion"),
@@ -345,11 +385,27 @@ EVALUATION_SCHEMA = ConfigSchema(
                     ],
                 ),
                 FieldSchema(
+                    path="metrics.exact_match.show_filtered_rows",
+                    label="Mostrar filas coincidentes en el reporte",
+                    kind="boolean",
+                    subgroup="Copias exactas",
+                    help="Si Exact Match Rows está activo, incluye en el reporte las filas reales que el sintético copió literalmente. Desactivado por defecto: son registros reales.",
+                ),
+                FieldSchema(
                     path="metrics.default.detection",
                     label="Detectabilidad",
                     kind="checklist",
+                    subgroup="Indistinguibilidad y ataques",
                     help="Clasificador que intenta distinguir filas reales de sintéticas. Cerca de 0.5 = indistinguibles.",
                     options=[_opt("detection_mlp", "Detection MLP")],
+                ),
+                FieldSchema(
+                    path="metrics.quasi_identifier_subsets",
+                    label="Subconjuntos de quasi-identificadores",
+                    kind="json",
+                    nullable=True,
+                    subgroup="Ajustes",
+                    help="Grupos de columnas QI usados por k-anonimato y l-diversity. L-diversity se omite si no hay grupos explícitos.",
                 ),
                 FieldSchema(
                     path="metrics.sensitive_columns",
@@ -357,14 +413,8 @@ EVALUATION_SCHEMA = ConfigSchema(
                     kind="checklist",
                     nullable=True,
                     dynamic_options="columns",
+                    subgroup="Ajustes",
                     help="Columnas a proteger (usadas en l-diversity).",
-                ),
-                FieldSchema(
-                    path="metrics.quasi_identifier_subsets",
-                    label="Subconjuntos de quasi-identificadores",
-                    kind="json",
-                    nullable=True,
-                    help="Grupos de columnas QI usados por k-anonimato y l-diversity. L-diversity se omite si no hay grupos explícitos.",
                 ),
             ],
         ),
@@ -376,6 +426,7 @@ EVALUATION_SCHEMA = ConfigSchema(
                     path="metrics.default.stats",
                     label="Distancias entre distribuciones",
                     kind="checklist",
+                    subgroup="Distribuciones marginales",
                     help="Comparan distribuciones marginales reales vs sintéticas.",
                     options=[
                         _opt("jensenshannon_dist", "Jensen-Shannon Distance"),
@@ -384,12 +435,12 @@ EVALUATION_SCHEMA = ConfigSchema(
                 ),
                 FieldSchema(
                     path="metrics.default.custom",
-                    label="Correlaciones e intervalos",
+                    label="Correlaciones y distribuciones",
                     kind="checklist",
-                    help="Preservación de correlaciones y de intervalos de confianza de estadísticos clave.",
+                    subgroup="Relaciones entre columnas",
+                    help="Preservación de correlaciones estructurales y comparación de distribuciones marginales/conjuntas.",
                     options=[
                         _opt("correlation_matrix_distance", "Correlation Matrix Distance"),
-                        _opt("confidence_interval_overlap", "Confidence Interval Overlap"),
                         _opt(
                             "distribution_comparison_report",
                             "Distribution Comparison (1-TVD uni/bi/tri)",
@@ -397,39 +448,23 @@ EVALUATION_SCHEMA = ConfigSchema(
                     ],
                 ),
                 FieldSchema(
-                    path="metrics.confidence_interval_level",
-                    label="Nivel de confianza",
-                    kind="number",
-                    help="Por ejemplo 0.95 para intervalos al 95%.",
-                ),
-                FieldSchema(
-                    path="metrics.num_bootstrap_samples",
-                    label="Muestras de bootstrap",
-                    kind="number",
-                    help="Número de remuestreos usados para estimar intervalos de confianza.",
-                ),
-                FieldSchema(
                     path="metrics.tvd_n_bins",
                     label="Bins (TVD)",
                     kind="number",
+                    subgroup="Ajustes",
                     help="Número de bins para discretizar variables continuas al calcular Total Variation Distance.",
-                ),
-                FieldSchema(
-                    path="statistics",
-                    label="Estadísticos de columna",
-                    kind="json",
-                    help="Lista de objetos con: operation, table, col. Ej: mean, median, mode.",
                 ),
             ],
         ),
         FieldGroup(
             title="Utilidad",
-            description="¿Sirven los datos sintéticos para entrenar modelos predictivos?",
+            description="¿Sirven los datos sintéticos para reproducir análisis y entrenar modelos predictivos?",
             fields=[
                 FieldSchema(
                     path="metrics.default.performance",
                     label="Modelos ML (TSTR)",
                     kind="checklist",
+                    subgroup="Utilidad predictiva (TSTR vs TRTR)",
                     help="Modelos entrenados con sintéticos y evaluados en reales para medir utilidad predictiva.",
                     options=[
                         _opt("linear_model", "Linear Model"),
@@ -441,17 +476,34 @@ EVALUATION_SCHEMA = ConfigSchema(
                     label="Columna objetivo",
                     kind="select",
                     dynamic_options="columns",
+                    subgroup="Utilidad predictiva (TSTR vs TRTR)",
                     help="Columna a predecir al entrenar con sintético y testear con real.",
                 ),
                 FieldSchema(
                     path="metrics.tstr.task_type",
                     label="Tipo de tarea",
                     kind="select",
+                    subgroup="Utilidad predictiva (TSTR vs TRTR)",
                     help="Naturaleza del problema supervisado en TSTR.",
                     options=[
                         _opt("classification", "Clasificación"),
                         _opt("regression", "Regresión"),
                     ],
+                ),
+                FieldSchema(
+                    path="metrics.utility_tests.enabled",
+                    label="Precisión",
+                    kind="boolean",
+                    subgroup="Utilidad estadística",
+                    help="Calcula la precisión (1-discrepancia) de las agregaciones definidas (proporciones, medias, conteos, tasas, fórmulas…) comparando real vs sintético. Si está desactivado, no se calcula.",
+                ),
+                FieldSchema(
+                    path="metrics.utility_tests.tests",
+                    label="Agregaciones a comparar",
+                    kind="json",
+                    nullable=True,
+                    subgroup="Utilidad estadística",
+                    help="Define cada agregación: métrica (predefinida o fórmula personalizada sobre una o varias columnas), tabla, columna(s), filtro opcional y peso. La precisión relativa de cada una es 1 − error relativo.",
                 ),
             ],
         ),

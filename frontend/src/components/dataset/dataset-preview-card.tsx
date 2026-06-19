@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import {
   Card,
@@ -44,6 +45,8 @@ export function DatasetPreviewCard({
   downloadHref,
   getProfilingUrl,
   emptyMessage = "No hay datos disponibles.",
+  collapsible = false,
+  defaultOpen = false,
 }: {
   title: string;
   description?: string;
@@ -59,9 +62,12 @@ export function DatasetPreviewCard({
    * ydata-profiling HTML report, or null/undefined when not available. */
   getProfilingUrl?: (table: string) => string | null | undefined;
   emptyMessage?: string;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }) {
   const [active, setActive] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [open, setOpen] = useState(!collapsible || defaultOpen);
 
   useEffect(() => {
     if (active == null && tables.length > 0) {
@@ -97,12 +103,31 @@ export function DatasetPreviewCard({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className={collapsible ? "pb-2" : undefined}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">{title}</CardTitle>
-            {description && <CardDescription>{description}</CardDescription>}
-          </div>
+          {collapsible ? (
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              className="flex items-center gap-2 text-left"
+            >
+              {open ? (
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+              <div>
+                <CardTitle className="text-base">{title}</CardTitle>
+                {open && description && <CardDescription>{description}</CardDescription>}
+              </div>
+            </button>
+          ) : (
+            <div>
+              <CardTitle className="text-base">{title}</CardTitle>
+              {description && <CardDescription>{description}</CardDescription>}
+            </div>
+          )}
           <div className="flex shrink-0 items-center gap-2">
             {getProfilingUrl && active && getProfilingUrl(active) && (
               <Tooltip
@@ -115,7 +140,7 @@ export function DatasetPreviewCard({
                   rel="noopener noreferrer"
                 >
                   <Button type="button" size="sm" variant="outline">
-                    Ver profiling
+                    Ver perfilado
                   </Button>
                 </a>
               </Tooltip>
@@ -130,7 +155,8 @@ export function DatasetPreviewCard({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      {open && (
+        <CardContent className="space-y-3">
         {isLoadingTables && <Skeleton className="h-24 w-full" />}
         {isError && (
           <p className="text-sm text-destructive">
@@ -255,6 +281,7 @@ export function DatasetPreviewCard({
           </>
         )}
       </CardContent>
+      )}
     </Card>
   );
 }

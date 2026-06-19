@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Trash2, XCircle, BarChart3 } from "lucide-react";
 import { DownloadMenu } from "@/components/pipeline-step/download-menu";
 import { EditableName } from "@/components/jobs/editable-name";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/jobs/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,7 +23,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { API_BASE_URL, type InspectionSummary } from "@/lib/api";
-import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
 import { cn, formatDuration, formatJobDate } from "@/lib/utils";
 
 // Catalogue of every inspection on the server. Click a row to load that
@@ -109,18 +108,23 @@ export function HistoryCard({
           {inspections.length > 0 && (
             // table-fixed + explicit column widths keep the actions cell on
             // screen even when the "Tablas" column has many or very long table
-            // names — without it, whitespace-nowrap pushes the delete button off
-            // to the right and forces horizontal scrolling.
-            <Table className="table-fixed">
+            // names. The min-width guarantees each whitespace-nowrap cell keeps
+            // enough room for its content: without it, a narrow container (e.g.
+            // with the manual panel open, or at 100% zoom on smaller screens)
+            // squeezes the percentage columns below their content width and the
+            // "Completado" badge / action icons overflow on top of the
+            // neighbouring column. Below the min-width the container's
+            // overflow-x-auto scrolls horizontally instead of overlapping.
+            <Table className="min-w-[800px] table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[22%]">Nombre</TableHead>
-                  <TableHead className="w-[10%]">Estado</TableHead>
-                  <TableHead className="w-[24%]">Tablas</TableHead>
-                  <TableHead className="w-[10%] text-right">Filas</TableHead>
-                  <TableHead className="w-[9%] text-right">Tiempo</TableHead>
-                  <TableHead className="w-[15%]">Fecha</TableHead>
-                  <TableHead className="w-[10%]" />
+                  <TableHead className="w-[19%]">Nombre</TableHead>
+                  <TableHead className="w-[15%]">Estado</TableHead>
+                  <TableHead className="w-[17%]">Tablas</TableHead>
+                  <TableHead className="w-[9%] text-right">Filas</TableHead>
+                  <TableHead className="w-[8%] text-right">Tiempo</TableHead>
+                  <TableHead className="w-[16%]">Fecha</TableHead>
+                  <TableHead className="w-[16%] text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -159,14 +163,13 @@ export function HistoryCard({
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant={statusBadgeVariant(i.status)}
+                        <StatusBadge
+                          status={i.status}
+                          errorMessage={i.error_message}
                           className={cn(
                             i.status === "completed" && "!bg-blue-500/20 !text-blue-400"
                           )}
-                        >
-                          {translateStatus(i.status) || "—"}
-                        </Badge>
+                        />
                       </TableCell>
                       <TableCell
                         className="truncate font-mono text-xs"

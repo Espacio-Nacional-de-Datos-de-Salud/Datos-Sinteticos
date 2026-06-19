@@ -121,7 +121,7 @@ def test_run_training_flow_from_inspection_persists_relationships_without_rules(
     )
     monkeypatch.setattr(training_module, "MetadataFormatter", FakeFormatter)
     monkeypatch.setattr(training_module, "ModelTracker", FakeTracker)
-    monkeypatch.setattr(training_module, "MostlyAIEngine", FakeEngine)
+    monkeypatch.setattr(training_module, "create_engine", FakeEngine)
 
     model_id, _generator, _metadata, rule_manager = (
         training_module.run_training_flow_from_inspection(inspection_id="inspection_1")

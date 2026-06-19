@@ -7,6 +7,7 @@
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DeleteConflictDialog } from "@/components/pipeline-step/delete-conflict-dialog";
+import { PurgeChoiceDialog } from "@/components/pipeline-step/purge-choice-dialog";
 import type { DeleteConflictState } from "@/components/pipeline-step/use-artifact-lifecycle";
 
 export type WizardConfirmTexts = {
@@ -24,6 +25,9 @@ export type WizardConfirmTexts = {
     title: string;
     description: string;
     confirmLabel?: string;
+    /** Shown only on the cascade variant (when onPurgeCascade is provided). */
+    cascadeLabel?: string;
+    orphanLabel?: string;
   };
 };
 
@@ -38,6 +42,7 @@ export function WizardConfirmDialogs({
   confirmPurge,
   setConfirmPurge,
   onPurge,
+  onPurgeCascade,
   deleteConflict,
   onDeleteConflictCascade,
   onDeleteConflictForce,
@@ -52,7 +57,10 @@ export function WizardConfirmDialogs({
   onCleanup: () => void;
   confirmPurge: boolean;
   setConfirmPurge: (open: boolean) => void;
+  /** Purge only this step, orphaning downstream artifacts. */
   onPurge: () => void;
+  /** When provided, the purge dialog offers a cascade-or-orphan choice. */
+  onPurgeCascade?: () => void;
   /** Conflict state from useArtifactLifecycle; null hides the conflict dialog. */
   deleteConflict?: DeleteConflictState | null;
   onDeleteConflictCascade?: () => void;
@@ -83,17 +91,36 @@ export function WizardConfirmDialogs({
         }}
         onCancel={() => setConfirmCleanup(false)}
       />
-      <ConfirmDialog
-        open={confirmPurge}
-        title={texts.purge.title}
-        description={texts.purge.description}
-        confirmLabel={texts.purge.confirmLabel ?? "Purgar"}
-        onConfirm={() => {
-          onPurge();
-          setConfirmPurge(false);
-        }}
-        onCancel={() => setConfirmPurge(false)}
-      />
+      {onPurgeCascade ? (
+        <PurgeChoiceDialog
+          open={confirmPurge}
+          title={texts.purge.title}
+          description={texts.purge.description}
+          cascadeLabel={texts.purge.cascadeLabel ?? "Purgar con sus dependencias"}
+          orphanLabel={texts.purge.orphanLabel ?? "Purgar solo este paso (dejar huérfanas)"}
+          onCascade={() => {
+            onPurgeCascade();
+            setConfirmPurge(false);
+          }}
+          onOrphan={() => {
+            onPurge();
+            setConfirmPurge(false);
+          }}
+          onCancel={() => setConfirmPurge(false)}
+        />
+      ) : (
+        <ConfirmDialog
+          open={confirmPurge}
+          title={texts.purge.title}
+          description={texts.purge.description}
+          confirmLabel={texts.purge.confirmLabel ?? "Purgar"}
+          onConfirm={() => {
+            onPurge();
+            setConfirmPurge(false);
+          }}
+          onCancel={() => setConfirmPurge(false)}
+        />
+      )}
       <DeleteConflictDialog
         open={deleteConflict != null}
         message={deleteConflict?.message ?? ""}

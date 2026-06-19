@@ -16,6 +16,7 @@ import backend.src.config.general as general_config
 from backend.src.config.evaluation import (
     DROP_ID_COLUMNS_FROM_METRICS,
     EVAL_DEFAULT_METRICS,
+    UTILITY_TESTS_CONFIG,
 )
 from backend.src.domain.evaluation._custom_metrics import run_custom_metrics
 from backend.src.domain.evaluation._synthcity_metrics import (
@@ -23,7 +24,8 @@ from backend.src.domain.evaluation._synthcity_metrics import (
     evaluate_synthcity_metrics,
 )
 from backend.src.domain.evaluation.dtype_alignment import align_dtypes
-from backend.src.domain.evaluation.utils import filter_id_columns
+from backend.src.domain.evaluation.utility_filter import drop_ood_performance_rows
+from backend.src.domain.evaluation.utils import filter_id_columns, normalize_for_exact_match
 from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.progress import ProfilerPhase
 from backend.src.infrastructure.time_profiling import profiler
@@ -106,7 +108,7 @@ class EvaluationRunner:
                 synthetic_data_dict=synthetic_data_dict,
             )
 
-        return report
+        return drop_ood_performance_rows(report)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -126,6 +128,7 @@ class EvaluationRunner:
             synthetic_data = filter_id_columns(synthetic_data, metadata_path)
 
         real_data, synthetic_data = align_dtypes(real_data, synthetic_data)
+        real_data, synthetic_data = normalize_for_exact_match(real_data, synthetic_data)
         return real_data, synthetic_data
 
     def _partition_requested_metrics(
@@ -168,5 +171,12 @@ class EvaluationRunner:
             sanity_metrics.remove("exact_match_rows")
             if "exact_match_rows" not in custom_metric_names:
                 custom_metric_names.append("exact_match_rows")
+
+        # Statistical-utility tests are opt-in via their own config block rather
+        # than a name in metrics.default; request them only when enabled.
+        utility_tests_enabled = (UTILITY_TESTS_CONFIG or {}).get("enabled")
+        if utility_tests_enabled and "utility_tests" not in custom_metric_names:
+            logger.info("Statistical-utility tests enabled; requesting custom utility_tests.")
+            custom_metric_names.append("utility_tests")
 
         return synthcity_metrics, custom_metric_names

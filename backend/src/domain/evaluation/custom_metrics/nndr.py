@@ -46,6 +46,8 @@ class NNDR(MetricEvaluator):
             logger.warning("Cannot calculate NNDR, not enough data.")
             return {"score": float("inf")}
 
+        real_data, synthetic_data = self._sample_for_expensive_metric(real_data, synthetic_data)
+
         real_processed, syn_processed = self._encode_categorical_columns(real_data, synthetic_data)
         real_processed = real_processed.dropna()
         syn_processed = syn_processed.dropna()

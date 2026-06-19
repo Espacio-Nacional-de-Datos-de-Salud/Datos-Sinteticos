@@ -11,6 +11,7 @@ class EvaluationCreateRequest(BaseModel):
 
     name: str | None = Field(
         default=None,
+        max_length=100,
         description="Optional human-readable name for this evaluation run.",
     )
     simulation_id: str = Field(
@@ -35,12 +36,13 @@ class EvaluationSummary(BaseModel):
     progress: JobProgress | None = None
     duration_seconds: float | None = None
     started_at_ms: int | None = None
+    error_message: str | None = None
 
 
 class RenameRequest(BaseModel):
     """Body of a rename PATCH endpoint."""
 
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
 
 
 class EvaluationJob(BaseModel):

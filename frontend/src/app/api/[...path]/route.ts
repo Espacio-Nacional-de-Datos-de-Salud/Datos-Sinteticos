@@ -10,6 +10,7 @@ const BACKEND_COLLECTION_ENDPOINTS = new Set([
   "inspections",
   "models",
   "pipelines",
+  "rule-presets",
   "simulations",
 ]);
 

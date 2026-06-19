@@ -10,12 +10,14 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Play, ShieldCheck, Trash2, XCircle } from "lucide-react";
+import { buildAuditoriaInstructions } from "@/components/auditoria/instructions-content";
 
 import { ConfigPanel } from "@/components/config/config-drawer";
 import { EditableName } from "@/components/jobs/editable-name";
+import { ActiveRunName } from "@/components/jobs/active-run-name";
 import { ActiveJobCard } from "@/components/pipeline-step/active-job-card";
 import { TimeProfilingPanel } from "@/components/pipeline-step/time-profiling-panel";
 import { DownloadMenu } from "@/components/pipeline-step/download-menu";
@@ -23,12 +25,16 @@ import { HistoryCard, type HistoryColumn } from "@/components/pipeline-step/hist
 import { useArtifactLifecycle } from "@/components/pipeline-step/use-artifact-lifecycle";
 import { useUpstreamSelection } from "@/components/pipeline-step/use-upstream-selection";
 import { WizardConfirmDialogs } from "@/components/pipeline-step/wizard-confirm-dialogs";
+import { useConfirmSelect } from "@/components/pipeline-step/use-confirm-select";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RulesBanner } from "@/components/config/rules-banner";
 import { EvaluationReportSection } from "@/components/pipelines/evaluation-report-section";
 import { WizardShell } from "@/components/layout/wizard-shell";
+import { WizardBanner, WIZARD_BANNER_HEIGHT } from "@/components/layout/wizard-banner";
 import { WorkflowGroup } from "@/components/layout/workflow-group";
 import { NamePromptDialog } from "@/components/ui/name-prompt-dialog";
-import { Badge } from "@/components/ui/badge";
+import { NativeSelect } from "@/components/ui/native-select";
+import { StatusBadge } from "@/components/jobs/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -40,16 +46,16 @@ import {
   type ModelSummary,
   type SimulationSummary,
 } from "@/lib/api";
-import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 import { cn } from "@/lib/utils";
+import { useManualOpen } from "@/lib/use-manual-open";
 
 type StartInput = { simulation_id: string };
 
 const AUDITORIA_OUTLINE = [
   { id: "preparacion", label: "Preparación", level: 1 },
-  { id: "reglas-preprocesamiento", label: "Reglas de preprocesamiento", level: 2 },
   { id: "nueva-evaluacion", label: "Nueva evaluación", level: 2 },
+  { id: "reglas-preprocesamiento", label: "Reglas de negocio", level: 2 },
   { id: "configuracion-avanzada", label: "Configuración avanzada", level: 2 },
   { id: "ejecutar-evaluacion", label: "Ejecutar evaluación", level: 2 },
   { id: "resultados", label: "Resultados", level: 1 },
@@ -65,6 +71,53 @@ export default function AuditoriaPage() {
   const [confirmCleanup, setConfirmCleanup] = useState(false);
   const [confirmPurge, setConfirmPurge] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
+
+  // Shared axis tab state — syncs instructions panel ↔ config form
+  const [activeAxis, setActiveAxis] = useState("Privacidad");
+
+  // Instructions manual state — shared across pipeline pages via localStorage
+  // so the panel stays open as the user navigates between steps.
+  const [instructionsOpen, setInstructionsOpen] = useManualOpen();
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    preparacion: true,
+    resultados: true,
+    reporte: true,
+    historial: false,
+  });
+  const scrollToSection = useCallback((id: string) => {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        document
+          .getElementById(id)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }),
+    );
+  }, []);
+  const toggleSection = useCallback(
+    (id: string) =>
+      setOpenSections((p) => {
+        const next = !(p[id] ?? true);
+        if (next) scrollToSection(id);
+        return { ...p, [id]: next };
+      }),
+    [scrollToSection],
+  );
+  const setSectionOpen = useCallback(
+    (id: string, open: boolean) => {
+      if (open) scrollToSection(id);
+      setOpenSections((p) => ({ ...p, [id]: open }));
+    },
+    [scrollToSection],
+  );
+  const [helpReserve, setHelpReserve] = useState<Record<string, number>>({});
+  const handleHelpMeasure = useCallback(
+    (reserve: Record<string, number>) => setHelpReserve(reserve),
+    [],
+  );
+  const helpGap = (id: string): React.CSSProperties | undefined =>
+    instructionsOpen && (openSections[id] ?? true) && helpReserve[id]
+      ? { marginBottom: helpReserve[id] + 16 }
+      : undefined;
 
   const lc = useArtifactLifecycle<EvaluationSummary, StartInput>({
     apiPath: "/evaluations",
@@ -100,6 +153,21 @@ export default function AuditoriaPage() {
   const { selectedId: selectedSimId, setSelectedId: setSelectedSimId } =
     useUpstreamSelection(completedSims, "simulation_id", STORAGE_KEYS.simulation);
 
+  // Reset the Preparación form to its defaults — used when the user jumps to a
+  // past evaluation from the history, which discards whatever they were setting
+  // up (selected simulation, active metric axis).
+  const resetPreparation = useCallback(() => {
+    setSelectedSimId(completedSims[0]?.simulation_id ?? "");
+    setActiveAxis("Privacidad");
+  }, [completedSims, setSelectedSimId]);
+
+  // Selecting a past evaluation from the history loads its results and resets
+  // the preparation form — gated behind a confirmation dialog.
+  const selectRun = useConfirmSelect((id) => {
+    lc.setActiveId(id);
+    resetPreparation();
+  }, lc.activeId);
+
   // Models are referenced indirectly (each evaluation knows which simulation
   // it ran on, and that simulation knows the model id), so we fetch the model
   // catalog purely to map ids → functional names.
@@ -127,11 +195,17 @@ export default function AuditoriaPage() {
     return (id: string | null | undefined) => (id ? map.get(id) ?? id : "—");
   }, [modelsQuery.data]);
 
+  const selectedSim = completedSims.find((s) => s.simulation_id === selectedSimId);
+  const selectedModel = (modelsQuery.data ?? []).find(
+    (m) => m.model_id === selectedSim?.model_id,
+  );
+  const selectedBrcId = selectedModel?.brc_id ?? null;
+
   const columns: HistoryColumn<EvaluationSummary>[] = [
     {
       key: "name",
       header: "Nombre",
-      width: "20%",
+      width: "16%",
       render: (e) => (
         <div className="space-y-0.5">
           <p
@@ -151,20 +225,19 @@ export default function AuditoriaPage() {
     {
       key: "status",
       header: "Estado",
-      width: "11%",
+      width: "14%",
       render: (e) => (
-        <Badge
-          variant={statusBadgeVariant(e.status)}
+        <StatusBadge
+          status={e.status}
+          errorMessage={e.error_message}
           className={cn(e.status === "completed" && "!bg-blue-500/20 !text-blue-400")}
-        >
-          {translateStatus(e.status)}
-        </Badge>
+        />
       ),
     },
     {
       key: "sim",
       header: "Generación",
-      width: "18%",
+      width: "14%",
       render: (e) => (
         <span className="block truncate font-mono text-xs" title={e.simulation_id ?? ""}>
           {labelForSimId(e.simulation_id)}
@@ -174,7 +247,7 @@ export default function AuditoriaPage() {
     {
       key: "model",
       header: "Modelo",
-      width: "18%",
+      width: "12%",
       render: (e) => (
         <span className="block truncate font-mono text-xs" title={e.model_id ?? ""}>
           {labelForModelId(e.model_id)}
@@ -184,7 +257,7 @@ export default function AuditoriaPage() {
     {
       key: "metrics",
       header: "Métricas",
-      width: "22%",
+      width: "8%",
       render: (e) => (
         <span
           className="block truncate text-xs"
@@ -197,75 +270,110 @@ export default function AuditoriaPage() {
   ];
 
   return (
-    <WizardShell currentSlug="auditoria" canAdvance={false} outline={AUDITORIA_OUTLINE}>
-      <div className="space-y-6">
-        <div className="sticky top-0 z-20 -mx-8 -mt-6 border-b bg-background/95 px-8 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <h1 className="text-2xl font-semibold tracking-tight">Auditoría</h1>
-          <p className="text-sm text-muted-foreground">
+    <WizardShell
+      currentSlug="auditoria"
+      canAdvance={false}
+      outline={AUDITORIA_OUTLINE}
+      instructions={buildAuditoriaInstructions(activeAxis, setActiveAxis)}
+      instructionsOpen={instructionsOpen}
+      instructionsSections={openSections}
+      onInstructionsToggleSection={toggleSection}
+      onInstructionsClose={() => setInstructionsOpen(false)}
+      onInstructionsMeasure={handleHelpMeasure}
+      instructionsBannerHeight={WIZARD_BANNER_HEIGHT}
+    >
+      <WizardBanner
+        title="Auditoría"
+        subtitle={
+          <>
             Evalúa la utilidad y privacidad del dataset sintético según las
             métricas configuradas en{" "}
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
               evaluation.yaml
             </code>
             .
-          </p>
-          {lc.activeId && lc.active && (
-            <div className="mt-3 flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Nombre:</span>
-              <EditableName
-                name={lc.active.evaluation_name || lc.active.evaluation_id}
-                existingNames={lc.list.map((x) => x.evaluation_name || x.evaluation_id)}
-                onSave={(name) => lc.rename(lc.active!.evaluation_id, name)}
-                size="sm"
-              />
-            </div>
-          )}
-        </div>
-
-        <WorkflowGroup id="preparacion" label="Preparación" defaultOpen className="scroll-mt-24">
-          <div id="reglas-preprocesamiento" className="scroll-mt-24">
-            <RulesBanner />
-          </div>
-
+          </>
+        }
+        instructionsOpen={instructionsOpen}
+        onOpenManual={() => setInstructionsOpen(true)}
+        info={
+          <ActiveRunName
+            label="de la evaluación"
+            name={
+              lc.activeId && lc.active
+                ? lc.active.evaluation_name || lc.active.evaluation_id
+                : null
+            }
+            placeholder="evaluación aún no iniciada"
+            existingNames={lc.list.map((x) => x.evaluation_name || x.evaluation_id)}
+            onSave={
+              lc.active
+                ? async (name) => lc.rename(lc.active!.evaluation_id, name)
+                : undefined
+            }
+          />
+        }
+      />
+      <div className="space-y-6">
+        <WorkflowGroup
+          id="preparacion"
+          label="Preparación"
+          open={openSections.preparacion ?? true}
+          onOpenChange={(o) => setSectionOpen("preparacion", o)}
+          className="scroll-mt-24"
+          style={helpGap("preparacion")}
+        >
           <div id="nueva-evaluacion" className="scroll-mt-24">
             <Card>
-              <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-end">
-                <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
-                  <ShieldCheck className="h-5 w-5" />
+              <CardContent className="flex flex-col gap-3 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                  <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary md:flex">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <Label htmlFor="sim-select">Nueva evaluación</Label>
+                    {simulationsQuery.isLoading ? (
+                      <Skeleton className="h-9 w-full" />
+                    ) : completedSims.length === 0 ? (
+                      <p className="text-sm text-destructive">
+                        No hay generaciones completadas. Vuelve al paso{" "}
+                        <b>Generación</b>.
+                      </p>
+                    ) : (
+                      <NativeSelect
+                        id="sim-select"
+                        value={selectedSimId}
+                        onValueChange={setSelectedSimId}
+                        className="h-9 rounded-md px-3 font-mono text-xs"
+                      >
+                        {completedSims.map((s) => (
+                          <option key={s.simulation_id} value={s.simulation_id}>
+                            {s.simulation_name || s.simulation_id}
+                            {s.sample_size != null
+                              ? ` · ${s.sample_size.toLocaleString()} filas`
+                              : ""}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    )}
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1 space-y-1">
-                  <Label htmlFor="sim-select">Nueva evaluación</Label>
-                  {simulationsQuery.isLoading ? (
-                    <Skeleton className="h-9 w-full" />
-                  ) : completedSims.length === 0 ? (
-                    <p className="text-sm text-destructive">
-                      No hay generaciones completadas. Vuelve al paso{" "}
-                      <b>Generación</b>.
-                    </p>
-                  ) : (
-                    <select
-                      id="sim-select"
-                      value={selectedSimId}
-                      onChange={(e) => setSelectedSimId(e.target.value)}
-                      className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
-                    >
-                      {completedSims.map((s) => (
-                        <option key={s.simulation_id} value={s.simulation_id}>
-                          {s.simulation_name || s.simulation_id}
-                          {s.sample_size != null
-                            ? ` · ${s.sample_size.toLocaleString()} filas`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
+                {selectedBrcId && (
+                  <div id="reglas-preprocesamiento" className="scroll-mt-24">
+                    <RulesBanner brcId={selectedBrcId} title="Reglas de negocio" />
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
 
           <div id="configuracion-avanzada" className="scroll-mt-24">
-            <ConfigPanel configId="evaluation" contextId={selectedSimId} />
+            <ConfigPanel
+              configId="evaluation"
+              contextId={selectedSimId}
+              activeGroup={activeAxis}
+              onGroupChange={setActiveAxis}
+            />
           </div>
 
           <div id="ejecutar-evaluacion" className="scroll-mt-24">
@@ -291,7 +399,14 @@ export default function AuditoriaPage() {
           </div>
         </WorkflowGroup>
 
-        <WorkflowGroup id="resultados" label="Resultados" className="scroll-mt-24">
+        <WorkflowGroup
+          id="resultados"
+          label="Resultados"
+          open={openSections.resultados ?? true}
+          onOpenChange={(o) => setSectionOpen("resultados", o)}
+          className="scroll-mt-24"
+          style={helpGap("resultados")}
+        >
           <div id="evaluacion-actual" className="scroll-mt-24">
             <ActiveJobCard
               id={lc.activeId}
@@ -322,19 +437,7 @@ export default function AuditoriaPage() {
                         </span>
                       )}
                     </div>
-                    {lc.active.metrics_evaluated &&
-                      lc.active.metrics_evaluated.length > 0 && (
-                        <div>
-                          <p className="mb-1 text-xs text-muted-foreground">Métricas:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {lc.active.metrics_evaluated.map((m) => (
-                              <Badge key={m} variant="secondary">
-                                {m}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+
                     {lc.active.status === "completed" && lc.activeId && (
                       <TimeProfilingPanel kind="evaluations" id={lc.activeId} />
                     )}
@@ -361,14 +464,28 @@ export default function AuditoriaPage() {
         </WorkflowGroup>
 
         {lc.active?.status === "completed" && lc.activeId && (
-          <WorkflowGroup id="reporte" label="Reporte" className="scroll-mt-24">
+          <WorkflowGroup
+            id="reporte"
+            label="Reporte"
+            open={openSections.reporte ?? true}
+            onOpenChange={(o) => setSectionOpen("reporte", o)}
+            className="scroll-mt-24"
+            style={helpGap("reporte")}
+          >
             <div id="reporte-evaluacion" className="scroll-mt-24">
               <EvaluationReportSection evaluationId={lc.activeId} />
             </div>
           </WorkflowGroup>
         )}
 
-        <WorkflowGroup id="historial" label="Historial" className="scroll-mt-24">
+        <WorkflowGroup
+          id="historial"
+          label="Historial"
+          open={openSections.historial ?? false}
+          onOpenChange={(o) => setSectionOpen("historial", o)}
+          className="scroll-mt-24"
+          style={helpGap("historial")}
+        >
           <div id="evaluaciones" className="scroll-mt-24">
             <HistoryCard
               title="Evaluaciones"
@@ -388,7 +505,7 @@ export default function AuditoriaPage() {
               getRowId={(e) => e.evaluation_id}
               getTimestamp={(e) => e.timestamp}
               getDuration={(e) => e.duration_seconds}
-              onSelect={(id) => lc.setActiveId(id)}
+              onSelect={selectRun.request}
               actionsCell={(e) =>
                 e.status === "in_progress" ? (
                   <button
@@ -455,6 +572,15 @@ export default function AuditoriaPage() {
           setStartDialogOpen(false);
         }}
         onCancel={() => setStartDialogOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={selectRun.pendingId !== null}
+        title="¿Ver una evaluación anterior?"
+        description="Se cargarán sus resultados y se descartarán los cambios sin guardar en la preparación, que volverá a sus valores por defecto."
+        confirmLabel="Ver evaluación"
+        onConfirm={selectRun.confirm}
+        onCancel={selectRun.cancel}
       />
 
       <WizardConfirmDialogs

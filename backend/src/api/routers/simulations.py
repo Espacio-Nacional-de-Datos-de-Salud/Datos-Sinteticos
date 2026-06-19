@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
+import pandas as pd
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
@@ -13,7 +14,10 @@ from backend.src.api.schemas.files import FilePreview
 from backend.src.api.schemas.simulations import (
     CleanupResult,
     DeletedSimulation,
+    RejectionSamplingReport,
     RenameRequest,
+    SanityReport,
+    SanityReportRow,
     SimulationCreateRequest,
     SimulationJob,
     SimulationSummary,
@@ -32,6 +36,7 @@ from backend.src.runs.catalog.downloads import (
     build_synthetic_data_bundle,
     build_zip_stream,
 )
+from backend.src.runs.catalog.models import list_model_key_columns
 from backend.src.runs.catalog.simulations import (
     SYNTHETIC_DATA_DIRNAME,
     list_available_simulations,
@@ -61,6 +66,24 @@ _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 router = APIRouter(prefix="/simulations", tags=["Simulations"])
 
 
+def _validate_conditional_columns_not_keys(model_id: str, conditional) -> None:
+    """Raise HTTP 422 if any condition targets a PK/FK column.
+
+    Key columns are collected globally across the schema, so a denormalized key
+    (e.g. ``person_id`` present in a child table without being a declared FK
+    there) is rejected too — FK-consistency POST reconstructs it from the parent,
+    making any conditioning on it meaningless.
+    """
+    key_columns = set(list_model_key_columns(model_id))
+    bad = {c.column for c in conditional.conditions} & key_columns
+    if bad:
+        cols = ", ".join(f"'{c}'" for c in sorted(bad))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Conditional generation cannot target key column(s) {cols} (primary or foreign keys).",
+        )
+
+
 @router.get("/", response_model=list[SimulationSummary])
 def get_simulations() -> list[dict]:
     """Returns all simulation runs available in the catalog."""
@@ -83,6 +106,9 @@ def create_simulation(
     ``GET /simulations/{simulation_id}``. Clients poll that endpoint to observe
     the ``status`` transition to ``completed`` or ``failed``.
     """
+    if request.conditional and request.conditional.conditions:
+        _validate_conditional_columns_not_keys(request.model_id, request.conditional)
+
     session = initialize_simulation_session(
         model_id=request.model_id,
         synthetic_data_file_format=request.synthetic_data_file_format,
@@ -99,6 +125,15 @@ def create_simulation(
         cancel_event=cancel_event,
         table_sample_sizes=request.table_sample_sizes,
         conditional=request.conditional.model_dump() if request.conditional else None,
+        fixed_target=request.fixed_target.model_dump() if request.fixed_target else None,
+        sampling_overrides=(
+            {
+                "max_attempts": request.max_attempts,
+                "overgenerate_factor": request.overgenerate_factor,
+            }
+            if request.max_attempts is not None or request.overgenerate_factor is not None
+            else None
+        ),
     )
     return SimulationJob(simulation_id=session.simulation_id, status="in_progress")
 
@@ -144,9 +179,24 @@ def cleanup_simulations(
 
 
 @router.delete("/purge", response_model=CleanupResult)
-def purge_simulations() -> CleanupResult:
+def purge_simulations(
+    cascade: bool = Query(
+        False,
+        description=(
+            "When true, also purge every downstream evaluation so nothing is "
+            "left orphaned. When false, only simulation folders are deleted and "
+            "their evaluations become orphaned."
+        ),
+    ),
+) -> CleanupResult:
     """Delete every simulation folder regardless of status (destructive)."""
     deleted = purge_all_simulations_catalog()
+    if cascade:
+        from backend.src.runs.catalog.evaluations import (
+            purge_all_evaluations as purge_all_evaluations_catalog,
+        )
+
+        deleted = deleted + purge_all_evaluations_catalog()
     return CleanupResult(deleted_ids=deleted, empty=[], orphans=[])
 
 
@@ -207,6 +257,57 @@ def get_simulation_time_profiling(simulation_id: SimulationId) -> TimeProfilingR
             detail=f"No time profiling report for simulation '{simulation_id}'.",
         )
     return report
+
+
+@router.get("/{simulation_id}/sanity-report", response_model=SanityReport)
+def get_simulation_sanity_report(simulation_id: SimulationId) -> SanityReport:
+    """Returns the sanity-checks report saved at the end of a simulation run.
+
+    Sanity checks combine logical-rule validations (one row per registered
+    rule) and structural checks (referential integrity, contextual FK
+    consistency). The report is written by
+    `SimulationTracker.save_sanity_report` once generation finishes.
+    """
+    folder = Path(SIMULATIONS_DIR) / simulation_id
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"Simulation '{simulation_id}' not found.")
+    report_path = folder / "sanity_checks_report.csv"
+    if not report_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"No sanity report for simulation '{simulation_id}'.",
+        )
+    df = pd.read_csv(report_path)
+    # Replace NaN with None so optional string fields pass Pydantic validation.
+    records = [
+        {k: (None if (isinstance(v, float) and v != v) else v) for k, v in r.items()}
+        for r in df.to_dict(orient="records")
+    ]
+    rows = [SanityReportRow(**r) for r in records]
+    return SanityReport(simulation_id=simulation_id, rows=rows)
+
+
+@router.get("/{simulation_id}/rejection-report", response_model=RejectionSamplingReport)
+def get_simulation_rejection_report(simulation_id: SimulationId) -> RejectionSamplingReport:
+    """Returns how rejection sampling performed during a simulation run.
+
+    Written by `SimulationTracker.save_rejection_sampling_report` only when at
+    least one rejection-sampling rule applied. A 404 means rejection sampling
+    did not run for this simulation (no rejection rules, or ``sample_size`` was
+    unbounded), so the frontend simply omits the section.
+    """
+    folder = Path(SIMULATIONS_DIR) / simulation_id
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail=f"Simulation '{simulation_id}' not found.")
+    report_path = folder / "rejection_sampling_report.json"
+    if not report_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"No rejection sampling report for simulation '{simulation_id}'.",
+        )
+    with open(report_path, encoding="utf-8") as file_handle:
+        stats = json.load(file_handle)
+    return RejectionSamplingReport(simulation_id=simulation_id, **stats)
 
 
 @router.delete("/{simulation_id}", response_model=DeletedSimulation)

@@ -24,6 +24,7 @@ type ProgressLike = {
   status: string;
   progress?: JobProgress | null;
   started_at_ms?: number | null;
+  error_message?: string | null;
 };
 
 export function ActiveJobCard({
@@ -71,6 +72,7 @@ export function ActiveJobCard({
               status={active.status}
               progress={active.progress ?? null}
               startedAtMs={active.started_at_ms ?? null}
+              errorMessage={active.error_message}
             />
             {metadata}
             {actions && <div className="flex flex-wrap gap-2">{actions}</div>}

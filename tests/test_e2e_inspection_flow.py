@@ -361,3 +361,41 @@ rules:
 
     updated = pd.read_parquet(processed_dir / "patients.parquet")
     assert "is_adult" in updated.columns
+
+
+def test_run_inspection_flow_includes_ambiguous_date_warning(
+    isolated_inspections_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Col with only values like '01/02/2020', purely ambiguous
+    df = pd.DataFrame({
+        "id": [1, 2, 3],
+        "fecha": ["01/02/2020", "03/04/2021", "05/06/2022"]
+    })
+    _stub_data_pipeline(
+        monkeypatch,
+        processed_data={"patients": df},
+        relationships={"pks": {"patients": "id"}, "fks": []},
+        encoding_types={"patients": {"fecha": "TABULAR_DATETIME"}}
+    )
+
+    rules_file = tmp_path / "rules.yaml"
+    rules_file.write_text("rules: []\n", encoding="utf-8")
+
+    result = inspection_service.run_inspection_flow(
+        file_paths=["/data/patients.csv"],
+        mostly_config_path="/cfg/mostly.yaml",
+        rules_config_path=str(rules_file),
+        enable_data_profiling=False,
+    )
+
+    assert result is not None
+    session_dir = Path(result.output_directory)
+    metadata = json.loads((session_dir / INSPECTION_METADATA_FILENAME).read_text())
+
+    # Check that the ambiguous date warning is present
+    warnings = metadata.get("warnings", [])
+    ambig_warnings = [w for w in warnings if w["kind"] == "ambiguous_date_format"]
+    assert len(ambig_warnings) == 1
+    assert ambig_warnings[0]["column"] == "fecha"
+    assert ambig_warnings[0]["table"] == "patients"
+    assert "ambiguo" in ambig_warnings[0]["message"]

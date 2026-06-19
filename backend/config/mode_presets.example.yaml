@@ -1,9 +1,33 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Editable runtime config. Managed by the application (UI / API / `make config`).
+# Edits here are persistent until the config is reset to its example template.
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Mode presets for training configuration.
 # Define sensible defaults for Privacy, Balanced, and Utility modes.
 # These are merged into mostly_ai.yaml when selected.
 # Users can customize these by copying to mode_presets.yaml and editing.
 
 modes:
+  free:
+    label: "Libre"
+    description: "Configuración personalizada sin restricciones predefinidas"
+    details:
+      - "Valores por defecto del sistema"
+      - "Configura manualmente cada parámetro"
+      - "Es el modo por defecto: edita libremente cualquier parámetro"
+    icon: "✏️"
+    config:
+      model_settings:
+        model: "MOSTLY_AI/Medium"
+        max_epochs: null
+        batch_size: 16
+        enable_flexible_generation: true
+        max_training_time: null
+        max_sample_size: null
+        enable_model_report: false
+        differential_privacy: null
+
   privacy:
     label: "Modo Privacidad"
     description: "Privacidad máxima con modelo pequeño"
@@ -15,9 +39,12 @@ modes:
     config:
       model_settings:
         model: "MOSTLY_AI/Small"
-        max_epochs: 1
+        max_epochs: null
         batch_size: 16
         enable_flexible_generation: false
+        max_training_time: 60
+        max_sample_size: null
+        enable_model_report: false
         differential_privacy:
           max_epsilon: 1.0
           delta: 0.00001
@@ -36,10 +63,12 @@ modes:
     config:
       model_settings:
         model: "MOSTLY_AI/Medium"
-        max_epochs: 1
+        max_epochs: null
         batch_size: 16
         enable_flexible_generation: true
-        # No differential privacy for balanced mode
+        max_training_time: 60
+        max_sample_size: null
+        enable_model_report: false
         differential_privacy: null
 
   utility:
@@ -54,8 +83,11 @@ modes:
     config:
       model_settings:
         model: "MOSTLY_AI/Large"
-        max_epochs: 1
+        max_epochs: null
         batch_size: 32
         enable_flexible_generation: true
-        # No differential privacy for utility mode
+        max_training_time: 60
+        max_sample_size: null
+        enable_model_report: false
         differential_privacy: null
+

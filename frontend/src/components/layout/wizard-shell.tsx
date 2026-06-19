@@ -8,7 +8,8 @@ import {
   InstructionsPanel,
   type InstructionsEntry,
 } from "@/components/layout/instructions-panel";
-import { PIPELINE_STEPS, findStepIndex, stepHref } from "@/lib/pipeline-steps";
+import { stepHref, PIPELINE_STEPS } from "@/lib/pipeline-steps";
+import { useBannerHeight } from "@/lib/use-banner-height";
 import { cn } from "@/lib/utils";
 
 export function WizardShell({
@@ -44,14 +45,20 @@ export function WizardShell({
   instructionsBannerHeight?: number;
   children: React.ReactNode;
 }) {
-  const index = findStepIndex(currentSlug);
-  const prev = index > 0 ? PIPELINE_STEPS[index - 1] : null;
-  const next = index < PIPELINE_STEPS.length - 1 ? PIPELINE_STEPS[index + 1] : null;
+  const steps = PIPELINE_STEPS;
+  const index = steps.findIndex((s) => s.slug === currentSlug);
+  const prev = index > 0 ? steps[index - 1] : null;
+  const next = index >= 0 && index < steps.length - 1 ? steps[index + 1] : null;
   const outlineKey = useMemo(() => outline.map((item) => item.id).join("|"), [outline]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const hasInstructions = !!instructions && instructions.length > 0;
   const open = !!instructionsOpen;
+  // The page's WizardBanner publishes its real rendered height here; the rail's
+  // "Resumen" block is sized to it so the two banners are always the same
+  // height. Falls back to the explicit prop if a page sets one.
+  const measuredBannerHeight = useBannerHeight();
+  const bannerHeight = measuredBannerHeight || instructionsBannerHeight;
 
   return (
     <div className="flex h-full flex-col">
@@ -78,7 +85,7 @@ export function WizardShell({
                 openSections={instructionsSections ?? {}}
                 onToggleSection={onInstructionsToggleSection ?? (() => {})}
                 onClose={onInstructionsClose}
-                bannerHeight={instructionsBannerHeight}
+                bannerHeight={bannerHeight}
                 onMeasure={onInstructionsMeasure}
               />
             )}
@@ -100,12 +107,12 @@ export function WizardShell({
         )}
 
         <div className="flex gap-1.5">
-          {PIPELINE_STEPS.map((s, i) => (
+          {steps.map((s, i) => (
             <span
               key={s.slug}
               className={cn(
                 "h-1.5 rounded-full transition-all",
-                i === index ? "w-6 bg-primary" : "w-1.5 bg-muted",
+                i === index ? "w-6 bg-primary" : "w-1.5 bg-muted-foreground/40",
               )}
             />
           ))}

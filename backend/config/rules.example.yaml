@@ -70,3 +70,11 @@ rules:
     target_col: "age_group"
     bins: [0, 18, 65, 120]
     labels: ["minor", "adult", "senior"]
+
+  - type: "date_composition"
+    table_target: "dataset_prueba_tecnica_v2"
+    canonical_col: "dob"
+    part_cols:
+      year: "dob_year"
+      month: "dob_month"
+      day: "dob_day"

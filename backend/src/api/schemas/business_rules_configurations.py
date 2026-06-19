@@ -5,6 +5,16 @@ from pydantic import BaseModel, Field
 from backend.src.api.schemas.jobs import JobProgress
 
 
+class BRCRuleWarning(BaseModel):
+    """Advisory raised while loading or applying a rule during the BRC run."""
+
+    rule: str | None = None
+    table: str | None = None
+    column: str | None = None
+    constraint: str | None = None
+    message: str
+
+
 class BRCSummary(BaseModel):
     """Catalogue entry for a BRC run."""
 
@@ -16,10 +26,14 @@ class BRCSummary(BaseModel):
     timestamp_ms: int | None = None
     tables: dict[str, int] = {}
     new_columns: dict[str, list[str]] = {}
+    excluded_columns: dict[str, list[str]] = {}
+    rules_excluded_columns: dict[str, list[str]] = {}
     rules_count: int = 0
+    warnings: list[BRCRuleWarning] = []
     progress: JobProgress | None = None
     duration_seconds: float | None = None
     started_at_ms: int | None = None
+    error_message: str | None = None
 
 
 class BRCCreateRequest(BaseModel):
@@ -31,6 +45,7 @@ class BRCCreateRequest(BaseModel):
     )
     name: str | None = Field(
         default=None,
+        max_length=100,
         description="Optional human-readable name for this run.",
     )
     rules_config_path: str | None = Field(
@@ -53,7 +68,7 @@ class BRCJob(BaseModel):
 
 
 class BRCRenameRequest(BaseModel):
-    name: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1, max_length=100)
 
 
 class BRCProfilingReport(BaseModel):

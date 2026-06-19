@@ -49,6 +49,7 @@ export function EditableName({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={save}
+        maxLength={100}
         onKeyDown={(e) => {
           if (e.key === "Enter") save();
           if (e.key === "Escape") {

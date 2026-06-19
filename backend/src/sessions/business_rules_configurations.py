@@ -116,9 +116,7 @@ def run_brc_flow(
                     f"Processed data missing for upload {inspection_id}: {source_processed_dir}"
                 )
 
-            inspection_metadata_path = os.path.join(
-                inspection_dir, INSPECTION_METADATA_FILENAME
-            )
+            inspection_metadata_path = os.path.join(inspection_dir, INSPECTION_METADATA_FILENAME)
             inspection_metadata = read_json(inspection_metadata_path)
             relationships = inspection_metadata.get("relationships", {"pks": {}, "fks": []})
 
@@ -134,9 +132,7 @@ def run_brc_flow(
 
             # Snapshot rules.yaml *before* applying so the history is
             # reproducible even if the user edits the global file later.
-            snapshot_path = os.path.join(
-                tracker.output_directory, BRC_RULES_SNAPSHOT_FILENAME
-            )
+            snapshot_path = os.path.join(tracker.output_directory, BRC_RULES_SNAPSHOT_FILENAME)
             try:
                 shutil.copyfile(rules_config_path, snapshot_path)
             except OSError as copy_error:
@@ -147,7 +143,10 @@ def run_brc_flow(
             formatted_relationships = format_relationships(relationships)
             rule_manager = LogicalRuleManager()
             rule_manager.relationships = formatted_relationships
-            extracted_rules, rejection_config = extract_rules_and_rejection_config(snapshot_path)
+            rule_warnings: list[dict] = []
+            extracted_rules, rejection_config = extract_rules_and_rejection_config(
+                snapshot_path, warnings_sink=rule_warnings
+            )
             for rule in extracted_rules:
                 rule_manager.add_rule(rule)
             rule_manager.rejection_sampling_config = rejection_config.as_dict()
@@ -155,6 +154,33 @@ def run_brc_flow(
             processed_with_rules = rule_manager.apply_all_pre(
                 processed_data, relationships=formatted_relationships
             )
+            # Advisory warnings from PRE (e.g. a date-only constraint against a
+            # datetime column) ride on the card so the UI can show them.
+            rule_warnings.extend(getattr(rule_manager, "pre_warnings", []))
+
+            # Drop both the inspection-scoped exclusions (Carga de Datos) and the
+            # Reglas-de-negocio exclusions chosen for this rule set. They are kept
+            # in separate fields so the latter never leaks back into Carga de Datos;
+            # here, at materialisation time, we apply their union.
+            post_brc_excluded: dict[str, list[str]] = {}
+            for source in (
+                inspection_metadata.get("excluded_columns") or {},
+                inspection_metadata.get("rules_excluded_columns") or {},
+            ):
+                for tbl, cols in source.items():
+                    merged = dict.fromkeys(post_brc_excluded.get(tbl, []))
+                    merged.update(dict.fromkeys(cols))
+                    post_brc_excluded[tbl] = list(merged)
+            for tbl, cols in post_brc_excluded.items():
+                df = processed_with_rules.get(tbl)
+                if df is None:
+                    continue
+                drop_here = [c for c in cols if c in df.columns]
+                if drop_here:
+                    processed_with_rules[tbl] = df.drop(columns=drop_here)
+                    original_columns[tbl] = [
+                        c for c in original_columns.get(tbl, []) if c not in drop_here
+                    ]
 
             advance_progress(tracker.card_path, phases, BRCPhase.SAVING_PROCESSED)
             dest_processed_dir = os.path.join(tracker.output_directory, PROCESSED_DATA_DIRNAME)
@@ -228,7 +254,19 @@ def run_brc_flow(
                     "timestamp": session.timestamp,
                     "tables": tables,
                     "new_columns": new_columns,
+                    "excluded_columns": {t: list(cs) for t, cs in post_brc_excluded.items() if cs},
+                    # Snapshot the Reglas-de-negocio exclusions on their own (not
+                    # the Carga-de-datos union above) so a later run can reload
+                    # exactly the column deletions chosen for this rule set.
+                    "rules_excluded_columns": {
+                        t: list(cs)
+                        for t, cs in (
+                            inspection_metadata.get("rules_excluded_columns") or {}
+                        ).items()
+                        if cs
+                    },
                     "rules_count": len(rule_manager.rules),
+                    "warnings": rule_warnings,
                     "rules_snapshot_path": snapshot_path,
                     "source_rules_config_path": rules_config_path,
                     "enable_profiling": enable_profiling,
@@ -291,9 +329,7 @@ def list_brc_runs(inspection_id: str | None = None) -> list[dict]:
         if inspection_id and card.get("inspection_id") != inspection_id:
             continue
         card.setdefault("duration_seconds", read_total_run_duration_seconds(folder))
-        card.setdefault(
-            "started_at_ms", folder_started_at_ms(folder, "brc")
-        )
+        card.setdefault("started_at_ms", folder_started_at_ms(folder, "brc"))
         out.append(card)
     return out
 
@@ -317,6 +353,29 @@ def delete_brc_run(brc_id: str) -> None:
     if not os.path.isdir(target):
         raise FileNotFoundError(f"BRC run not found: {brc_id}")
     shutil.rmtree(target)
+
+
+def delete_brcs_for_inspection(inspection_id: str) -> list[str]:
+    """Delete every BRC run linked to ``inspection_id``. Returns deleted ids.
+
+    Used when an inspection is cascade-deleted so its business-rule
+    configurations don't linger as orphans.
+    """
+    deleted: list[str] = []
+    for card in list_brc_runs(inspection_id=inspection_id):
+        brc_id = card.get("brc_id")
+        if not brc_id:
+            continue
+        shutil.rmtree(os.path.join(BRC_DIR, brc_id), ignore_errors=True)
+        deleted.append(brc_id)
+    return deleted
+
+
+def purge_all_brcs() -> list[str]:
+    """Delete every BRC folder regardless of status. Returns deleted ids."""
+    from backend.src.runs.catalog._base import purge_all_runs
+
+    return purge_all_runs(BRC_DIR)
 
 
 def brc_run_dir(brc_id: str) -> str:

@@ -1,7 +1,6 @@
 # Evaluation-only pipeline for simulations from pipeline_20260313_231301.
 #
 # Re-evaluates all 13 simulations with the latest metric set, including:
-#   - CIO (confidence_interval_overlap)
 #   - MIA (DomiasMIA_BNAF)
 #   - AverageComplementaryTVD (previously misconfigured as average_inverse_tvd)
 #

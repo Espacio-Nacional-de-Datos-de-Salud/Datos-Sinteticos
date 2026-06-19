@@ -9,17 +9,75 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CollapseToggle } from "@/components/ui/collapse-toggle";
+import { AdvancedBadge, ADVANCED_CARD_CLASS } from "@/components/ui/advanced-section";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
-import { AlertTriangle } from "lucide-react";
+import {
+  AlertOctagon,
+  AlertTriangle,
+  CalendarClock,
+  Droplet,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import {
   ENCODING_TYPES,
   ENCODING_TYPE_LABELS,
   type Autodetect,
 } from "@/lib/api";
-import { ColumnExclusionHint } from "./column-exclusion-hint";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { typeBadgeClass, type AutodetectQuery } from "./utils";
+
+// Per-`kind` styling so each flagged column reads at a glance instead of every
+// warning sharing one amber triangle. The legend below the header explains the
+// icons that actually appear for the current inspection.
+type WarningMeta = {
+  Icon: LucideIcon;
+  label: string;
+  // Solid color block behind the icon so it reads as a clear status dot.
+  badgeClass: string;
+  // Chip border + tint, with a thick colored left accent to draw the eye.
+  chipClass: string;
+};
+
+const WARNING_META: Record<string, WarningMeta> = {
+  incompatible_type_mix: {
+    Icon: AlertOctagon,
+    label: "Tipo incompatible · excluida por defecto",
+    badgeClass: "bg-red-600 text-white",
+    chipClass: "border-red-500 border-l-4 bg-red-50 dark:bg-red-950/40",
+  },
+  high_null_fraction: {
+    Icon: Droplet,
+    label: "Alta proporción de nulos",
+    badgeClass: "bg-amber-500 text-white",
+    chipClass: "border-amber-500 border-l-4 bg-amber-50 dark:bg-amber-950/40",
+  },
+  date_composition_candidate: {
+    Icon: CalendarClock,
+    label: "Posible fecha compuesta",
+    badgeClass: "bg-sky-600 text-white",
+    chipClass: "border-sky-500 border-l-4 bg-sky-50 dark:bg-sky-950/40",
+  },
+  ambiguous_date_format: {
+    Icon: AlertTriangle,
+    label: "Formato de fecha ambiguo",
+    badgeClass: "bg-amber-500 text-white",
+    chipClass: "border-amber-500 border-l-4 bg-amber-50 dark:bg-amber-950/40",
+  },
+};
+
+const DEFAULT_WARNING_META: WarningMeta = {
+  Icon: AlertTriangle,
+  label: "Atención",
+  badgeClass: "bg-amber-500 text-white",
+  chipClass: "border-amber-500 border-l-4 bg-amber-50 dark:bg-amber-950/40",
+};
+
+const warningMeta = (kind: string): WarningMeta =>
+  WARNING_META[kind] ?? DEFAULT_WARNING_META;
 
 export function TypesCard({
   query,
@@ -64,21 +122,29 @@ export function TypesCard({
   };
 
   const [expanded, setExpanded] = useState(false);
+  const [pendingExclusion, setPendingExclusion] = useState<{
+    table: string;
+    col: string;
+  } | null>(null);
 
   const warningsByColumn = new Map(
     (draft?.warnings ?? []).map((w) => [`${w.table}::${w.column}`, w]),
   );
   const warningCount = draft?.warnings?.length ?? 0;
+  // Distinct kinds present, in a stable order, to drive the legend.
+  const presentKinds = Object.keys(WARNING_META).filter((kind) =>
+    (draft?.warnings ?? []).some((w) => w.kind === kind),
+  );
   const isExcludedFromTraining = (table: string, col: string) =>
     (draft?.excluded_columns?.[table] ?? []).includes(col);
 
   return (
-    <Card>
+    <Card className={ADVANCED_CARD_CLASS}>
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <CardTitle className="text-base">Tipos de Codificación</CardTitle>
-            <ColumnExclusionHint compact immediate />
+            <AdvancedBadge tooltip="Avanzado y opcional: revisa y ajusta el tipo de codificación detectado para cada columna." />
             {warningCount > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/70 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
                 <AlertTriangle className="h-3 w-3" />
@@ -88,8 +154,8 @@ export function TypesCard({
             )}
           </div>
           <CardDescription>
-            Edita el tipo MostlyAI de cada columna. Usa × para excluir una
-            columna.
+            Edita el tipo MostlyAI de cada columna. <strong>Usa el icono de papelera
+              para excluir una columna.</strong>
           </CardDescription>
         </div>
         <CollapseToggle
@@ -106,6 +172,27 @@ export function TypesCard({
               No se pudo cargar autodetect.json.
             </p>
           )}
+          {presentKinds.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+              <span className="font-medium text-foreground">Leyenda</span>
+              {presentKinds.map((kind) => {
+                const meta = warningMeta(kind);
+                return (
+                  <span key={kind} className="inline-flex items-center gap-1.5">
+                    <span
+                      className={
+                        "flex h-4 w-4 items-center justify-center rounded " +
+                        meta.badgeClass
+                      }
+                    >
+                      <meta.Icon className="h-3 w-3" />
+                    </span>
+                    {meta.label}
+                  </span>
+                );
+              })}
+            </div>
+          )}
           {draft &&
             Object.entries(draft.encoding_types).map(([table, columns]) => (
               <div key={table}>
@@ -113,21 +200,27 @@ export function TypesCard({
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(columns).map(([col, type]) => {
                     const warning = warningsByColumn.get(`${table}::${col}`);
+                    const meta = warning ? warningMeta(warning.kind) : null;
                     const excluded = isExcludedFromTraining(table, col);
                     return (
                       <label
                         key={col}
                         className={
                           "flex items-center gap-2 rounded-md border bg-card px-2 py-1 text-xs " +
-                          (warning
-                            ? "border-amber-500/70 bg-amber-50 dark:bg-amber-950/30 "
-                            : "") +
+                          (meta ? meta.chipClass + " " : "") +
                           (excluded ? "opacity-60" : "")
                         }
                       >
-                        {warning && (
+                        {warning && meta && (
                           <Tooltip content={warning.message} side="top">
-                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                            <span
+                              className={
+                                "flex h-5 w-5 items-center justify-center rounded shadow-sm " +
+                                meta.badgeClass
+                              }
+                            >
+                              <meta.Icon className="h-3.5 w-3.5" />
+                            </span>
                           </Tooltip>
                         )}
                         <span
@@ -137,14 +230,12 @@ export function TypesCard({
                         >
                           {col}
                         </span>
-                        <select
+                        <NativeSelect
                           value={type}
                           disabled={excluded}
-                          onChange={(e) =>
-                            updateType(table, col, e.target.value)
-                          }
+                          onValueChange={(v) => updateType(table, col, v)}
                           className={
-                            "rounded border px-1.5 py-0.5 text-[10px] font-medium focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 " +
+                            "h-6 w-auto rounded px-1.5 text-[10px] font-medium " +
                             typeBadgeClass(type)
                           }
                         >
@@ -153,7 +244,7 @@ export function TypesCard({
                               {ENCODING_TYPE_LABELS[t] ?? t}
                             </option>
                           ))}
-                        </select>
+                        </NativeSelect>
                         {warning && (
                           <span
                             className="flex items-center gap-1 text-[10px] text-muted-foreground"
@@ -181,11 +272,11 @@ export function TypesCard({
                           disabled={isExcluding}
                           onClick={(e) => {
                             e.preventDefault();
-                            onExcludeColumn(table, col);
+                            setPendingExclusion({ table, col });
                           }}
                           className="ml-auto rounded p-0.5 text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
                         >
-                          ×
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </label>
                     );
@@ -234,6 +325,23 @@ export function TypesCard({
           )}
         </CardContent>
       )}
+      <ConfirmDialog
+        open={pendingExclusion !== null}
+        title="Excluir columna permanentemente"
+        description={
+          pendingExclusion
+            ? `'${pendingExclusion.col}' se eliminará del esquema y de los datos preprocesados de forma inmediata. Esta acción no se puede revertir con «Restaurar autodetectado»; para recuperarla tendrás que relanzar la carga.`
+            : ""
+        }
+        confirmLabel="Excluir columna"
+        onConfirm={() => {
+          if (pendingExclusion) {
+            onExcludeColumn(pendingExclusion.table, pendingExclusion.col);
+          }
+          setPendingExclusion(null);
+        }}
+        onCancel={() => setPendingExclusion(null)}
+      />
     </Card>
   );
 }

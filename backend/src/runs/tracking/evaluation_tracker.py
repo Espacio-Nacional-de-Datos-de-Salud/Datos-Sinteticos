@@ -57,6 +57,7 @@ class EvaluationTracker(BaseRunTracker):
         job_name: str = "",
         evaluation_id: str | None = None,
         training_parameters: dict | None = None,
+        evaluation_parameters: dict | None = None,
     ) -> None:
         super().__init__()
         self.simulation_id = simulation_id
@@ -64,6 +65,7 @@ class EvaluationTracker(BaseRunTracker):
         self.pipeline_id = pipeline_id
         self.job_name = job_name
         self.training_parameters = training_parameters or {}
+        self.evaluation_parameters = evaluation_parameters or {}
 
         self.evaluation_id: str = evaluation_id or (
             f"{EVALUATION_RUN_FOLDER_PREFIX}_{general_config.get_run_timestamp()}"
@@ -84,6 +86,7 @@ class EvaluationTracker(BaseRunTracker):
                     generate_report_artifacts,
                 )
 
+                self.update_card_status("completed")
                 generate_report_artifacts(Path(self.output_directory))
             except Exception as report_exc:
                 logger.exception("Failed to generate HTML evaluation report: %s", report_exc)
@@ -103,6 +106,7 @@ class EvaluationTracker(BaseRunTracker):
                 "pipeline_id": self.pipeline_id,
                 "job_name": self.job_name,
                 "training_parameters": self.training_parameters,
+                "evaluation_parameters": self.evaluation_parameters,
             }
         )
 

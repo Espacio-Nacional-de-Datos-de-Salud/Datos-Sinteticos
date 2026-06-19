@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, ChevronsUpDown, ListTree } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronsUpDown,
+  ListTree,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 
+import { usePersistentState } from "@/lib/use-persistent-state";
 import { cn } from "@/lib/utils";
 
 export type OutlineItem = {
@@ -19,6 +27,7 @@ export function PageOutline({
   scrollRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   const [activeId, setActiveId] = useState(items[0]?.id ?? "");
+  const [collapsed, setCollapsed] = usePersistentState("ends.ui.pageOutline.collapsed", false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
     const initialState: Record<string, boolean> = {};
     items.forEach((item) => {
@@ -70,11 +79,15 @@ export function PageOutline({
   const scrollToId = (id: string, parentId?: string) => {
     const target = document.getElementById(id);
     if (target) {
-      // Open any collapsed WorkflowGroup ancestors before scrolling.
+      // Open any collapsed WorkflowGroup ancestors before scrolling. Scope the
+      // selector to the group toggle so we don't accidentally trip other
+      // aria-expanded controls in the subtree (e.g. the model-source dropdown).
       let current: HTMLElement | null = target.parentElement;
       while (current) {
-        const btn = current.querySelector<HTMLButtonElement>("button[aria-expanded]");
-        if (btn && btn.getAttribute("aria-expanded") === "false") btn.click();
+        const btn = current.querySelector<HTMLButtonElement>(
+          "button[data-workflow-group-toggle][aria-expanded='false']",
+        );
+        if (btn) btn.click();
         current = current.parentElement;
       }
       target.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -82,8 +95,10 @@ export function PageOutline({
       // Child element is not in the DOM because its parent group is collapsed.
       // Open the parent first, then scroll once it renders.
       const parentSection = document.getElementById(parentId);
-      const btn = parentSection?.querySelector<HTMLButtonElement>("button[aria-expanded]");
-      if (btn && btn.getAttribute("aria-expanded") === "false") btn.click();
+      const btn = parentSection?.querySelector<HTMLButtonElement>(
+        "button[data-workflow-group-toggle][aria-expanded='false']",
+      );
+      if (btn) btn.click();
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
           document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -114,6 +129,24 @@ export function PageOutline({
 
   if (items.length === 0) return null;
 
+  // Collapsed: a thin rail (xl-only, matching the expanded panel) with a single
+  // button to bring the outline back.
+  if (collapsed) {
+    return (
+      <aside className="hidden h-full w-10 shrink-0 flex-col items-center overflow-hidden border-r border-[#c9d4ea] bg-[#eef3ff] py-3 text-[#2b3a52] xl:flex dark:border-[#2a3960] dark:bg-[#0f1d39] dark:text-[#c5d2ea]">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          title="Mostrar índice de la página"
+          aria-label="Mostrar índice de la página"
+          className="flex h-8 w-8 items-center justify-center rounded text-[#26467a] opacity-70 transition-opacity hover:opacity-100 dark:text-[#9db4dc]"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
+      </aside>
+    );
+  }
+
   const groupedItems = items.reduce<Array<{ parent: OutlineItem; children: OutlineItem[] }>>(
     (acc, item) => {
       const level = item.level ?? 1;
@@ -130,7 +163,6 @@ export function PageOutline({
   return (
     <aside className="hidden h-full w-64 shrink-0 overflow-hidden border-r border-[#c9d4ea] bg-[#eef3ff] text-[#2b3a52] xl:flex xl:flex-col dark:border-[#2a3960] dark:bg-[#0f1d39] dark:text-[#c5d2ea]">
       <div className="flex h-14 items-center gap-2 border-b border-[#d8e2f4] bg-[#e4ecfb] px-4 text-[11px] font-bold uppercase tracking-[0.08em] text-[#26467a] dark:border-[#33456f] dark:bg-[#132546] dark:text-[#9db4dc]">
-        <ListTree className="h-3.5 w-3.5 shrink-0" />
         <span className="flex-1 truncate">En esta pagina</span>
         <button
           type="button"
@@ -147,6 +179,15 @@ export function PageOutline({
           className="shrink-0 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f83be]"
         >
           <ChevronsUpDown className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          title="Ocultar índice"
+          aria-label="Ocultar índice de la página"
+          onClick={() => setCollapsed(true)}
+          className="shrink-0 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f83be]"
+        >
+          <PanelLeftClose className="h-3.5 w-3.5" />
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto py-2">

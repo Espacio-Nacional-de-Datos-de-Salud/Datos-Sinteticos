@@ -109,6 +109,7 @@ def list_available_models() -> list[dict]:
                     card = json.load(f)
                 model_info["model_name"] = card.get("model_name") or card.get("model_id")
                 model_info["status"] = card.get("status", "")
+                model_info["error_message"] = card.get("error_message")
                 model_info["timestamp"] = card.get("timestamp", "")
                 model_info["timestamp_ms"] = card.get("timestamp_ms")
                 model_info["data_sources"] = card.get("data_sources", [])
@@ -407,6 +408,38 @@ def resolve_model_real_data_paths(model_id: str) -> list[str]:
     return _resolve_real_data_paths_from_card(model_id, card)
 
 
+def read_model_training_config(model_id: str) -> dict:
+    """Return the full Mostly AI config the model was trained with.
+
+    Reads ``configs/mostly_config.json`` (archived at training time, with all
+    overrides already merged in) and returns it verbatim under a ``config``
+    key. Returning the whole object — rather than a hand-picked subset — keeps
+    the summary in sync with every configurable parameter (training limits,
+    differential privacy, per-table overrides, …) without this function needing
+    to know the schema.
+
+    Raises ``ModelNotFoundError`` when the model folder does not exist; returns
+    ``{"config": {}}`` when the config file was never written (e.g. a run that
+    failed before archiving).
+    """
+    folder = os.path.join(MODELS_DIR, model_id)
+    if not os.path.isdir(folder):
+        raise ModelNotFoundError(f"Model '{model_id}' not found.")
+
+    config_path = os.path.join(folder, "configs", "mostly_config.json")
+    if not os.path.exists(config_path):
+        return {"config": {}}
+
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            config = json.load(f)
+    except Exception as exc:
+        logger.warning("Could not read training config for model %s: %s", model_id, exc)
+        config = {}
+
+    return {"config": config if isinstance(config, dict) else {}}
+
+
 def list_model_columns(model_id: str) -> dict[str, list[str]]:
     """Return ``{table: [columns]}`` for a trained model.
 
@@ -466,6 +499,48 @@ def list_model_column_types(model_id: str) -> dict[str, dict[str, str]]:
             return types_by_table
 
     return {}
+
+
+def _load_model_metadata(model_id: str) -> dict:
+    """Load and return ``metadata.json`` for ``model_id``, or ``{}`` on failure."""
+    metadata_path = os.path.join(MODELS_DIR, model_id, METADATA_FILENAME)
+    if not os.path.exists(metadata_path):
+        return {}
+    try:
+        with open(metadata_path) as f:
+            return json.load(f)
+    except Exception as exc:
+        logger.warning("Could not read metadata for model %s: %s", model_id, exc)
+        return {}
+
+
+def collect_key_columns(metadata: dict) -> set[str]:
+    """Return every column *name* that is a primary or foreign key in the schema.
+
+    Keys are collected globally across all tables, not per table. In a
+    denormalized schema a key column (e.g. ``person_id``) is physically present
+    in child tables where it is *not* a declared foreign key — it is a PK of its
+    own table and an FK of an intermediate context parent. Conditioning on such
+    a column is meaningless (FK-consistency POST reconstructs it from the parent
+    anyway), so any column whose name is a key anywhere is treated as off-limits.
+    """
+    keys: set[str] = set()
+    for table in metadata.get("tables", []):
+        pk = table.get("primary_key")
+        if isinstance(pk, str) and pk:
+            keys.add(pk)
+        elif isinstance(pk, list):
+            keys.update(c for c in pk if isinstance(c, str) and c)
+        for fk in table.get("foreign_keys", []) or []:
+            col = fk.get("column")
+            if col:
+                keys.add(col)
+    return keys
+
+
+def list_model_key_columns(model_id: str) -> list[str]:
+    """Return the sorted PK/FK column names for a model (see ``collect_key_columns``)."""
+    return sorted(collect_key_columns(_load_model_metadata(model_id)))
 
 
 def list_model_column_values(

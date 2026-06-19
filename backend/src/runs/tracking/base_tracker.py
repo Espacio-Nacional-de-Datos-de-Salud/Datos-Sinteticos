@@ -24,7 +24,12 @@ import os
 from types import TracebackType
 
 from backend.src.infrastructure.logging_config import get_logger
-from backend.src.runs.card_io import read_json, update_card_status, write_json
+from backend.src.runs.card_io import (
+    fail_superseded_in_progress_runs,
+    read_json,
+    update_card_status,
+    write_json,
+)
 from backend.src.runs.tracking._session_logger import (
     attach_session_file_handler,
     detach_session_file_handler,
@@ -82,6 +87,13 @@ class BaseRunTracker:
                 status = "cancelled"
             elif exc_type is not None:
                 status = "failed"
+                logger.error(
+                    "%s run %s failed: %s",
+                    self.run_kind,
+                    self.run_id,
+                    exc_val,
+                    exc_info=(exc_type, exc_val, exc_tb),
+                )
             else:
                 status = "completed"
 
@@ -118,6 +130,15 @@ class BaseRunTracker:
         synchronously), its ``progress`` field is kept so polling clients
         see a continuous bar.
         """
+        # Starting a new run supersedes any sibling still stuck in_progress:
+        # those runs died without updating their status and would otherwise
+        # spin forever in the UI. Flip them to failed before claiming the slot.
+        fail_superseded_in_progress_runs(
+            os.path.dirname(self.output_directory),
+            self.card_filename,
+            current_run_id=self.run_id,
+        )
+
         payload = {**payload}
         payload.setdefault("status", "in_progress")
         if preserve_progress and os.path.exists(self.card_path):

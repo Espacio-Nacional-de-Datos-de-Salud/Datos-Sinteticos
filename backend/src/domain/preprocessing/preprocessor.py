@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
+from backend.src.domain.encoding_types import ModelEncodingType
 from backend.src.domain.preprocessing.data_cleaner import DataCleaner
 from backend.src.domain.preprocessing.logical_rules import LogicalRuleManager
 from backend.src.domain.preprocessing.metadata_extractor import MetadataExtractor
@@ -18,12 +19,11 @@ from backend.src.domain.preprocessing.metadata_formatter import MetadataFormatte
 from backend.src.domain.preprocessing.profiling import generate_profile_report
 from backend.src.domain.preprocessing.utils import (
     assign_default_context_keys,
-    format_relationships,
     infer_foreign_keys_consistency_rules,
 )
+from backend.src.domain.synthesis import resolve_active_engine
 from backend.src.infrastructure.date_parsing import detect_date_pattern
 from backend.src.infrastructure.logging_config import get_logger
-from backend.src.infrastructure.utils import ModelEncodingType
 
 logger = get_logger(__name__)
 
@@ -51,8 +51,8 @@ class DataPreprocessor:
     """Prepares raw data for training through cleaning and metadata extraction.
 
     Encapsulates the whole transformation flow: initial data cleaning, detection of
-    relationships and column types, optional interactive metadata validation, and 
-    data profile generation. Coordinates multiple components to ensure data is ready 
+    relationships and column types, optional interactive metadata validation, and
+    data profile generation. Coordinates multiple components to ensure data is ready
     for the synthesis engine. Does not enact PRE logical rules.
 
     Args:
@@ -69,6 +69,7 @@ class DataPreprocessor:
         self,
         data_dict: dict[str, pd.DataFrame],
         composite_pk_config: dict[str, list[str]] | None = None,
+        skip_data_cleaning_tables: list[str] | tuple[str, ...] | set[str] | None = None,
     ) -> None:
         """Initializes the preprocessor with a set of raw tables.
 
@@ -79,9 +80,12 @@ class DataPreprocessor:
                 ``{table_name: [col, ...]}`` declaring composite primary keys.
                 Forwarded to :class:`MetadataExtractor`; ignored when
                 ``user_defined_relationships`` is supplied to :meth:`run`.
+            skip_data_cleaning_tables (list[str] | tuple[str, ...] | set[str] | None):
+                Optional table names that should bypass :class:`DataCleaner`.
         """
         self.raw_data_dict = data_dict
         self.composite_pk_config = composite_pk_config or {}
+        self.skip_data_cleaning_tables = tuple(skip_data_cleaning_tables or ())
         self.rule_manager = LogicalRuleManager()
 
     def run(
@@ -92,7 +96,8 @@ class DataPreprocessor:
     ) -> PreprocessResult:
         """Runs the complete preprocessing pipeline.
 
-        1. Data cleaning (DataCleaner).
+        1. Data cleaning (DataCleaner). NOTE: this mutates the raw input dict in
+           place — do not reuse the data passed to this preprocessor afterwards.
         2. Metadata management:
             - Relationship and data-type extraction (MetadataExtractor).
             - Metadata formatting for the synthesis engine (MetadataFormatter).
@@ -114,7 +119,10 @@ class DataPreprocessor:
             >>> result = preprocessor.run(run_data_profiling=True)
             >>> result.processed_data, result.metadata
         """
-        cleaned_data = DataCleaner(self.raw_data_dict).run()
+        cleaned_data = DataCleaner(
+            self.raw_data_dict,
+            skip_tables=self.skip_data_cleaning_tables,
+        ).run()
 
         if user_defined_relationships is not None:
             relationships = user_defined_relationships
@@ -129,9 +137,9 @@ class DataPreprocessor:
         self.add_automatic_contextual_fk_propagation_rules(relationships)
 
         self.rule_manager.relationships = relationships
-        #engineered_data = self.rule_manager.apply_all_pre(
+        # engineered_data = self.rule_manager.apply_all_pre(
         #    data_dict=cleaned_data, relationships=format_relationships(relationships)
-        #)
+        # )
         engineered_data = cleaned_data
 
         if user_defined_types is not None:
@@ -139,7 +147,7 @@ class DataPreprocessor:
         else:
             encoding_types = MetadataExtractor(engineered_data).extract_encoding_types()
 
-        metadata = MetadataFormatter(engine_name="mostly").format(
+        metadata = MetadataFormatter(engine_name=resolve_active_engine()).format(
             data_dfs=engineered_data,
             relationships_data=relationships,
             types_data=encoding_types,

@@ -34,7 +34,7 @@ export function ProfilingCard({
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <CardTitle className="text-base">Profiling</CardTitle>
+          <CardTitle className="text-base">Perfilado</CardTitle>
           <CardDescription>
             Informes de ydata-profiling por tabla. Se generan cuando la
             carga de datos se lanza con la casilla de profiling activada.
@@ -55,14 +55,14 @@ export function ProfilingCard({
           {query.isLoading && <Skeleton className="h-[60vh] w-full" />}
           {query.isError && (
             <p className="text-sm text-destructive">
-              No se pudieron cargar los informes de profiling.
+              No se pudieron cargar los informes de perfilado.
             </p>
           )}
           {!query.isLoading && !query.isError && !hasReports && (
             <p className="text-sm text-muted-foreground">
-              Esta carga de datos no tiene informes de profiling. Lanza otra
+              Esta carga de datos no tiene informes de perfilado. Lanza otra
               carga de datos con la casilla <i>&quot;Generar informes de
-                profiling&quot;</i> activada.
+                perfilado&quot;</i> activada.
             </p>
           )}
           {hasReports && inspectionId && (
@@ -90,7 +90,7 @@ export function ProfilingCard({
                       </a>
                     </div>
                     <iframe
-                      title={`Profiling report ${r.table}`}
+                      title={`Informe de perfilado ${r.table}`}
                       src={url}
                       className="h-[70vh] w-full rounded-md border bg-white"
                       sandbox="allow-scripts allow-same-origin allow-popups"

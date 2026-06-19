@@ -69,6 +69,7 @@ def list_available_inspections() -> list[dict]:
 
             info["inspection_name"] = card.get("inspection_name", "") or info["inspection_id"]
             info["status"] = card.get("status", "")
+            info["error_message"] = card.get("error_message")
             info["timestamp"] = card.get("timestamp", "")
             info["timestamp_ms"] = card.get("timestamp_ms")
             info["tables"] = card.get("tables", {}) or {}
@@ -226,12 +227,16 @@ def delete_inspection(
     deleted_evaluation_ids: list[str] = []
     if mode == "cascade":
         from backend.src.runs.catalog.models import delete_model
+        from backend.src.sessions.business_rules_configurations import (
+            delete_brcs_for_inspection,
+        )
 
         for model_id in linked_model_ids:
             outcome = delete_model(model_id, mode="cascade")
             deleted_model_ids.append(model_id)
             deleted_simulation_ids.extend(outcome.deleted_simulation_ids)
             deleted_evaluation_ids.extend(outcome.deleted_evaluation_ids)
+        delete_brcs_for_inspection(inspection_id)
 
     shutil.rmtree(f"{INSPECTIONS_DIR}/{inspection_id}", ignore_errors=True)
     return DeleteInspectionOutcome(

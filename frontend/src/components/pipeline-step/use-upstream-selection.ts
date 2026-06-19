@@ -6,7 +6,9 @@
 // everywhere:
 //   1. Hydrate the last-used selection from localStorage on mount.
 //   2. If the stored id is missing or no longer points at a completed
-//      artifact, fall back to the most recent completed one.
+//      artifact, fall back to the most recent completed one (unless
+//      autoSelectFirst is false — used when the step owns the artifact and
+//      should not auto-activate a past run on fresh entry).
 //   3. Otherwise keep the user's explicit choice.
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,6 +17,7 @@ export function useUpstreamSelection<T>(
   items: T[],
   idField: keyof T & string,
   storageKey: string,
+  { autoSelectFirst = true }: { autoSelectFirst?: boolean } = {},
 ): {
   selectedId: string;
   setSelectedId: (id: string) => void;
@@ -58,9 +61,11 @@ export function useUpstreamSelection<T>(
       settledOnce.current = true;
       return;
     }
-    setSelectedId(String(items[0][idField])); // eslint-disable-line react-hooks/set-state-in-effect
+    if (autoSelectFirst) {
+      setSelectedId(String(items[0][idField])); // eslint-disable-line react-hooks/set-state-in-effect
+    }
     settledOnce.current = true;
-  }, [hydrated, items, idField, selectedId, setSelectedId]);
+  }, [autoSelectFirst, hydrated, items, idField, selectedId, setSelectedId]);
 
   return { selectedId, setSelectedId, hydrated };
 }

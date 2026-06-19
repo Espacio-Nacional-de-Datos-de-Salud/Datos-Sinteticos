@@ -19,6 +19,17 @@ export type BRCStatus =
   | "cancelled"
   | string;
 
+// Advisory raised while loading or applying a rule during the BRC run
+// (e.g. a date-only constraint against a datetime column, or a rule that
+// was skipped because its YAML entry is invalid).
+export type BRCRuleWarning = {
+  rule?: string | null;
+  table?: string | null;
+  column?: string | null;
+  constraint?: string | null;
+  message: string;
+};
+
 export type BRCSummary = {
   brc_id: string;
   brc_name: string;
@@ -28,10 +39,16 @@ export type BRCSummary = {
   timestamp_ms: number | null;
   tables: Record<string, number>;
   new_columns: Record<string, string[]>;
+  excluded_columns: Record<string, string[]>;
+  // Reglas-de-negocio column deletions for this run, kept separate from the
+  // `excluded_columns` union so they can be reloaded as a rule set.
+  rules_excluded_columns?: Record<string, string[]>;
   rules_count: number;
+  warnings?: BRCRuleWarning[];
   progress: JobProgress | null;
   duration_seconds: number | null;
   started_at_ms: number | null;
+  error_message?: string | null;
 };
 
 export type BRCCreateRequest = {
@@ -48,6 +65,17 @@ export type BRCProfilingReports = {
   brc_id: string;
   reports: BRCProfilingReport[];
 };
+
+// Visible rule count = logical/derived rules + post-BRC column drops. Used
+// everywhere a BRC summary is shown so the count matches the rows in the
+// rules banner (which renders both as entries).
+export function totalRuleCount(brc: Pick<BRCSummary, "rules_count" | "excluded_columns">): number {
+  const dropped = Object.values(brc.excluded_columns ?? {}).reduce(
+    (n, cs) => n + cs.length,
+    0,
+  );
+  return (brc.rules_count ?? 0) + dropped;
+}
 
 const BASE = "/business-rules-configurations";
 

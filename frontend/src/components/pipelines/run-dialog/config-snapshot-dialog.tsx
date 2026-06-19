@@ -76,15 +76,15 @@ export function PipelineConfigSnapshotDialog({
               {jobs.length > 0 && (
                 <section className="space-y-2">
                   <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-                    Jobs ({jobs.length})
+                    Trabajos ({jobs.length})
                   </div>
                   <div className="space-y-1">
                     {jobs.map((job, i) => {
-                      const name = (job.name as string) ?? `job_${i + 1}`;
+                      const name = (job.name as string) ?? `trabajo_${i + 1}`;
                       const steps = [
-                        job.train ? "train" : null,
-                        job.simulate ? "simulate" : null,
-                        job.evaluate ? "evaluate" : null,
+                        job.train ? "entrenar" : null,
+                        job.simulate ? "generar" : null,
+                        job.evaluate ? "evaluar" : null,
                       ].filter(Boolean) as string[];
                       return (
                         <div

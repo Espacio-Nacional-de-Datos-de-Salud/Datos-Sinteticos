@@ -33,7 +33,11 @@ from backend.src.config.general import (
 )
 from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.progress import INSPECTION_PHASES, initial_progress
-from backend.src.runs.card_io import mark_card_failed, write_json
+from backend.src.runs.card_io import (
+    fail_superseded_in_progress_runs,
+    mark_card_failed,
+    write_json,
+)
 from backend.src.runs.tracking.base_tracker import BaseRunTracker
 
 logger = get_logger(__name__)
@@ -112,6 +116,14 @@ class InspectionTracker(BaseRunTracker):
         processed_data_dir = os.path.join(tracker.output_directory, PROCESSED_DATA_DIRNAME)
         os.makedirs(processed_data_dir, exist_ok=True)
         logger.info("Created inspection output directory: %s", tracker.output_directory)
+
+        # Supersede any earlier inspection/upload still stuck in_progress: it
+        # died without updating its status and would otherwise spin forever.
+        fail_superseded_in_progress_runs(
+            INSPECTIONS_DIR,
+            INSPECTION_CARD_FILENAME,
+            current_run_id=tracker.inspection_id,
+        )
 
         inspection_name = name.strip() if name and name.strip() else tracker.inspection_id
         write_json(

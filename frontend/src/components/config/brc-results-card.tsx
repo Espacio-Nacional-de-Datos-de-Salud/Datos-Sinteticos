@@ -14,9 +14,9 @@ import {
 } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CollapseToggle } from "@/components/ui/collapse-toggle";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useIsDev } from "@/lib/mode";
 import {
   brcProfilingReportUrl,
   getBrcPreview,
@@ -58,7 +58,6 @@ export function BRCResultsCard({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [mode, setMode] = useState<Mode>("full");
-  const isDev = useIsDev();
   const brcId = brc?.brc_id ?? null;
 
   const previewQuery = useQuery({
@@ -92,7 +91,7 @@ export function BRCResultsCard({
 
   const rulesSnapshotQuery = useQuery({
     queryKey: ["brc", "rules-snapshot", brcId],
-    enabled: !!brcId && brc?.status === "completed" && isDev,
+    enabled: !!brcId && brc?.status === "completed",
     queryFn: () => getBrcRulesSnapshot(brcId!),
   });
 
@@ -124,7 +123,7 @@ export function BRCResultsCard({
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div className="min-w-0 flex-1">
-          <CardTitle className="text-base">Datos preprocesados</CardTitle>
+          <CardTitle className="text-base">Visualización de datos</CardTitle>
           <CardDescription>
             Vista del dataset que va al entreno tras aplicar las reglas
             (fase PRE). Cambia la vista entre tabla completa y solo
@@ -152,24 +151,43 @@ export function BRCResultsCard({
             </p>
           ) : (
             <>
+              {(brc.warnings?.length ?? 0) > 0 && (
+                <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400">
+                  <p className="inline-flex items-center gap-1 font-medium">
+                    <AlertTriangle className="h-3 w-3" />
+                    Avisos de las reglas
+                  </p>
+                  <ul className="list-disc space-y-0.5 pl-5">
+                    {brc.warnings!.map((w, i) => (
+                      <li key={i}>
+                        {w.table && (
+                          <span className="font-mono">
+                            {w.table}
+                            {w.column ? `.${w.column}` : ""}
+                            {": "}
+                          </span>
+                        )}
+                        {w.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="text-muted-foreground">Vista:</span>
-                <select
+                <NativeSelect
                   value={mode}
-                  onChange={(e) => setMode(e.target.value as Mode)}
-                  className="rounded-md border bg-background px-2 py-1 text-xs"
+                  onValueChange={(v) => setMode(v as Mode)}
+                  className="h-7 w-auto min-w-[11rem] rounded-md px-2 text-xs"
                 >
                   <option value="full">Tabla completa</option>
                   <option value="new">Solo columnas nuevas</option>
-                </select>
-                {isDev && (
-                  <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400">
-                    <AlertTriangle className="h-3 w-3" />
-                    Modo dev: las columnas objetivo marcadas con
-                    drop_origin se muestran pero no llegan al modelo (se
-                    reconstruyen en POST).
-                  </span>
-                )}
+                </NativeSelect>
+                <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400">
+                  <AlertTriangle className="h-3 w-3" />
+                  Las columnas objetivo marcadas con drop_origin se muestran pero
+                  no llegan al modelo (se reconstruyen en POST).
+                </span>
               </div>
               {previewQuery.isLoading && <Skeleton className="h-32 w-full" />}
               {previewQuery.isError && (
@@ -191,7 +209,7 @@ export function BRCResultsCard({
                       droppedTargets={
                         droppedTargetsByTable[preview.table] ?? new Set()
                       }
-                      showDroppedBadge={isDev}
+                      showDroppedBadge
                       hasProfiling={profilingTables.has(preview.table)}
                     />
                   ))}
@@ -254,7 +272,7 @@ function TablePreview({
                 rel="noopener noreferrer"
                 className={buttonVariants({ size: "sm", variant: "outline" })}
               >
-                Ver profiling de columnas nuevas
+                Ver perfilado de columnas nuevas
               </a>
             </Tooltip>
           )}
@@ -301,7 +319,7 @@ function TablePreview({
                           side="top"
                         >
                           <span className="rounded-sm border border-emerald-400 bg-emerald-100 px-1 text-[9px] font-semibold text-emerald-800 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                            new
+                            nueva
                           </span>
                         </Tooltip>
                       )}
@@ -311,7 +329,7 @@ function TablePreview({
                           side="top"
                         >
                           <span className="rounded-sm border border-amber-400 bg-amber-100 px-1 text-[9px] font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                            drop
+                            descartada
                           </span>
                         </Tooltip>
                       )}

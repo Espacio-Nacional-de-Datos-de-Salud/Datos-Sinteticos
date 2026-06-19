@@ -129,7 +129,8 @@ export type ArtifactLifecycle<TItem extends ArtifactItem, TStartInput> = {
   resolveDeleteConflict: (mode: "force" | "cascade") => void;
   cleanup: () => void;
   isCleaning: boolean;
-  purge: () => void;
+  /** Purge every session of this step. With `cascade` also purge downstream. */
+  purge: (cascade?: boolean) => void;
   isPurging: boolean;
   rename: (id: string, name: string) => Promise<void>;
 };
@@ -143,18 +144,16 @@ export function useArtifactLifecycle<
 > {
   const queryClient = useQueryClient();
   const [activeId, setActiveIdState] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
+  // Each page visit is a clean slate: we deliberately do NOT hydrate the active
+  // run from localStorage, so entering a step never pre-selects a past run from
+  // its history — the user can't confuse "what was already done" with "what I'm
+  // about to launch". We still WRITE localStorage on start/select (below) so
+  // downstream steps can read this step's output as their upstream input. With
+  // no hydration there's nothing to wait for, so `hydrated` is true from the
+  // start (kept on the API for callers that gate on it).
+  const [hydrated] = useState(true);
   const [deleteConflict, setDeleteConflict] =
     useState<DeleteConflictState | null>(null);
-
-  useEffect(() => {
-    // Mount-time hydration: SSR and the first client render must agree on
-    // `null` so React doesn't bail out of hydration; we replay from
-    // localStorage on the client right after.
-    const stored = window.localStorage.getItem(config.storageKey);
-    if (stored) setActiveIdState(stored); // eslint-disable-line react-hooks/set-state-in-effect
-    setHydrated(true);
-  }, [config.storageKey]);
 
   const setActiveId = (id: string | null) => {
     if (id) window.localStorage.setItem(config.storageKey, id);
@@ -292,14 +291,19 @@ export function useArtifactLifecycle<
   });
 
   const purgeMutation = useMutation({
-    mutationFn: async () => {
-      const { data } = await api.delete(`${config.apiPath}/purge`);
+    mutationFn: async (cascade: boolean) => {
+      const { data } = await api.delete(`${config.apiPath}/purge`, {
+        params: cascade ? { cascade: true } : undefined,
+      });
       return data as { deleted_ids: string[] };
     },
     onSuccess: (result) => {
       const n = result.deleted_ids?.length ?? 0;
       toast.success(config.labels.purgeOkToast(n));
-      queryClient.invalidateQueries({ queryKey: [config.listKey] });
+      // A cascade purge can wipe artifacts on other pages, so refresh them all.
+      for (const key of ALL_LIST_KEYS) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
     },
     onError: (err) => {
       toast.error(`${config.labels.purgeErrorPrefix}: ${extractDetail(err)}`);
@@ -349,7 +353,7 @@ export function useArtifactLifecycle<
     },
     cleanup: () => cleanupMutation.mutate(),
     isCleaning: cleanupMutation.isPending,
-    purge: () => purgeMutation.mutate(),
+    purge: (cascade = false) => purgeMutation.mutate(cascade),
     isPurging: purgeMutation.isPending,
     rename: (id, name) => renameMutation.mutateAsync({ id, name }),
   };

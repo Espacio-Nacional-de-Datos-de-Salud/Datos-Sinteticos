@@ -27,6 +27,15 @@ export type FieldSchema = {
   dynamicOptions?: "tables" | "columns";
   // When true, an empty string in the form maps to YAML null.
   nullable?: boolean;
+  // Minimum allowed value; only meaningful for kind === "number". Inputs below
+  // this are clamped up to it.
+  min?: number | null;
+  // Model settings that can be overridden for a single table via
+  // model_settings.per_table.<table>; drives the guided per-table UI.
+  perTable?: boolean;
+  // Optional sub-heading within a group. Consecutive fields sharing the same
+  // subgroup render under one heading, mirroring the manual's organisation.
+  subgroup?: string;
 };
 
 // Optional on/off toggle for an entire group. When off, the whole `path`

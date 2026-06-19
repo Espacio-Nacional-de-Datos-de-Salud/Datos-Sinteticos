@@ -47,6 +47,7 @@ class DateFormatInfo:
 
     dayfirst: bool | None
     format_str: str | None
+    ambiguous: bool = False
 
 
 _cache: dict[str, DateFormatInfo] = {}
@@ -61,13 +62,13 @@ def _coerce_str_sample(series: pd.Series) -> pd.Series:
     return s
 
 
-def _decide_dayfirst(sample: pd.Series) -> bool | None:
+def _decide_dayfirst(sample: pd.Series, col_name: str | None = None, log_warnings: bool = True) -> tuple[bool | None, bool]:
     if sample.str.match(_ISO_RE).all():
-        return False
+        return False, False
 
     extracted = sample.str.extract(_TWO_GROUPS_RE)
     if extracted.isna().any().any():
-        return _ambiguous_fallback(sample)
+        return _ambiguous_fallback(sample, col_name, log_warnings)
 
     g0 = pd.to_numeric(extracted[0], errors="coerce")
     g1 = pd.to_numeric(extracted[1], errors="coerce")
@@ -75,28 +76,32 @@ def _decide_dayfirst(sample: pd.Series) -> bool | None:
     g0_over_12 = (g0 > 12).any()
     g1_over_12 = (g1 > 12).any()
     if g0_over_12 and not g1_over_12:
-        return True
+        return True, False
     if g1_over_12 and not g0_over_12:
-        return False
+        return False, False
 
-    return _ambiguous_fallback(sample)
+    return _ambiguous_fallback(sample, col_name, log_warnings)
 
 
-def _ambiguous_fallback(sample: pd.Series) -> bool | None:
+def _ambiguous_fallback(sample: pd.Series, col_name: str | None = None, log_warnings: bool = True) -> tuple[bool | None, bool]:
     rate_mf = pd.to_datetime(sample, errors="coerce", dayfirst=False).notna().mean()
     rate_df = pd.to_datetime(sample, errors="coerce", dayfirst=True).notna().mean()
     if rate_df > rate_mf:
-        return True
+        return True, False
     if rate_mf > rate_df:
-        return False
+        return False, False
     if rate_mf == 0:
-        return None
-    logger.warning(
-        "Date format ambiguous (both DD/MM and MM/DD parse at %.0f%%). "
-        "Defaulting to dayfirst=True. Provide format explicitly to override.",
-        rate_df * 100,
-    )
-    return True
+        return None, False
+    
+    col_str = f" in '{col_name}'" if col_name else ""
+    if log_warnings:
+        logger.warning(
+            "Date format ambiguous%s (both DD/MM and MM/DD parse at %.0f%%). "
+            "Defaulting to dayfirst=True. Provide format explicitly to override.",
+            col_str,
+            rate_df * 100,
+        )
+    return True, True
 
 
 def _derive_format_str(sample: pd.Series, dayfirst: bool | None) -> str | None:
@@ -143,24 +148,28 @@ def _derive_format_str(sample: pd.Series, dayfirst: bool | None) -> str | None:
     return date_fmt
 
 
-def _detect(series: pd.Series) -> DateFormatInfo:
+def _detect(series: pd.Series, col_name: str | None = None, log_warnings: bool = True) -> DateFormatInfo:
     sample = _coerce_str_sample(series)
     if sample.empty:
-        return DateFormatInfo(dayfirst=None, format_str=None)
+        return DateFormatInfo(dayfirst=None, format_str=None, ambiguous=False)
 
-    dayfirst = _decide_dayfirst(sample)
+    dayfirst, ambiguous = _decide_dayfirst(sample, col_name, log_warnings)
     fmt = _derive_format_str(sample, dayfirst)
-    return DateFormatInfo(dayfirst=dayfirst, format_str=fmt)
+    return DateFormatInfo(dayfirst=dayfirst, format_str=fmt, ambiguous=ambiguous)
 
 
-def detect_date_pattern(series: pd.Series, col_name: str | None = None) -> DateFormatInfo:
+def detect_date_pattern(
+    series: pd.Series,
+    col_name: str | None = None,
+    log_warnings: bool = True,
+) -> DateFormatInfo:
     """Detect dayfirst + strftime pattern for a column (cached by col_name)."""
     if col_name is not None:
         with _cache_lock:
             if col_name in _cache:
                 return _cache[col_name]
 
-    info = _detect(series)
+    info = _detect(series, col_name=col_name, log_warnings=log_warnings)
 
     if col_name is not None:
         with _cache_lock:
@@ -168,9 +177,13 @@ def detect_date_pattern(series: pd.Series, col_name: str | None = None) -> DateF
     return info
 
 
-def detect_date_format(series: pd.Series, col_name: str | None = None) -> bool | None:
+def detect_date_format(
+    series: pd.Series,
+    col_name: str | None = None,
+    log_warnings: bool = True,
+) -> bool | None:
     """Return dayfirst-only decision; use detect_date_pattern() for full info."""
-    return detect_date_pattern(series, col_name=col_name).dayfirst
+    return detect_date_pattern(series, col_name=col_name, log_warnings=log_warnings).dayfirst
 
 
 def parse_dates(
@@ -179,10 +192,15 @@ def parse_dates(
     *,
     utc: bool = False,
     errors: str = "coerce",
+    log_warnings: bool = True,
 ) -> pd.Series:
     """Drop-in replacement for pd.to_datetime with per-column DD/MM vs MM/DD auto-detection."""
     name = col_name if col_name is not None else getattr(series, "name", None)
-    dayfirst = detect_date_format(series, col_name=name if isinstance(name, str) else None)
+    dayfirst = detect_date_format(
+        series,
+        col_name=name if isinstance(name, str) else None,
+        log_warnings=log_warnings,
+    )
     if dayfirst is None:
         return pd.to_datetime(series, errors=errors, utc=utc)
     return pd.to_datetime(series, errors=errors, utc=utc, dayfirst=dayfirst)

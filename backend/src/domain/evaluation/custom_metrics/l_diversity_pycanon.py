@@ -40,6 +40,16 @@ _SUMMARY_ROWS: dict[str, str] = {
 }
 
 
+def _normalize_column_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple, set)):
+        return [column for column in value if isinstance(column, str)]
+    return []
+
+
 class LDiversityPyCanon(MetricEvaluator):
     """Compute exact distinct l-diversity with PyCanon.
 
@@ -62,7 +72,7 @@ class LDiversityPyCanon(MetricEvaluator):
         if not qi_subsets:
             return self._skipped_result("missing_quasi_identifier_subsets")
 
-        sensitive_columns = evaluation_config.SENSITIVE_COLUMNS
+        sensitive_columns = _normalize_column_list(evaluation_config.SENSITIVE_COLUMNS)
         if not sensitive_columns:
             return self._skipped_result("missing_sensitive_columns")
 

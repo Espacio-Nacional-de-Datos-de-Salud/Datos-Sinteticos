@@ -1,5 +1,7 @@
 """Pydantic schemas for model-related API responses."""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from backend.src.api.schemas.jobs import JobProgress
@@ -26,12 +28,25 @@ class ModelSummary(BaseModel):
     brc_name: str | None = None
     duration_seconds: float | None = None
     started_at_ms: int | None = None
+    error_message: str | None = None
+
+
+class ModelTrainingConfig(BaseModel):
+    """The Mostly AI config a model was trained with.
+
+    Surfaced by ``GET /models/{model_id}/config`` so the UI can show the full
+    configuration the run was launched with. ``config`` is the verbatim
+    (override-merged) ``mostly_config.json`` content — an empty object when the
+    config was never archived for that run.
+    """
+
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class RenameRequest(BaseModel):
     """Body of a rename PATCH endpoint."""
 
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
 
 
 class TrainingCreateRequest(BaseModel):
@@ -42,6 +57,7 @@ class TrainingCreateRequest(BaseModel):
 
     name: str | None = Field(
         default=None,
+        max_length=100,
         description="Optional human-readable name for this training run.",
     )
     file_paths: list[str] | None = Field(
@@ -88,6 +104,19 @@ class TrainingJob(BaseModel):
 
     model_id: str
     status: str = "in_progress"
+
+
+class TrainingPreflightIssue(BaseModel):
+    """One known problem that would make a training run fail.
+
+    Returned by ``GET /models/training-preflight`` so the UI can warn the user
+    (and explain how to fix the configuration) *before* launching the run.
+    """
+
+    id: str
+    title: str
+    guidance: str
+    tables: list[str] = Field(default_factory=list)
 
 
 class DeletedModel(BaseModel):

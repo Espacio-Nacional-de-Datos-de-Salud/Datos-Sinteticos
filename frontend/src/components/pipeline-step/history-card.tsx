@@ -121,8 +121,14 @@ export function HistoryCard<T>({
           )}
           {items.length > 0 && (
             // table-fixed + explicit widths keep the actions cell on screen
-            // even when long string columns push everything else right.
-            <Table className="table-fixed">
+            // even when long string columns push everything else right. The
+            // min-width guarantees each whitespace-nowrap cell keeps enough
+            // room for its content: in a narrow container (manual panel open,
+            // or 100% zoom on smaller screens) the percentage columns would
+            // otherwise be squeezed below their content and the status badge /
+            // action icons overflow on top of the neighbouring column. Below
+            // the min-width the container's overflow-x-auto scrolls instead.
+            <Table className="min-w-[820px] table-fixed">
               <TableHeader>
                 <TableRow>
                   {columns.map((col) => (
@@ -140,7 +146,7 @@ export function HistoryCard<T>({
                   {getTimestamp && (
                     <TableHead style={{ width: "16%" }}>Fecha</TableHead>
                   )}
-                  <TableHead style={{ width: actionsWidth }} />
+                  <TableHead style={{ width: actionsWidth }} className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

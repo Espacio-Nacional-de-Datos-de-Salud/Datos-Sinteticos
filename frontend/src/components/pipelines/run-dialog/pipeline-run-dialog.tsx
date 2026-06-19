@@ -126,7 +126,7 @@ export function PipelineRunDialog({
             <RunTabButton id="summary" label="Resumen" active={tab} onSelect={setTab} />
             <RunTabButton
               id="jobs"
-              label="Jobs"
+              label="Trabajos"
               badge={run.jobs.length}
               active={tab}
               onSelect={setTab}
@@ -217,7 +217,7 @@ export function PipelineRunDialog({
               </div>
 
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Abre la pestaña <strong>Jobs</strong> para revisar el detalle por job, o{" "}
+                Abre la pestaña <strong>Trabajos</strong> para revisar el detalle por trabajo, o{" "}
                 <strong>Artefactos</strong> para acceder rápido a los modelos y simulaciones
                 producidos.
               </p>
@@ -228,7 +228,7 @@ export function PipelineRunDialog({
             <div className="space-y-2">
               {run.jobs.length === 0 && (
                 <div className="rounded-md border border-dashed border-border px-3 py-4 text-center text-[11px] text-muted-foreground">
-                  Esta ejecución no registró jobs (probablemente falló antes de completar
+                  Esta ejecución no registró trabajos (probablemente falló antes de completar
                   el primer paso).
                 </div>
               )}
@@ -263,7 +263,7 @@ export function PipelineRunDialog({
                         <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
                       )}
                       <span className="text-xs font-bold">
-                        {job.job_name ?? `job_${i + 1}`}
+                        {job.job_name ?? `trabajo_${i + 1}`}
                       </span>
                       <Badge
                         variant={jobStatus === "completed" ? "default" : "secondary"}
@@ -289,7 +289,7 @@ export function PipelineRunDialog({
                       <div className="space-y-2 border-t border-border bg-muted/20 p-3">
                         {!hasArtifacts && (
                           <div className="text-[11px] text-muted-foreground">
-                            Este job no produjo artefactos (estado: {jobStatus}).
+                            Este trabajo no produjo artefactos (estado: {jobStatus}).
                           </div>
                         )}
                         {job.model_id && (

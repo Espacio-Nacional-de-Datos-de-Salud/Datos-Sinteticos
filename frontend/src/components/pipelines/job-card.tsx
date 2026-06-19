@@ -31,7 +31,7 @@ import type {
   ModelSummary,
   SimulationSummary,
 } from "@/lib/api";
-import { SELECT_CLASS } from "@/lib/ui";
+import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 
 export function JobCard({
@@ -92,13 +92,13 @@ export function JobCard({
       <header className="flex items-center justify-between gap-3 border-b border-border bg-[#00215C] px-4 py-2.5 text-white">
         <div className="flex items-center gap-2.5">
           <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-            Job {index + 1}
+            Trabajo {index + 1}
           </span>
           <Input
             value={job.name}
             onChange={(e) => onChange({ name: e.target.value })}
             className="h-7 w-56 border-white/30 bg-white/10 text-white placeholder:text-white/50 focus-visible:border-white"
-            placeholder="nombre_del_job"
+            placeholder="nombre_del_trabajo"
           />
         </div>
         <div className="flex items-center gap-1">
@@ -239,12 +239,12 @@ export function JobCard({
                 <Label className="text-xs">
                   Modelo (opcional — reanudar desde un modelo existente)
                 </Label>
-                <select
-                  className={SELECT_CLASS}
+                <NativeSelect
+                  className="h-9"
                   value={job.simulate.model_id}
-                  onChange={(e) =>
+                  onValueChange={(v) =>
                     onChange({
-                      simulate: { ...job.simulate!, model_id: e.target.value },
+                      simulate: { ...job.simulate!, model_id: v },
                     })
                   }
                 >
@@ -254,25 +254,25 @@ export function JobCard({
                       {m.model_name || m.model_id}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Formato de salida</Label>
-                <select
-                  className={SELECT_CLASS}
+                <NativeSelect
+                  className="h-9"
                   value={job.simulate.synthetic_data_file_format}
-                  onChange={(e) =>
+                  onValueChange={(v) =>
                     onChange({
                       simulate: {
                         ...job.simulate!,
-                        synthetic_data_file_format: e.target.value as SyntheticDataFileFormat,
+                        synthetic_data_file_format: v as SyntheticDataFileFormat,
                       },
                     })
                   }
                 >
                   <option value="csv">CSV</option>
                   <option value="parquet">Parquet</option>
-                </select>
+                </NativeSelect>
               </div>
             </div>
           </StepBlock>
@@ -316,12 +316,12 @@ export function JobCard({
                 <Label className="text-xs">
                   Simulación a re-evaluar (opcional)
                 </Label>
-                <select
-                  className={SELECT_CLASS}
+                <NativeSelect
+                  className="h-9"
                   value={job.evaluate.simulation_id}
-                  onChange={(e) =>
+                  onValueChange={(v) =>
                     onChange({
-                      evaluate: { ...job.evaluate!, simulation_id: e.target.value },
+                      evaluate: { ...job.evaluate!, simulation_id: v },
                     })
                   }
                 >
@@ -331,16 +331,16 @@ export function JobCard({
                       {s.simulation_name || s.simulation_id}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Modelo origen (linaje)</Label>
-                <select
-                  className={SELECT_CLASS}
+                <NativeSelect
+                  className="h-9"
                   value={job.evaluate.model_id}
-                  onChange={(e) =>
+                  onValueChange={(v) =>
                     onChange({
-                      evaluate: { ...job.evaluate!, model_id: e.target.value },
+                      evaluate: { ...job.evaluate!, model_id: v },
                     })
                   }
                 >
@@ -350,7 +350,7 @@ export function JobCard({
                       {m.model_name || m.model_id}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
             </div>
           </StepBlock>

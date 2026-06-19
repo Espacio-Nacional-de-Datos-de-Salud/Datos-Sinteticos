@@ -25,19 +25,19 @@ from datetime import datetime, timedelta, timezone
 
 
 def folder_started_at_ms(folder: str, folder_prefix: str) -> int | None:
-    """Parse the UTC start time encoded in a ``<prefix>_YYYYMMDD_HHMMSS`` folder
+    """Parse the local start time encoded in a ``<prefix>_YYYYMMDD_HHMMSS`` folder
     and return it as epoch milliseconds.
 
     This is the single source of truth for the "in-progress elapsed time"
-    counter shown by the UI: the folder name is set once at run creation, is
-    always UTC (``pd.Timestamp.utcnow``), and is never rewritten — unlike the
-    card's ``timestamp`` / ``timestamp_ms`` which can be refreshed mid-run.
+    counter shown by the UI: the folder name is set once at run creation and is
+    never rewritten — unlike the card's ``timestamp`` / ``timestamp_ms`` which
+    can be refreshed mid-run.
     """
     folder_name = os.path.basename(folder)
     start_time = parse_folder_start_time(folder_name, folder_prefix)
     if start_time is None:
         return None
-    return int(start_time.replace(tzinfo=timezone.utc).timestamp() * 1000)
+    return int(start_time.astimezone().timestamp() * 1000)
 
 
 def read_total_run_duration_seconds(folder: str) -> float | None:

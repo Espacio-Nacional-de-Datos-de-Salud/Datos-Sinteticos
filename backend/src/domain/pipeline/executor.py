@@ -8,7 +8,9 @@ from backend.src.config.general import (
     EVALUATIONS_DIR,
     MODELS_DIR,
     SIMULATIONS_DIR,
+    SKIP_DATA_CLEANING_TABLES,
     TIME_PROFILING_REPORT_FILENAME,
+    normalize_table_name_list,
     refresh_run_timestamp,
 )
 from backend.src.domain.pipeline.config_classes import (
@@ -26,6 +28,54 @@ from backend.src.runs.tracking import PipelineTracker
 from backend.src.sessions.configs import resolve_config_path
 
 logger = get_logger(__name__)
+
+MOSTLYAI_TABULAR_MODEL_TYPE = "TabularARGN"
+MOSTLYAI_TABULAR_MODEL_TYPE_FULL_NAME = "Tabular Auto-Regressive Generative Network"
+
+
+def _normalize_mostly_ai_overrides(overrides: dict | None) -> dict | None:
+    """Map pipeline shortcut DP keys to the Mostly AI config shape."""
+    if not isinstance(overrides, dict):
+        return overrides
+
+    normalized = overrides.copy()
+    model_settings = normalized.get("model_settings")
+    if not isinstance(model_settings, dict):
+        model_settings = {}
+    else:
+        model_settings = model_settings.copy()
+
+    root_dp = normalized.pop("differential_privacy", None)
+    if isinstance(root_dp, dict):
+        existing_dp = model_settings.get("differential_privacy")
+        if isinstance(existing_dp, dict):
+            dp = root_dp.copy()
+            dp.update(existing_dp)
+        else:
+            dp = root_dp.copy()
+        model_settings["differential_privacy"] = dp
+
+    dp = model_settings.get("differential_privacy")
+    if isinstance(dp, dict) and "epsilon" in dp and "max_epsilon" not in dp:
+        dp = dp.copy()
+        dp["max_epsilon"] = dp.pop("epsilon")
+        model_settings["differential_privacy"] = dp
+
+    if model_settings:
+        normalized["model_settings"] = model_settings
+
+    return normalized
+
+
+def _infer_model_type(
+    raw_model: str | None,
+    explicit_model_type: str | None = None,
+) -> tuple[str | None, str | None]:
+    if explicit_model_type:
+        return explicit_model_type, MOSTLYAI_TABULAR_MODEL_TYPE_FULL_NAME
+    if isinstance(raw_model, str) and raw_model.startswith("MOSTLY_AI/"):
+        return MOSTLYAI_TABULAR_MODEL_TYPE, MOSTLYAI_TABULAR_MODEL_TYPE_FULL_NAME
+    return None, None
 
 
 def _resolve_job_config(
@@ -54,7 +104,7 @@ def _resolve_job_config(
         if overrides.rules_config:
             rules_path = overrides.rules_config
         if overrides.mostly_ai:
-            mostly_ai_overrides = overrides.mostly_ai
+            mostly_ai_overrides = _normalize_mostly_ai_overrides(overrides.mostly_ai)
         if overrides.general:
             general = overrides.general
             if "enable_data_profiling" in general:
@@ -63,6 +113,16 @@ def _resolve_job_config(
                 csv_delimiter = str(general["csv_delimiter"])
 
     return rules_path, mostly_ai_path, mostly_ai_overrides, enable_profiling, csv_delimiter
+
+
+def _resolve_skip_data_cleaning_tables(overrides: JobConfigOverrides | None) -> tuple[str, ...]:
+    """Resolve the table-level DataCleaner skip list for a pipeline job."""
+    skip_tables = SKIP_DATA_CLEANING_TABLES
+    if overrides is not None and overrides.general:
+        general = overrides.general
+        if "skip_data_cleaning_tables" in general:
+            skip_tables = normalize_table_name_list(general["skip_data_cleaning_tables"])
+    return skip_tables
 
 
 def _extract_training_parameters_from_job(job) -> dict:
@@ -87,14 +147,29 @@ def _extract_training_parameters_from_job(job) -> dict:
         model_size = raw_model.split("/")[-1]
     else:
         model_size = raw_model
+    model_type, model_type_full_name = _infer_model_type(
+        raw_model,
+        model_settings.get("model_type"),
+    )
 
-    differential_privacy = model_settings.get("differential_privacy") or {}
+    differential_privacy = (
+        model_settings.get("differential_privacy")
+        or mostly_ai_config.get("differential_privacy")
+        or {}
+    )
+    if isinstance(differential_privacy, dict):
+        epsilon = differential_privacy.get("max_epsilon", differential_privacy.get("epsilon"))
+    else:
+        epsilon = None
 
     return {
+        "model_type": model_type,
+        "model_type_full_name": model_type_full_name,
         "model_size": model_size,
-        "epsilon": differential_privacy.get("max_epsilon"),
+        "epsilon": epsilon,
         "flexible_generation": model_settings.get("enable_flexible_generation"),
         "raw_model": raw_model,
+        "modeling_mode": model_settings.get("modeling_mode"),
     }
 
 
@@ -151,6 +226,7 @@ def _run_train_step(
             pipeline_id=pipeline_id,
             job_name=job_name,
             cancel_event=cancel_event,
+            skip_data_cleaning_tables=_resolve_skip_data_cleaning_tables(job_config),
         )
 
     if model_id is None:

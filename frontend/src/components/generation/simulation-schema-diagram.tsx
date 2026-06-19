@@ -9,10 +9,13 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Layout, Maximize2, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 
 import { api, type SimulationRelationship } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 // Sanitise a name for use as a Mermaid entity id (same rules as the inspection
 // graph): keep [a-zA-Z0-9_], replace the rest with underscores, and prefix with
@@ -25,8 +28,12 @@ function sanitizeId(name: string): string {
 function buildErDiagram(
   tableSizes: Record<string, number>,
   relationships: SimulationRelationship[],
+  direction?: "TB" | "LR",
 ): string {
   const lines: string[] = ["erDiagram"];
+  if (direction) {
+    lines.push(`  direction ${direction}`);
+  }
   const ids = new Map<string, string>();
   for (const t of Object.keys(tableSizes)) ids.set(t, sanitizeId(t));
   // Tables that only appear in relationships still need an entity so the edges
@@ -43,7 +50,7 @@ function buildErDiagram(
     // (it's lexed as a NUM/COMMENT, never an attribute name), so a titled box
     // is the only clean way to show "<tabla> · N filas" — no filler column.
     const label = (size != null
-      ? `${table} · ${size.toLocaleString()} filas`
+      ? `${table} · ${size.toLocaleString('es-ES')} filas`
       : table
     ).replace(/"/g, "'");
     lines.push(`  ${id}["${label}"]`);
@@ -66,16 +73,27 @@ export function SimulationSchemaDiagram({
   relationships,
 }: {
   simulationId: string;
-  /** Training row counts, used while the actual counts load or for tables that
-   *  have no synthetic file yet (e.g. the run is still in progress). */
+  /** Training row counts, shown only as a brief placeholder while the actual
+   *  counts load, or as a safety net for a table whose synthetic file can't be
+   *  read. This component is only rendered after the run completes, so the real
+   *  counts are expected to be available. */
   fallbackSizes: Record<string, number>;
   relationships: SimulationRelationship[];
 }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [svg, setSvg] = useState<string | null>(null);
+  const [direction, setDirection] = useState<"TB" | "LR">("TB");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalZoom, setModalZoom] = useState(1.0);
+  const [mounted, setMounted] = useState(false);
 
-  // Actual generated row counts per synthetic table. Returns {} (caught below)
-  // for in-progress runs that have no synthetic data yet.
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Actual generated row counts per synthetic table. The caller only mounts this
+  // once the simulation is completed, so the synthetic files exist by now.
   const rowCountsQuery = useQuery({
     queryKey: ["simulation", simulationId, "synthetic-row-counts"],
     queryFn: async () => {
@@ -102,8 +120,8 @@ export function SimulationSchemaDiagram({
 
   const tableCount = Object.keys(tableSizes).length;
   const diagram = useMemo(
-    () => buildErDiagram(tableSizes, relationships),
-    [tableSizes, relationships],
+    () => buildErDiagram(tableSizes, relationships, direction),
+    [tableSizes, relationships, direction],
   );
 
   useEffect(() => {
@@ -143,11 +161,36 @@ export function SimulationSchemaDiagram({
         </p>
       )}
       {svg ? (
-        <div
-          className="overflow-auto rounded-md border bg-card p-3"
-          // Mermaid output is sanitised to inline SVG; safe to inject.
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
+        <div className="relative group rounded-md border bg-card p-3 overflow-hidden">
+          <div
+            ref={containerRef}
+            className="overflow-auto max-h-[350px] [&_svg]:max-w-full [&_svg]:h-auto"
+            // Mermaid output is sanitised to inline SVG; safe to inject.
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+          <div className="absolute top-2 right-2 flex items-center gap-1.5 rounded-md border bg-background/95 p-1 shadow-sm opacity-90 hover:opacity-100 transition-opacity z-10">
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="text-xs px-2 h-6"
+              onClick={() => setDirection((prev) => (prev === "LR" ? "TB" : "LR"))}
+            >
+              <Layout className="mr-1 h-3 w-3" />
+              {direction === "LR" ? "Vertical" : "Horizontal"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="text-xs px-2 h-6"
+              onClick={() => setIsModalOpen(true)}
+            >
+              <Maximize2 className="mr-1 h-3 w-3" />
+              Ampliar
+            </Button>
+          </div>
+        </div>
       ) : (
         !error && (
           <div className="rounded-md border bg-card p-3">
@@ -162,6 +205,101 @@ export function SimulationSchemaDiagram({
           ? "filas realmente simuladas"
           : "filas según el entrenamiento del modelo"}
       </p>
+
+      {isModalOpen && svg && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 md:p-8 animate-in fade-in duration-200"
+          onClick={() => setIsModalOpen(false)}
+        >
+          <div
+            className="flex h-[90vh] w-[95vw] max-w-7xl flex-col rounded-lg border bg-background shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-center justify-between border-b px-6 py-4 bg-muted/20 gap-4">
+              <div>
+                <h3 className="font-semibold text-lg text-foreground">Esquema de tablas generadas</h3>
+                <p className="text-xs text-muted-foreground">
+                  {tableCount} {tableCount === 1 ? "tabla" : "tablas"} · {relationships.length}{" "}
+                  {relationships.length === 1 ? "relación" : "relaciones"} · Ajusta el zoom y la orientación para inspeccionar en detalle
+                </p>
+              </div>
+              <div className="flex items-center flex-wrap gap-2.5">
+                <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-md border">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs px-2.5"
+                    disabled={modalZoom <= 0.4}
+                    onClick={() => setModalZoom((z) => Math.max(0.4, z - 0.15))}
+                    title="Alejar"
+                  >
+                    <ZoomOut className="mr-1 h-3.5 w-3.5" />
+                    Alejar
+                  </Button>
+                  <span className="w-12 text-center text-xs font-mono font-medium text-foreground">
+                    {Math.round(modalZoom * 100)}%
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs px-2.5"
+                    disabled={modalZoom >= 3.0}
+                    onClick={() => setModalZoom((z) => Math.min(3.0, z + 0.15))}
+                    title="Acercar"
+                  >
+                    <ZoomIn className="mr-1 h-3.5 w-3.5" />
+                    Acercar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs px-2"
+                    onClick={() => setModalZoom(1.0)}
+                    title="Restablecer a 100%"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-1.5 h-8 text-xs px-2.5"
+                  onClick={() => setDirection((prev) => (prev === "LR" ? "TB" : "LR"))}
+                  title="Cambiar orientación de flujo"
+                >
+                  <Layout className="h-3.5 w-3.5" />
+                  <span>{direction === "LR" ? "Horizontal" : "Vertical"}</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs px-2.5 border-destructive/20 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setIsModalOpen(false)}
+                  title="Cerrar"
+                >
+                  <X className="mr-1 h-3.5 w-3.5" />
+                  Cerrar
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto bg-muted/10 p-6 flex items-center justify-center">
+              <div className="border rounded-lg bg-card p-6 shadow-sm overflow-auto w-full h-full">
+                <div
+                  className="transition-all duration-150 [&_svg]:!max-w-none [&_svg]:!w-full [&_svg]:!h-auto block mx-auto"
+                  style={{ width: `${modalZoom * 100}%` }}
+                  dangerouslySetInnerHTML={{ __html: svg }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

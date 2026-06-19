@@ -18,6 +18,7 @@ class InspectionSummary(BaseModel):
     progress: JobProgress | None = None
     duration_seconds: float | None = None
     started_at_ms: int | None = None
+    error_message: str | None = None
 
 
 class InspectionCreateRequest(BaseModel):
@@ -25,6 +26,7 @@ class InspectionCreateRequest(BaseModel):
 
     name: str | None = Field(
         default=None,
+        max_length=100,
         description="Optional human-readable name for this inspection run.",
     )
     file_paths: list[str] = Field(
@@ -109,7 +111,7 @@ class RulesApplyResult(BaseModel):
 class RenameRequest(BaseModel):
     """Body of a rename PATCH endpoint."""
 
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
 
 
 class DeletedInspection(BaseModel):
@@ -172,8 +174,14 @@ class Autodetect(BaseModel):
     warnings: list[ColumnWarning] = []
     # Columns dropped at training time (non-destructively): the data stays in the
     # cached parquet, but training skips these. Initialised with the auto-flagged
-    # incompatible columns; the user toggles membership in the autodetect view.
+    # incompatible columns; the user toggles membership in the autodetect view
+    # (Carga de Datos). This is the inspection-scoped, data-intrinsic exclusion.
     excluded_columns: dict[str, list[str]] = {}
+    # Columns the user drops in the Reglas de negocio (BRC) phase. Kept SEPARATE
+    # from ``excluded_columns`` on purpose: a drop chosen for one rule set must not
+    # bleed back into Carga de Datos or into a different rule set on the same upload.
+    # Applied (unioned with ``excluded_columns``) only when a BRC run materialises.
+    rules_excluded_columns: dict[str, list[str]] = {}
 
 
 class ProfilingReport(BaseModel):

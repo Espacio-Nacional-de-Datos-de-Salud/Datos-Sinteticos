@@ -17,7 +17,6 @@ import pandas as pd
 from backend.src.domain.evaluation.custom_metrics import (
     DCR,
     NNDR,
-    ConfidenceIntervalOverlap,
     CorrelationMatrixDistance,
     DistributionComparisonReport,
     ExactMatchRows,
@@ -35,7 +34,6 @@ CUSTOM_METRIC_CLASSES = [
     DCR,
     NNDR,
     CorrelationMatrixDistance,
-    ConfidenceIntervalOverlap,
     DistributionComparisonReport,
     ExactMatchRows,
     KAnonymity,
@@ -71,6 +69,11 @@ def run_custom_metrics(
 
     real_data_dict = real_data_dict or {}
     synthetic_data_dict = synthetic_data_dict or {}
+
+    available_metric_names = {MetricClass.name() for MetricClass in CUSTOM_METRIC_CLASSES}
+    unavailable_metric_names = sorted(set(requested_metrics) - available_metric_names)
+    for metric_name in unavailable_metric_names:
+        logger.warning("Skipping unknown custom metric: %s", metric_name)
 
     for MetricClass in CUSTOM_METRIC_CLASSES:
         metric_name = MetricClass.name()

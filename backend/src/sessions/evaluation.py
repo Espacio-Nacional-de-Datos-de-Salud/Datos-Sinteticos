@@ -1,15 +1,19 @@
 """Evaluation flow service for the synthetic data tool."""
 
+import hashlib
 import json
 import os
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 
 from backend.src.config.evaluation import EVAL_PYTHON_PATH
 from backend.src.config.general import (
     EVAL_CARD_FILENAME,
     EVALUATION_RUN_FOLDER_PREFIX,
     EVALUATIONS_DIR,
+    MODEL_CARD_FILENAME,
+    MODELS_DIR,
     refresh_run_timestamp,
 )
 from backend.src.infrastructure.logging_config import get_logger
@@ -33,6 +37,48 @@ class EvaluationSession:
     output_directory: str
     card_path: str
     timestamp: str
+
+
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _validate_real_data_hashes(model_id: str | None, real_data: list[str]) -> None:
+    """Fail early when a real-data file changed since the model was trained."""
+    if not model_id:
+        return
+
+    model_card_path = Path(MODELS_DIR) / model_id / MODEL_CARD_FILENAME
+    if not model_card_path.exists():
+        return
+
+    try:
+        model_card = read_json(str(model_card_path))
+    except Exception as error:
+        logger.warning("Could not read model card for hash validation: %s", error)
+        return
+
+    expected_by_path = {
+        str(Path(source["path"]).resolve()): source.get("sha256")
+        for source in model_card.get("data_sources", [])
+        if source.get("path") and source.get("sha256")
+    }
+
+    for real_path in real_data:
+        resolved = str(Path(real_path).resolve())
+        expected_hash = expected_by_path.get(resolved)
+        if not expected_hash:
+            continue
+        current_hash = _sha256_file(resolved)
+        if current_hash != expected_hash:
+            raise ValueError(
+                "Real data file changed since training: "
+                f"{resolved}. Expected sha256 {expected_hash}, got {current_hash}."
+            )
 
 
 def initialize_evaluation_session(
@@ -138,6 +184,12 @@ def run_evaluation_flow_from_simulation(
         return None
 
     effective_real_data = real_data if real_data else inputs.real_data_files
+    try:
+        _validate_real_data_hashes(inputs.model_id, effective_real_data)
+    except Exception as error:
+        logger.error("Real data validation failed: %s", error, exc_info=True)
+        mark_card_failed(session.card_path, error)
+        return None
 
     advance_progress(session.card_path, EVALUATION_PHASES, EvaluationPhase.RUNNING)
     if EVAL_PYTHON_PATH is not None:

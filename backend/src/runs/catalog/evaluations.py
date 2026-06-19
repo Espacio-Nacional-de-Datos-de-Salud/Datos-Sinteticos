@@ -71,6 +71,7 @@ def list_available_evaluations() -> list[dict]:
                     "evaluation_id"
                 )
                 eval_info["status"] = card.get("status", "")
+                eval_info["error_message"] = card.get("error_message")
                 eval_info["timestamp"] = card.get("timestamp", "")
                 eval_info["model_id"] = card.get("model_id")
                 eval_info["simulation_id"] = card.get("simulation_id")

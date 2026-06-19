@@ -1,6 +1,6 @@
 """Artifact loading service for the synthetic data tool."""
 
-from backend.src.domain.synthesis import MostlyAIEngine
+from backend.src.domain.synthesis import create_engine, resolve_active_engine
 from backend.src.infrastructure.logging_config import get_logger
 from backend.src.infrastructure.utils import load_metadata, load_rule_manager
 
@@ -29,7 +29,7 @@ def load_generator_artifacts(
         RuleManagerNotFoundError: If the rules manager file is missing or corrupted.
     """
     logger.info("Loading artifacts for model '%s'...", model_id)
-    engine = MostlyAIEngine(config_path=mostly_config_path)
+    engine = create_engine(engine_name=resolve_active_engine(), config_path=mostly_config_path)
 
     # Resolving artifact paths using the engine's built-in helper
     generator, path_run_folder = engine.load_generator_by_id(model_id)

@@ -11,6 +11,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CollapseToggle } from "@/components/ui/collapse-toggle";
+import { AdvancedBadge, ADVANCED_CARD_CLASS } from "@/components/ui/advanced-section";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -22,7 +24,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { Autodetect, ForeignKey } from "@/lib/api";
-import { SELECT_CLASS, type AutodetectQuery } from "./utils";
+import { NativeSelect } from "@/components/ui/native-select";
+import { type AutodetectQuery } from "./utils";
 
 // Editor for the autodetect schema's relational structure (PKs + FKs). Edits
 // land in a `draft` lifted to the page so this card and TypesCard share the
@@ -141,11 +144,12 @@ export function RelationshipsCard({
               <RelationshipsGraph autodetect={draft} />
             </div>
 
-            <div className="rounded-md border">
+            <div className={cn("rounded-md border", ADVANCED_CARD_CLASS)}>
               <div className="flex items-center justify-between gap-2 px-3 py-2">
                 <div>
-                  <h3 className="text-sm font-medium">
+                  <h3 className="flex items-center gap-2 text-sm font-medium">
                     Editar claves primarias y relaciones
+                    <AdvancedBadge tooltip="Avanzado y opcional: edita las claves primarias y las relaciones entre tablas detectadas." />
                   </h3>
                   <p className="text-xs text-muted-foreground">
                     Los cambios solo se aplican al guardar.
@@ -166,204 +170,204 @@ export function RelationshipsCard({
                 <div className="space-y-6 border-t px-3 py-4">
                   <div>
                     <h3 className="mb-2 text-sm font-medium">Claves primarias</h3>
-                {tables.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No hay tablas para configurar.
-                  </p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Tabla</TableHead>
-                        <TableHead>Columna PK</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {tables.map((table) => (
-                        <TableRow key={table}>
-                          <TableCell className="font-mono text-xs">{table}</TableCell>
-                          <TableCell>
-                            <select
-                              className={SELECT_CLASS}
-                              value={draft.relationships.pks[table] ?? ""}
-                              onChange={(e) => updatePk(table, e.target.value)}
-                            >
-                              <option value="">— sin PK —</option>
-                              {columnsByTable(table).map((c) => (
-                                <option key={c} value={c}>
-                                  {c}
-                                </option>
-                              ))}
-                            </select>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </div>
+                    {tables.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No hay tablas para configurar.
+                      </p>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Tabla</TableHead>
+                            <TableHead>Columna PK</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {tables.map((table) => (
+                            <TableRow key={table}>
+                              <TableCell className="font-mono text-xs">{table}</TableCell>
+                              <TableCell>
+                                <NativeSelect
+                                  className="h-7 w-auto rounded-md px-2 font-mono text-xs"
+                                  value={draft.relationships.pks[table] ?? ""}
+                                  onValueChange={(v) => updatePk(table, v)}
+                                >
+                                  <option value="">— sin PK —</option>
+                                  {columnsByTable(table).map((c) => (
+                                    <option key={c} value={c}>
+                                      {c}
+                                    </option>
+                                  ))}
+                                </NativeSelect>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
 
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-sm font-medium">Claves foráneas</h3>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={addFk}
-                    disabled={tables.length === 0}
-                  >
-                    Añadir relación
-                  </Button>
-                </div>
-                {draft.relationships.fks.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No hay relaciones definidas.
-                  </p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Tabla Padre</TableHead>
-                        <TableHead>Tabla Hija</TableHead>
-                        <TableHead>Columna Padre (PK)</TableHead>
-                        <TableHead>Columna FK Hija</TableHead>
-                        <TableHead>Contexto</TableHead>
-                        <TableHead />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {draft.relationships.fks.map((fk, i) => (
-                        <TableRow key={i}>
-                          <TableCell>
-                            <select
-                              className={SELECT_CLASS}
-                              value={fk.parent}
-                              onChange={(e) =>
-                                updateFk(i, { parent: e.target.value })
-                              }
-                            >
-                              {tables.map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
-                                </option>
-                              ))}
-                            </select>
-                          </TableCell>
-                          <TableCell>
-                            <select
-                              className={SELECT_CLASS}
-                              value={fk.child}
-                              onChange={(e) =>
-                                updateFk(i, { child: e.target.value })
-                              }
-                            >
-                              {tables.map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
-                                </option>
-                              ))}
-                            </select>
-                          </TableCell>
-                          <TableCell>
-                            <select
-                              className={SELECT_CLASS}
-                              value={fk.pk_column}
-                              onChange={(e) =>
-                                updateFk(i, { pk_column: e.target.value })
-                              }
-                            >
-                              {columnsByTable(fk.parent).map((c) => (
-                                <option key={c} value={c}>
-                                  {c}
-                                </option>
-                              ))}
-                            </select>
-                          </TableCell>
-                          <TableCell>
-                            <select
-                              className={SELECT_CLASS}
-                              value={fk.fk_column}
-                              onChange={(e) =>
-                                updateFk(i, { fk_column: e.target.value })
-                              }
-                            >
-                              {columnsByTable(fk.child).map((c) => (
-                                <option key={c} value={c}>
-                                  {c}
-                                </option>
-                              ))}
-                            </select>
-                          </TableCell>
-                          <TableCell>
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4"
-                              checked={fk.is_context}
-                              onChange={(e) =>
-                                updateFk(i, { is_context: e.target.checked })
-                              }
-                            />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <button
-                              type="button"
-                              aria-label="Eliminar relación"
-                              onClick={() => removeFk(i)}
-                              className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </div>
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <h3 className="text-sm font-medium">Claves foráneas</h3>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={addFk}
+                        disabled={tables.length === 0}
+                      >
+                        Añadir relación
+                      </Button>
+                    </div>
+                    {draft.relationships.fks.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No hay relaciones definidas.
+                      </p>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Tabla Padre</TableHead>
+                            <TableHead>Tabla Hija</TableHead>
+                            <TableHead>Columna Padre (PK)</TableHead>
+                            <TableHead>Columna FK Hija</TableHead>
+                            <TableHead>Contexto</TableHead>
+                            <TableHead />
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {draft.relationships.fks.map((fk, i) => (
+                            <TableRow key={i}>
+                              <TableCell>
+                                <NativeSelect
+                                  className="h-7 w-auto rounded-md px-2 font-mono text-xs"
+                                  value={fk.parent}
+                                  onValueChange={(v) =>
+                                    updateFk(i, { parent: v })
+                                  }
+                                >
+                                  {tables.map((t) => (
+                                    <option key={t} value={t}>
+                                      {t}
+                                    </option>
+                                  ))}
+                                </NativeSelect>
+                              </TableCell>
+                              <TableCell>
+                                <NativeSelect
+                                  className="h-7 w-auto rounded-md px-2 font-mono text-xs"
+                                  value={fk.child}
+                                  onValueChange={(v) =>
+                                    updateFk(i, { child: v })
+                                  }
+                                >
+                                  {tables.map((t) => (
+                                    <option key={t} value={t}>
+                                      {t}
+                                    </option>
+                                  ))}
+                                </NativeSelect>
+                              </TableCell>
+                              <TableCell>
+                                <NativeSelect
+                                  className="h-7 w-auto rounded-md px-2 font-mono text-xs"
+                                  value={fk.pk_column}
+                                  onValueChange={(v) =>
+                                    updateFk(i, { pk_column: v })
+                                  }
+                                >
+                                  {columnsByTable(fk.parent).map((c) => (
+                                    <option key={c} value={c}>
+                                      {c}
+                                    </option>
+                                  ))}
+                                </NativeSelect>
+                              </TableCell>
+                              <TableCell>
+                                <NativeSelect
+                                  className="h-7 w-auto rounded-md px-2 font-mono text-xs"
+                                  value={fk.fk_column}
+                                  onValueChange={(v) =>
+                                    updateFk(i, { fk_column: v })
+                                  }
+                                >
+                                  {columnsByTable(fk.child).map((c) => (
+                                    <option key={c} value={c}>
+                                      {c}
+                                    </option>
+                                  ))}
+                                </NativeSelect>
+                              </TableCell>
+                              <TableCell>
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4"
+                                  checked={fk.is_context}
+                                  onChange={(e) =>
+                                    updateFk(i, { is_context: e.target.checked })
+                                  }
+                                />
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <button
+                                  type="button"
+                                  aria-label="Eliminar relación"
+                                  onClick={() => removeFk(i)}
+                                  className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
 
-              {/*
+                  {/*
               Save bar lives at the bottom of the editor: as the user scrolls
               down through PKs and FKs adjusting them, the action buttons sit
               naturally where the editing flow ends — instead of at the top
               where they would be out of sight by the time edits are done.
             */}
-              <div className="flex flex-wrap items-center justify-end gap-2 rounded-md border bg-muted/40 px-3 py-2">
-                <span className="mr-auto text-xs text-muted-foreground">
-                  {dirtyVsSaved
-                    ? "Hay cambios sin guardar en relaciones."
-                    : differsFromOriginal
-                      ? "Relaciones modificadas respecto a la autodetección."
-                      : "Relaciones sincronizadas con la autodetección."}
-                </span>
-                {differsFromOriginal && originalAvailable && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={onRestoreAutodetected}
-                  >
-                    Restaurar autodetectado
-                  </Button>
-                )}
-                {dirtyVsSaved && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={onDiscardChanges}
-                  >
-                    Descartar cambios
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={onSave}
-                  disabled={!dirtyVsSaved || isSaving}
-                >
-                  {isSaving ? "Guardando…" : "Guardar relaciones"}
-                </Button>
+                  <div className="flex flex-wrap items-center justify-end gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                    <span className="mr-auto text-xs text-muted-foreground">
+                      {dirtyVsSaved
+                        ? "Hay cambios sin guardar en relaciones."
+                        : differsFromOriginal
+                          ? "Relaciones modificadas respecto a la autodetección."
+                          : "Relaciones sincronizadas con la autodetección."}
+                    </span>
+                    {differsFromOriginal && originalAvailable && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={onRestoreAutodetected}
+                      >
+                        Restaurar autodetectado
+                      </Button>
+                    )}
+                    {dirtyVsSaved && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={onDiscardChanges}
+                      >
+                        Descartar cambios
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={onSave}
+                      disabled={!dirtyVsSaved || isSaving}
+                    >
+                      {isSaving ? "Guardando…" : "Guardar relaciones"}
+                    </Button>
                   </div>
                 </div>
               )}

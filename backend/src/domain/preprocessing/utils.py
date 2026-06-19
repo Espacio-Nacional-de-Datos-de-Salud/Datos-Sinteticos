@@ -125,6 +125,10 @@ def assign_default_context_keys(relationships: dict) -> dict:
             parent_a_fks = fks_by_child.get(fk_a["parent"], [])
             parent_a_targets = {p["parent"] for p in parent_a_fks}
 
+            # return empty if self-referencing, as it cannot cover any other FK
+            if fk_a["parent"] == fk_a["child"]:
+                return covered
+
             for j, fk_b in enumerate(fks_list):
                 if fk_b["parent"] in parent_a_targets or fk_b["parent"] == fk_a["parent"]:
                     covered.add(j)
@@ -190,6 +194,18 @@ def assign_default_context_keys(relationships: dict) -> dict:
                 f"{fk['parent']}.{fk['fk_column']}: "
                 f"is_context={fk['is_context']}, direct={fk['direct']}"
             )
+
+        # ENFORCE: Self-referencing FKs must never be context or direct
+        for fk in child_fks:
+            if fk["parent"] == fk["child"]:
+                logger.warning(
+                    "Overriding self-referencing relationship for table %s: %s.%s to non-context, non-direct",
+                    fk["child"],
+                    fk["parent"],
+                    fk["fk_column"],
+                )
+                fk["is_context"] = False
+                fk["direct"] = False
 
     return relationships
 

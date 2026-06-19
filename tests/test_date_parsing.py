@@ -164,3 +164,27 @@ def test_restore_date_format_handles_nat_as_empty_string():
 def test_restore_date_format_none_is_passthrough():
     s = pd.Series([pd.Timestamp("1990-03-25")])
     assert restore_date_format(s, None) is s
+
+
+def test_detect_date_pattern_identifies_ambiguity():
+    # Purely ambiguous
+    ambig_s = pd.Series(["01/02/2020", "03/04/2021", "05/06/2022"])
+    info_ambig = detect_date_pattern(ambig_s)
+    assert info_ambig.ambiguous is True
+
+    # Unambiguous (has a day > 12)
+    unambig_s = pd.Series(["25/03/1990", "13/07/1985", "01/02/2000"])
+    info_unambig = detect_date_pattern(unambig_s)
+    assert info_unambig.ambiguous is False
+
+
+def test_detect_date_pattern_includes_column_name_in_warning(monkeypatch):
+    from backend.src.infrastructure.date_parsing import logger as parsing_logger
+    
+    warnings_logged = []
+    monkeypatch.setattr(parsing_logger, "warning", lambda msg, *args: warnings_logged.append(msg % args))
+    
+    s = pd.Series(["01/02/2020", "03/04/2021", "05/06/2022"])
+    detect_date_pattern(s, col_name="test_table.test_column")
+    
+    assert any("in 'test_table.test_column'" in w for w in warnings_logged)

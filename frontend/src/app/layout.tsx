@@ -12,10 +12,10 @@
 // the current route to derive their active/breadcrumb state.
 
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Poppins, Geist_Mono } from "next/font/google";
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider } from "@/lib/theme-provider";
 import { QueryProvider } from "@/lib/query-provider";
-import { ModeProvider } from "@/lib/mode";
 import { Toaster } from "@/components/ui/sonner";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
@@ -42,19 +42,20 @@ export default function RootLayout({
       className={`${poppins.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
+      <head>
+        <Script id="theme-init" strategy="beforeInteractive">{`try{var t=localStorage.getItem('theme')||'light';document.documentElement.classList.remove('light','dark');document.documentElement.classList.add(t==='system'?(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t)}catch(e){}`}</Script>
+      </head>
       <body className="h-full overflow-hidden bg-background text-foreground">
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+        <ThemeProvider defaultTheme="light">
           <QueryProvider>
-            <ModeProvider>
-              <div className="flex h-full flex-col">
-                <Header />
-                <div className="flex flex-1 overflow-hidden">
-                  <Sidebar />
-                  <main className="flex-1 overflow-hidden bg-background">{children}</main>
-                </div>
+            <div className="flex h-full flex-col">
+              <Header />
+              <div className="flex flex-1 overflow-hidden">
+                <Sidebar />
+                <main className="flex-1 overflow-hidden bg-background">{children}</main>
               </div>
-              <Toaster />
-            </ModeProvider>
+            </div>
+            <Toaster />
           </QueryProvider>
         </ThemeProvider>
       </body>

@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { StatusBadge } from "@/components/jobs/status-badge";
 import type { JobProgress } from "@/lib/api";
-import { statusBadgeVariant, translateStatus } from "@/lib/job-status";
 import { cn, formatDuration } from "@/lib/utils";
 
 // Single source of truth for the in-progress elapsed counter:
@@ -17,10 +16,12 @@ export function JobProgressPanel({
   status,
   progress,
   startedAtMs,
+  errorMessage,
 }: {
   status: string;
   progress: JobProgress | null | undefined;
   startedAtMs?: number | null;
+  errorMessage?: string | null;
 }) {
   const isRunning = status === "in_progress";
 
@@ -46,12 +47,11 @@ export function JobProgressPanel({
     <div className="space-y-2 text-sm">
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground">Estado:</span>
-        <Badge
-          variant={statusBadgeVariant(status)}
+        <StatusBadge
+          status={status}
+          errorMessage={errorMessage}
           className={cn(status === "completed" && "!bg-blue-500/20 !text-blue-400")}
-        >
-          {translateStatus(status)}
-        </Badge>
+        />
         {isRunning && elapsedSeconds != null && (
           <span className="ml-auto text-xs text-muted-foreground tabular-nums">
             {formatDuration(elapsedSeconds)}
@@ -76,6 +76,14 @@ export function JobProgressPanel({
       {isRunning && total === 0 && (
         <p className="text-xs text-muted-foreground">
           Procesando… (sin progreso detallado)
+        </p>
+      )}
+
+      {status === "failed" && errorMessage && (
+        <p className="whitespace-pre-wrap rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+          {/* Drop the exception class prefix ("FooError: ") — the message
+              itself is the part written for the user. */}
+          {errorMessage.replace(/^[A-Za-z_]+(?:Error|Exception):\s*/, "")}
         </p>
       )}
     </div>

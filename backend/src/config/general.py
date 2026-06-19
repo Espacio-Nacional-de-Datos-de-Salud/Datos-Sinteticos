@@ -88,7 +88,19 @@ BRC_RUN_FOLDER_PREFIX = "brc"
 BRC_DIR = os.path.join(OUTPUTS_ROOT, BRC_FOLDER_PREFIX)
 BRC_CARD_FILENAME = "brc_card.json"
 
+# Rule library (presets): user-saved snapshots of rules.yaml kept for reuse,
+# independent of any run. Each preset is its own folder holding the rules YAML
+# plus a small descriptor card. Lives under OUTPUTS_ROOT (user data) rather than
+# backend/config/ so `make clean-config` never wipes it and so it isn't gated by
+# the *.example.yaml template requirement of the configs API.
+RULES_LIBRARY_FOLDER_PREFIX = "rules_library"
+RULES_PRESET_FOLDER_PREFIX = "preset"
+RULES_LIBRARY_DIR = os.path.join(OUTPUTS_ROOT, RULES_LIBRARY_FOLDER_PREFIX)
+RULES_PRESET_CARD_FILENAME = "preset_card.json"
+RULES_PRESET_RULES_FILENAME = "rules.yaml"
+
 MOSTLY_LOCAL_PORT = 8082
+MOSTLY_LOCAL_TIMEOUT_SECONDS = float(os.getenv("MOSTLY_LOCAL_TIMEOUT", "1800"))
 
 SUPPORTED_FILE_FORMATS = (".csv", ".parquet", ".xls", ".xlsx")
 
@@ -119,7 +131,7 @@ else:
 
 
 _RUN_TIMESTAMP: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "RUN_TIMESTAMP", default=pd.Timestamp.utcnow().strftime("%Y%m%d_%H%M%S")
+    "RUN_TIMESTAMP", default=pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
 )
 
 
@@ -130,7 +142,7 @@ def get_run_timestamp() -> str:
 
 def refresh_run_timestamp() -> str:
     """Refresh ``RUN_TIMESTAMP`` for this context and return it."""
-    new_ts = pd.Timestamp.utcnow().strftime("%Y%m%d_%H%M%S")
+    new_ts = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
     _RUN_TIMESTAMP.set(new_ts)
     return new_ts
 
@@ -145,6 +157,19 @@ except ConfigFileMissingError:
 _SETTINGS = _GENERAL.get("settings", {})
 
 SYNTHETIC_DATA_FILE_FORMATS: tuple[str, ...] = ("csv", "parquet")
+
+
+def normalize_table_name_list(value: object) -> tuple[str, ...]:
+    """Normalize a table-name setting into a tuple of non-empty strings."""
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        raw_values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        raw_values = value
+    else:
+        return ()
+    return tuple(str(item).strip() for item in raw_values if str(item).strip())
 
 
 def normalize_synthetic_data_file_format(value: object) -> str:
@@ -166,6 +191,9 @@ def synthetic_data_file_extension(file_format: str) -> str:
 ENABLE_DATA_PROFILING: bool = _SETTINGS.get("enable_data_profiling", True)
 DEFAULT_CSV_DELIMITER: str = _SETTINGS.get("default_csv_delimiter", ",")
 DEFAULT_SAMPLE_SIZE: int = _SETTINGS.get("default_sample_size", 1000)
+SKIP_DATA_CLEANING_TABLES: tuple[str, ...] = normalize_table_name_list(
+    _SETTINGS.get("skip_data_cleaning_tables")
+)
 SYNTHETIC_DATA_FILE_FORMAT: str = normalize_synthetic_data_file_format(
     _SETTINGS.get("synthetic_data_file_format", "csv")
 )
@@ -189,3 +217,13 @@ _EXECUTION: dict = _GENERAL.get("execution", {})
 LOG_LEVEL = logging.DEBUG
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+# Process-wide rolling backend log (see ``logging_config.setup_global_file_log``).
+# Lives under outputs/ (gitignored). Named ``runtime_logs`` rather than a generic
+# ``logs`` so it's unambiguous this holds the backend process trail, not other
+# kinds of logs. Size-based rotation: oldest backup is dropped automatically once
+# the cap is hit, so the footprint is bounded (~MAX_BYTES * (BACKUP_COUNT + 1)).
+GLOBAL_LOG_DIR = os.path.join(OUTPUTS_ROOT, "runtime_logs")
+GLOBAL_LOG_FILENAME = "backend.log"
+GLOBAL_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per file
+GLOBAL_LOG_BACKUP_COUNT = 10  # keep ~110 MB total before rotating out

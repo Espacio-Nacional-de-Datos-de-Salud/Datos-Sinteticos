@@ -10,21 +10,23 @@ from backend.src.api.routers import (
     admin,
     business_rules_configurations,
     configs,
+    engines,
     evaluations,
     files,
     health,
     inspections,
     models,
     pipelines,
+    rule_presets,
     simulations,
 )
+from backend.src.infrastructure.logging_config import setup_global_file_log
 from backend.src.sessions.configs import bootstrap_configs, migrate_real_config_headers
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure all configuration files exist (bootstrapped from .example.yaml templates)
-    # This enables a "just run docker compose" experience without requiring 'make setup'.
+    setup_global_file_log()
     bootstrap_configs()
     migrate_real_config_headers()
     yield
@@ -49,8 +51,10 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(files.router)
 app.include_router(configs.router)
+app.include_router(engines.router)
 app.include_router(inspections.router)
 app.include_router(business_rules_configurations.router)
+app.include_router(rule_presets.router)
 app.include_router(models.router)
 app.include_router(simulations.router)
 app.include_router(evaluations.router)
