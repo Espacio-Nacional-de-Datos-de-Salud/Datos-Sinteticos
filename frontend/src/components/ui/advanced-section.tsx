@@ -91,7 +91,7 @@ function AdvancedSection({
         </span>
         <span className="flex items-center gap-1.5">
           <span onClick={(e) => e.stopPropagation()} className="flex items-center">
-            <Tooltip content={tooltip} side="left" />
+            <Tooltip content={tooltip} side="left" inline />
           </span>
           {open ? (
             <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />

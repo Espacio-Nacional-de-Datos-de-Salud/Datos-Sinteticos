@@ -1939,8 +1939,6 @@ class DateInequalityRule(LogicalRule):
         origin_col (str, optional): Reference date column (alternative to constraint).
         target_col (str): Target date column (will be removed in PRE).
         aux_col (str, optional): Name for the auxiliary column. Default: auto-generated.
-            A ``_days`` suffix is appended automatically (the duration is always in
-            days) so the column self-documents its scale.
         constraint (str, optional): Constant limit date (alternative to origin_col).
                                     Format: string parseable by pd.to_datetime (e.g.: "2020-01-01").
         constraint_operator (str): Relationship between target and constraint. Values: ">=" (default) or "<=".
@@ -1983,11 +1981,6 @@ class DateInequalityRule(LogicalRule):
             self._constraint_dt = pd.to_datetime(self.constraint, utc=True).tz_localize(None)
         if self.aux_col is None:
             self.aux_col = f"duration_{self.target_col}"
-        # Diffs are always integer days; append the unit so the derived column
-        # self-documents its scale (mirrors DateToAgeRule). Skip if the user
-        # already typed it to avoid stacking suffixes on renames.
-        if not self.aux_col.endswith("_days"):
-            self.aux_col = f"{self.aux_col}_days"
 
     def _get_bound(self, df: pd.DataFrame):
         """Returns the bound: origin_col column or constant date.

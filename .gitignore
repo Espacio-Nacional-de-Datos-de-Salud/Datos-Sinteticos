@@ -11,3 +11,4 @@ frontend/node_modules/**
 frontend/src/lib/api-types.ts
 frontend/tsconfig.tsbuildinfo
 notebooks/*
+data/

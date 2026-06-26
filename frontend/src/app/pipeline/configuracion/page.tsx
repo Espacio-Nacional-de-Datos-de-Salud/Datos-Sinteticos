@@ -744,7 +744,7 @@ export default function ConfiguracionPage() {
         {!instructionsOpen && (
           <SideRail
             storageKey="ends.ui.configRail"
-            title="panel lateral"
+            title="Resumen de la carga seleccionada"
             top={bannerHeight}
             height={
               scrollHeight

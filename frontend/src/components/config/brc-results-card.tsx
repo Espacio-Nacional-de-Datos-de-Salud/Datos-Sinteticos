@@ -17,6 +17,7 @@ import { CollapseToggle } from "@/components/ui/collapse-toggle";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
+import { AdvancedBadge } from "@/components/ui/advanced-section";
 import {
   brcProfilingReportUrl,
   getBrcPreview,
@@ -30,13 +31,13 @@ import { BRCTableExplorerDialog } from "@/components/config/brc-table-explorer-d
 //   - Full table:        every column in the preprocessed parquet.
 //   - Solo nuevas:       only the columns produced by the rules.
 //
-// In dev mode, the headers of the "target" columns that were marked
-// drop_origin in rules.yaml are still rendered here — copied from the
-// inspection's processed_data so the user can see what *would* be the
-// target column — but with a warning badge and tooltip that explain they
-// will be dropped during PRE and reconstructed during POST. In prod the
-// view is unstyled (no badges, no warning legend) since the user does
-// not care about that distinction.
+// The headers of the "target" columns that were marked drop_origin in
+// rules.yaml are still rendered here — copied from the inspection's
+// processed_data so the user can see what *would* be the target column —
+// but with a warning badge and tooltip. The visible copy is plain
+// language ("solo como referencia, no entrena el modelo"); the technical
+// detail (drop_origin, dropped during PRE / reconstructed during POST)
+// lives in the tooltip for anyone who wants it.
 type Mode = "full" | "new";
 
 type RuleEntry = {
@@ -183,10 +184,11 @@ export function BRCResultsCard({
                   <option value="full">Tabla completa</option>
                   <option value="new">Solo columnas nuevas</option>
                 </NativeSelect>
-                <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400">
+                <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400">
                   <AlertTriangle className="h-3 w-3" />
-                  Las columnas objetivo marcadas con drop_origin se muestran pero
-                  no llegan al modelo (se reconstruyen en POST).
+                  Algunas columnas se muestran solo como referencia: no entrenan
+                  el modelo.
+                  <AdvancedBadge tooltip="Aviso técnico: estas columnas se sustituyen por una versión derivada antes del entrenamiento, así que el modelo no las usa; pueden recomponerse en los datos finales." />
                 </span>
               </div>
               {previewQuery.isLoading && <Skeleton className="h-32 w-full" />}
@@ -325,7 +327,7 @@ function TablePreview({
                       )}
                       {isDropped && (
                         <Tooltip
-                          content="Columna objetivo con drop_origin=true: aparece aquí copiada de la carga, pero se elimina del esquema durante PRE y se reconstruye en POST. El modelo no la ve."
+                          content="Solo referencia: se sustituye por una versión derivada antes del entrenamiento, así que el modelo no la usa; puede recomponerse en los datos finales."
                           side="top"
                         >
                           <span className="rounded-sm border border-amber-400 bg-amber-100 px-1 text-[9px] font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300">

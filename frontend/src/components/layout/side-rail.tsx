@@ -120,7 +120,10 @@ export function SideRail({
       </div>
 
       <div className="flex h-full flex-col">
-        <div className="flex h-7 shrink-0 items-center justify-end">
+        <div className="flex h-7 shrink-0 items-center justify-between gap-2">
+          <h2 className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {title}
+          </h2>
           <button
             type="button"
             onClick={() => setCollapsed(true)}

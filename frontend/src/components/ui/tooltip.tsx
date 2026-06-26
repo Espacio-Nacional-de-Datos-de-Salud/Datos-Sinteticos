@@ -140,6 +140,29 @@ export function Tooltip({
     );
   }
 
+  // When `inline`, the default info trigger is a <span> (role=button) instead
+  // of a <button>, so it's valid phrasing content and can live inside another
+  // interactive element (e.g. AdvancedSection's collapsible header button)
+  // without producing an invalid-nesting hydration error.
+  if (inline) {
+    return (
+      <span className={`relative inline-block ${className}`}>
+        <span
+          ref={triggerRef as React.RefObject<HTMLSpanElement>}
+          role="button"
+          tabIndex={0}
+          aria-label="Más información"
+          {...hoverProps}
+          onClick={() => setIsOpen((v) => !v)}
+          className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          <Info className="h-4 w-4" />
+        </span>
+        {portal}
+      </span>
+    );
+  }
+
   return (
     <div className={`relative inline-block ${className}`}>
       <button
