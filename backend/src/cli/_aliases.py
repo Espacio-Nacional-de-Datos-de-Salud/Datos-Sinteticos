@@ -10,6 +10,10 @@ _BACK_ALIASES = {"b", "back", "volver", "atras"}
 _MODE_ALIASES = {
     "1": "i",
     "i": "i",
+    "cargar": "i",
+    "carga": "i",
+    "load": "i",
+    # Legacy aliases (UI now calls this "Carga de Datos"); kept for muscle memory.
     "inspect": "i",
     "inspection": "i",
     "inspeccionar": "i",
@@ -22,14 +26,31 @@ _MODE_ALIASES = {
     "entrenamiento": "t",
     "3": "s",
     "s": "s",
-    "simulate": "s",
-    "simulation": "s",
+    "generar": "s",
+    "generacion": "s",
+    "generación": "s",
     "generate": "s",
     "generation": "s",
+    # Legacy aliases (UI now calls this "Generación"); kept for muscle memory.
+    "simulate": "s",
+    "simulation": "s",
     "simular": "s",
     "simulacion": "s",
-    "generar": "s",
 }
-_EVALUATE_ALIASES = {"4", "e", "eval", "evaluate", "evaluation", "evaluar", "evaluacion"}
+_EVALUATE_ALIASES = {
+    "4",
+    "a",
+    "auditar",
+    "auditoria",
+    "auditoría",
+    "audit",
+    # Legacy aliases (UI now calls this step "Auditoría"); kept for muscle memory.
+    "e",
+    "eval",
+    "evaluate",
+    "evaluation",
+    "evaluar",
+    "evaluacion",
+}
 _HELP_ALIASES = {"?", "h", "help", "ayuda"}
 _QUIT_ALIASES = {"q", "quit", "exit", "salir"}

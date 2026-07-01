@@ -23,18 +23,21 @@ raw tables ──► inspect ──► train ──► simulate ──► evalua
    (CSV/Parquet/XLSX)    (generator)  (synthetic)   (metrics)
 ```
 
-The generator is the [Mostly AI SDK](../concepts/mostly_ai.md); logical
-constraints on the output are enforced through
-[Logical Rules](../concepts/logical_rules.md); every run writes a card
-under `backend/outputs/<step>/` recording its lineage, status, and
-artifacts.
+The generator is the Mostly AI SDK; logical constraints on the output
+are enforced through a configurable rules engine; every run writes a
+card under `backend/outputs/<step>/` recording its lineage, status, and
+artifacts. For how the generator, the rules engine, and the evaluation
+metrics work internally, see the **complete and final documentation**
+under [`docs/documentacion-completa/`](../documentacion-completa) — in
+particular the [Documentación técnica](<../documentacion-completa/Documentación técnica 20260630.docx>),
+the authoritative deep-dive reference.
 
 
 ### Repo structure
 
 Use this when something exists outside `backend/src/` and you want to
-know what it is. For the inside of `backend/src/`, go to
-[Backend Layout](../concepts/backend_layout.md).
+know what it is. For the layered architecture inside `backend/src/`,
+see the technical documentation (`Documentación técnica.docx`).
 
 | Path | What you'll find | When you edit it |
 | :--- | :--- | :--- |
@@ -45,7 +48,7 @@ know what it is. For the inside of `backend/src/`, go to
 | `backend/config/` | All user-editable YAML configuration | Whenever you change defaults or add a rule |
 | `backend/data/` | Input datasets (usually a symlink) | git-ignored |
 | `backend/outputs/` | Run artifacts: `inspections/`, `models/`, `simulations/`, `evaluations/`, `pipelines/` | Generated, not edited |
-| `backend/src/` | Backend source code — see [Backend Layout](../concepts/backend_layout.md) | Everywhere |
+| `backend/src/` | Backend source code (layered architecture — see the technical documentation) | Everywhere |
 | `tests/` | Pytest suite. `tests/eval/` runs under `.venv_eval` | When you add behaviour |
 | `Makefile` | Every entry point a dev uses | When you add a new `make` target |
 | `compose.yaml` / `compose.override.yaml` | Docker compose for backend + frontend | When changing how the tool is containerised |
@@ -120,18 +123,18 @@ step inputs      (train.files, simulate.sample_size, evaluate.real_data)
 Overrides apply **only to the job that defines them**. The annotated
 reference is `backend/config/pipelines/example_pipeline.example.yaml`
 — read its comments line-by-line; most of the pipeline mental model
-is in that file. Conceptual overview: [Pipelines](../concepts/pipelines.md).
+is in that file. For the conceptual overview of the pipeline engine,
+see the technical documentation.
 
 ---
 
 ## 4 — Read the code, top to bottom of one slice
 
-Read [Backend Layout](../concepts/backend_layout.md) § 1–2 first — the
-five layers (`api/`, `sessions/`, `domain/`, `runs/`,
-`infrastructure/`) and the one-direction import rule. Skim § 3 (folder
-details) and come back to it when you need a specific subpath.
-
-Then pick **simulation** and trace it end-to-end:
+Read the architecture chapter of the [Documentación técnica](<../documentacion-completa/Documentación técnica 20260630.docx>)
+first — the five layers (`api/`,
+`sessions/`, `domain/`, `runs/`, `infrastructure/`) and the
+one-direction import rule. Then pick **simulation** and trace it
+end-to-end through the real files:
 
 | Layer | File | Read for… |
 | :--- | :--- | :--- |
@@ -144,7 +147,8 @@ Then pick **simulation** and trace it end-to-end:
 **Checkpoint.** You can answer: "when the frontend POSTs to
 `/simulations`, what is the call chain until rows are written to
 disk?" You can also explain why `sessions/` is *not* the same kind of
-orchestration as `domain/pipeline/` ([Backend Layout § 5](../concepts/backend_layout.md#5-logical-direction-of-imports)).
+orchestration as `domain/pipeline/` (see the architecture chapter of
+the technical documentation).
 
 ---
 

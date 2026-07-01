@@ -107,7 +107,7 @@ class MetadataFormatter:
                     # makes every value of a high-cardinality numeric "rare", so the
                     # engine's rare-category protection generates the column 100%
                     # null — detect from the actual data instead.
-                    ctype = detect_series_encoding(df[col])
+                    ctype = detect_series_encoding(df[col], column_name=col)
                     logger.info(
                         "Column '%s'.'%s' missing from encoding map; detected '%s' from data.",
                         name,

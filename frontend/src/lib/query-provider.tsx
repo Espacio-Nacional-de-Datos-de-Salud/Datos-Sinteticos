@@ -25,6 +25,11 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
           queries: {
             // Don't spam the API while the user tabs between windows.
             refetchOnWindowFocus: false,
+            // Keep polling in-progress jobs even when the browser tab is not
+            // focused (e.g. while watching the server logs). Without this a
+            // `refetchInterval` poll pauses on blur and — since we don't
+            // refetch on focus — the status would only update on a full reload.
+            refetchIntervalInBackground: true,
             // Re-fetch in the background after 30s; the cached value is
             // shown instantly while fresh data loads.
             staleTime: 30_000,

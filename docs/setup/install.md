@@ -16,12 +16,12 @@ For **Docker-only** UI usage you don't need this page — go to
 | Platform | What you need |
 | :--- | :--- |
 | Linux / macOS / WSL | `make`, `git`, `curl` (everything else is installed automatically) |
-| Windows native | Use **WSL** — almost every script assumes a Linux-like shell. See [Quick WSL Setup](wsl_setup.md). |
+| Windows native | Use **WSL** — almost every script assumes a Linux-like shell. Install it from an **admin PowerShell** with `wsl --install -d Ubuntu`, then run everything from the Ubuntu shell. |
 
 If `make` is missing on Debian/Ubuntu: `sudo apt install make`.
 
-For Git access via internal GitLab (PAT, VS Code clone, credential
-persistence), see [GitLab Access](gitlab.md).
+> To avoid re-entering Git credentials on every push/pull, run once:
+> `git config --global credential.helper store`.
 
 ---
 
@@ -86,15 +86,5 @@ Edit `backend/config/general.yaml` (the real, gitignored file —
 2. (Optional) tune `mostly_ai.yaml`, `evaluation.yaml`, `rules.yaml`.
 
 Full per-file reference: [Configuration](configuration.md).
-
----
-
-## Next
-
-Pick the doc that matches what you'll do with the tool:
-
-- 🚀 **Just use the UI** → [Use the UI](use_ui.md)
-- 💻 **Use the terminal CLI** → [Use the CLI](use_cli.md)
-- 🛠 **Develop / extend the tool** → [Developer Onboarding](onboarding.md)
 
 [<-- Back to Main Index](../../README.md)

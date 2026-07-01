@@ -357,6 +357,7 @@ def _run_evaluate_step(
             session=session,
             real_data=step.real_data,
             training_parameters=training_parameters,
+            table_configs=step.table_configs,
         )
         return evaluation_id
     except Exception as error:

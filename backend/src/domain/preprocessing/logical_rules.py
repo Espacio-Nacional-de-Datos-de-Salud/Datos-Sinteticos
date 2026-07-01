@@ -313,9 +313,11 @@ class LogicalRuleManager:
         Args:
             new_rule (LogicalRule): The new rule to check against existing rules.
         Returns:
-            bool: True if the rule should be added, False if it was merged with an existing rule (SemanticConsistencyRule)
+            bool: True if the rule should be added, False if it was merged with an
+                existing rule (SemanticConsistencyRule)
         Throws:
-            RuleSuperimpositionError: If an unresolvable superimposition is detected between the new rule and an existing rule.
+            RuleSuperimpositionError: If an unresolvable superimposition is detected
+                between the new rule and an existing rule.
         """
 
         for existing_rule in self.rules:
@@ -722,7 +724,8 @@ class LogicalRuleManager:
                     new_col += "_origin"
                     while new_col in merged.columns:
                         logger.debug(
-                            f"Renaming column '{col}' from '{target_table}' to '{new_col}' to avoid collision in merged view."
+                            f"Renaming column '{col}' from '{target_table}' to '{new_col}' "
+                            "to avoid collision in merged view."
                         )
                         new_col += "_origin"
                 rename_dict[col] = new_col
@@ -734,7 +737,8 @@ class LogicalRuleManager:
                 while new_right in merged.columns:
                     new_right += "_origin"
                     logger.debug(
-                        f"Renaming column '{orig_right}' from '{target_table}' to '{new_right}' to avoid collision with left join key."
+                        f"Renaming column '{orig_right}' from '{target_table}' to '{new_right}' "
+                        "to avoid collision with left join key."
                     )
                 rename_dict[orig_right] = new_right
 
@@ -817,7 +821,8 @@ class LogicalRuleManager:
                 cols_to_keep.append(col)
             elif col not in joined_df.columns:
                 logger.warning(
-                    f"Column '{col}' specified to keep but not found in joined DataFrame for rule on '{rule.table_target}'."
+                    f"Column '{col}' specified to keep but not found in joined DataFrame "
+                    f"for rule on '{rule.table_target}'."
                 )
 
         return joined_df[cols_to_keep]
@@ -1028,7 +1033,8 @@ class LogicalRuleManager:
                 )
                 if isinstance(rule, ForeignKeysConsistencyRule):
                     logger.debug(
-                        f"Adding '{rule.target_col}' to preserve_columns for subsequent POST applications due to its role in FK consistency."
+                        f"Adding '{rule.target_col}' to preserve_columns for subsequent "
+                        "POST applications due to its role in FK consistency."
                     )
                     preserve_columns.add(rule.target_col)
 
@@ -1887,19 +1893,22 @@ class ForeignKeysConsistencyRule(LogicalRule):
         source_col = self._resolve_parent_source_col(df)
         if source_col is None:
             logger.warning(
-                f"Source column for FK consistency rule not found. Skipping POST application for target '{self.target_col}' in '{self.table_target}'."
+                f"Source column for FK consistency rule not found. Skipping POST application "
+                f"for target '{self.target_col}' in '{self.table_target}'."
             )
             return df
 
         # Don't try to assign back a column from itself representing a self-referencing relationship during POST
         if source_col == self.target_col and self.table_origin == self.table_target:
             logger.debug(
-                f"Skipping POST application for self-referencing FK consistency rule on '{self.target_col}' in '{self.table_target}'."
+                f"Skipping POST application for self-referencing FK consistency rule on "
+                f"'{self.target_col}' in '{self.table_target}'."
             )
             return df
 
         logger.debug(
-            f"Applying POST for ForeignKeysConsistencyRule: copying from '{source_col}' to '{self.target_col}' in '{self.table_target}'"
+            f"Applying POST for ForeignKeysConsistencyRule: copying from '{source_col}' "
+            f"to '{self.target_col}' in '{self.table_target}'"
         )
         df[self.target_col] = df[source_col]
         return df
@@ -1961,6 +1970,7 @@ class DateInequalityRule(LogicalRule):
     constraint_operator: str = ">="
     enforce_non_negative: bool = True
     allow_null: bool = False
+    unit: str = "days"
     table_origin: str = None
     table_target: str = None
     _constraint_dt: pd.Timestamp = field(default=None, init=False, repr=False)
@@ -1974,6 +1984,10 @@ class DateInequalityRule(LogicalRule):
         if self.constraint_operator not in (">=", "<="):
             raise ValueError(
                 f"DateInequalityRule: constraint_operator must be '>=' or '<=', got '{self.constraint_operator}'."
+            )
+        if self.unit not in _UNIT_SECONDS:
+            raise ValueError(
+                f"DateInequalityRule: unit must be one of {sorted(_UNIT_SECONDS)}, got '{self.unit}'."
             )
         if self.constraint is not None:
             # Normalize to UTC then drop the tz so the bound compares cleanly
@@ -2024,13 +2038,11 @@ class DateInequalityRule(LogicalRule):
             self._warn_constraint_granularity(df[self.target_col])
 
         bound = self._get_bound(df)
-        # Compute via total seconds and round so datetime inputs with hour-level
-        # precision don't get truncated to 0. `.dt.days` would floor a 23h diff
-        # to 0; here a sub-day delta rounds to the nearest integer day.
+        seconds_per_unit = _UNIT_SECONDS[self.unit]
         if self.constraint_operator == ">=":
-            delta = (df[self.target_col] - bound).dt.total_seconds() / 86400.0
+            delta = (df[self.target_col] - bound).dt.total_seconds() / seconds_per_unit
         else:
-            delta = (bound - df[self.target_col]).dt.total_seconds() / 86400.0
+            delta = (bound - df[self.target_col]).dt.total_seconds() / seconds_per_unit
         df[self.aux_col] = delta.round().astype("Int64")
         return df.drop(columns=[self.target_col])
 
@@ -2044,18 +2056,19 @@ class DateInequalityRule(LogicalRule):
             ).dt.tz_localize(None)
 
         bound = self._get_bound(df)
-        days = pd.to_numeric(df[self.aux_col], errors="coerce")
+        value = pd.to_numeric(df[self.aux_col], errors="coerce")
         if self.enforce_non_negative:
-            days = days.clip(lower=0)
-        df[self.aux_col] = days
+            value = value.clip(lower=0)
+        df[self.aux_col] = value
+        offset_seconds = value * _UNIT_SECONDS[self.unit]
         if self.constraint_operator == ">=":
-            reconstructed = bound + pd.to_timedelta(days, unit="D")
+            reconstructed = bound + pd.to_timedelta(offset_seconds, unit="s")
         else:
-            reconstructed = bound - pd.to_timedelta(days, unit="D")
+            reconstructed = bound - pd.to_timedelta(offset_seconds, unit="s")
         if isinstance(reconstructed, pd.Series) and reconstructed.dt.tz is not None:
             reconstructed = reconstructed.dt.tz_localize(None)
         df[self.target_col] = reconstructed
-        self._warn_if_reconstruction_degraded(days, reconstructed)
+        self._warn_if_reconstruction_degraded(value, reconstructed)
         return df.drop(columns=[self.aux_col])
 
     def _warn_constraint_granularity(self, target: pd.Series) -> None:

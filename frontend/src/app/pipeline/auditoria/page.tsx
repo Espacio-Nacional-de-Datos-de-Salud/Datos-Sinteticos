@@ -14,8 +14,11 @@ import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Play, ShieldCheck, Trash2, XCircle } from "lucide-react";
 import { buildAuditoriaInstructions } from "@/components/auditoria/instructions-content";
+import {
+  EvaluationTablesConfig,
+  type TableEvalConfig,
+} from "@/components/auditoria/evaluation-tables-config";
 
-import { ConfigPanel } from "@/components/config/config-drawer";
 import { EditableName } from "@/components/jobs/editable-name";
 import { ActiveRunName } from "@/components/jobs/active-run-name";
 import { ActiveJobCard } from "@/components/pipeline-step/active-job-card";
@@ -50,7 +53,7 @@ import { STORAGE_KEYS } from "@/lib/storage-keys";
 import { cn } from "@/lib/utils";
 import { useManualOpen } from "@/lib/use-manual-open";
 
-type StartInput = { simulation_id: string };
+type StartInput = { simulation_id: string; evaluated_tables: TableEvalConfig[] };
 
 const AUDITORIA_OUTLINE = [
   { id: "preparacion", label: "Preparación", level: 1 },
@@ -71,6 +74,9 @@ export default function AuditoriaPage() {
   const [confirmCleanup, setConfirmCleanup] = useState(false);
   const [confirmPurge, setConfirmPurge] = useState(false);
   const [startDialogOpen, setStartDialogOpen] = useState(false);
+
+  // Per-table evaluation config, reported by EvaluationTablesConfig.
+  const [tableConfigs, setTableConfigs] = useState<TableEvalConfig[]>([]);
 
   // Shared axis tab state — syncs instructions panel ↔ config form
   const [activeAxis, setActiveAxis] = useState("Privacidad");
@@ -125,7 +131,10 @@ export default function AuditoriaPage() {
     itemKey: "evaluation",
     storageKey: STORAGE_KEYS.evaluation,
     idField: "evaluation_id",
-    buildStartBody: (input) => ({ simulation_id: input.simulation_id }),
+    buildStartBody: (input) => ({
+      simulation_id: input.simulation_id,
+      evaluated_tables: input.evaluated_tables,
+    }),
     labels: {
       startedToast: (id) => `Evaluación iniciada: ${id}`,
       startErrorPrefix: "No se pudo iniciar la evaluación",
@@ -368,12 +377,16 @@ export default function AuditoriaPage() {
           </div>
 
           <div id="configuracion-avanzada" className="scroll-mt-24">
-            <ConfigPanel
-              configId="evaluation"
-              contextId={selectedSimId}
-              activeGroup={activeAxis}
-              onGroupChange={setActiveAxis}
-            />
+            {selectedSimId && (
+              <EvaluationTablesConfig
+                key={selectedSimId}
+                simulationId={selectedSimId}
+                motherTable={selectedSim?.mother_table ?? null}
+                activeAxis={activeAxis}
+                onAxisChange={setActiveAxis}
+                onChange={setTableConfigs}
+              />
+            )}
           </div>
 
           <div id="ejecutar-evaluacion" className="scroll-mt-24">
@@ -568,7 +581,10 @@ export default function AuditoriaPage() {
         description="Asigna un nombre funcional a esta evaluación para identificarla más fácilmente. Puedes dejarlo en blanco y editarlo después."
         confirmLabel="Iniciar evaluación"
         onConfirm={(name) => {
-          lc.start({ simulation_id: selectedSimId }, name || undefined);
+          lc.start(
+            { simulation_id: selectedSimId, evaluated_tables: tableConfigs },
+            name || undefined,
+          );
           setStartDialogOpen(false);
         }}
         onCancel={() => setStartDialogOpen(false)}

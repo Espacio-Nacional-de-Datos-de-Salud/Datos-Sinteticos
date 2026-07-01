@@ -34,7 +34,7 @@ def print_session_help() -> None:
     print("Comandos:")
     print("  ejecutar     Abrir el menu de ejecucion")
     print("  resultados   Ver ejecuciones y resultados anteriores")
-    print("  configurar   Editar reglas, entrenamiento, simulacion y evaluacion")
+    print("  configurar   Editar reglas, entrenamiento, generacion y auditoria")
     print("  pipelines    Disenar y ejecutar pipelines automatizadas")
     print("  ayuda        Mostrar esta ayuda")
     print("  salir        Salir de la CLI")
@@ -42,7 +42,7 @@ def print_session_help() -> None:
     print("Tambien puedes pegar flags directamente, por ejemplo:")
     print("  --mode s --model-id MODELO --sample-size 1000")
     print("O usar un atajo de flujo:")
-    print("  simulate --model-id MODELO --sample-size 1000")
+    print("  generar --model-id MODELO --sample-size 1000")
 
 
 # ── menus ────────────────────────────────────────────────────────────────────
@@ -50,29 +50,29 @@ def print_session_help() -> None:
 
 def _print_main_menu() -> None:
     print("\nQue quieres hacer?")
-    print("  1. ejecutar      Iniciar una inspeccion, entrenamiento o simulacion")
+    print("  1. ejecutar      Iniciar una carga de datos, entrenamiento o generacion")
     print("  2. resultados    Ver ejecuciones y resultados anteriores")
-    print("  3. configurar    Editar reglas, entrenamiento, simulacion y evaluacion")
+    print("  3. configurar    Editar reglas, entrenamiento, generacion y auditoria")
     print("  4. pipelines     Disenar y ejecutar pipelines automatizadas")
     print("  q. salir")
 
 
 def _print_workflow_menu() -> None:
     print("\nQue quieres ejecutar?")
-    print("  1. inspeccionar   Detectar esquema desde CSV/Parquet")
+    print("  1. cargar datos   Detectar esquema desde CSV/Parquet (Carga de Datos)")
     print("  2. entrenar       Entrenar un generador Mostly AI")
-    print("  3. simular        Generar datos sinteticos")
-    print("  4. evaluar        Ver como lanzar evaluacion de una simulacion")
+    print("  3. generar        Generar datos sinteticos (Generacion)")
+    print("  4. auditar        Ver como lanzar una auditoria de una generacion")
     print("  b. volver")
     print("  q. salir")
 
 
 def _print_results_menu() -> None:
     print("\nQue quieres consultar?")
-    print("  1. inspecciones")
+    print("  1. cargas de datos")
     print("  2. modelos")
-    print("  3. simulaciones")
-    print("  4. evaluaciones")
+    print("  3. generaciones")
+    print("  4. auditorias")
     print("  5. pipelines")
     print("  b. volver")
     print("  q. salir")
@@ -105,6 +105,24 @@ def _parse_inline_command(command: str) -> list[str] | None:
 # ── data-file selector ───────────────────────────────────────────────────────
 
 
+def _data_file_location(path: str) -> str:
+    """Return the data-file's parent folder relative to data/ (or '' if at root).
+
+    Several demo datasets ship under data/<folder>/ with identically named
+    tables (person.csv, visit_occurrence.csv, ...). Showing the folder lets the
+    user tell duplicates apart and avoid mixing tables from different datasets.
+    """
+    from pathlib import Path
+
+    from backend.src.sessions.files import _DATA_ROOT
+
+    try:
+        rel = Path(path).resolve().relative_to(_DATA_ROOT.resolve())
+        return str(rel.parent) if str(rel.parent) != "." else ""
+    except ValueError:
+        return ""
+
+
 def _select_data_files() -> list[str]:
     from backend.src.sessions.files import list_data_files
 
@@ -115,27 +133,30 @@ def _select_data_files() -> list[str]:
 
     print("\nArchivos de datos disponibles:")
     for idx, file in enumerate(files, 1):
-        print(f"  [{idx}] {file.name} ({file.size_bytes} bytes)")
+        location = _data_file_location(file.path)
+        suffix = f"  [{location}]" if location else ""
+        print(f"  [{idx}] {file.name} ({file.size_bytes} bytes){suffix}")
 
     while True:
         selection = (
             input(
                 "\nIntroduce los numeros de los archivos "
-                "(separados por espacios) o 'q' para cancelar: "
+                "(separados por espacios o comas) o 'q' para cancelar: "
             )
             .strip()
             .lower()
         )
-        if selection == "q":
+        if selection in ("q", "salir", "cancel", "cancelar"):
             return []
 
+        tokens = selection.replace(",", " ").split()
         try:
-            indices = [int(item) - 1 for item in selection.split()]
+            indices = [int(item) - 1 for item in tokens]
             if all(0 <= index < len(files) for index in indices) and indices:
                 return [files[index].path for index in indices]
             print(f"Seleccion no valida. Introduce numeros entre 1 y {len(files)}.")
         except ValueError:
-            print("Entrada no valida. Introduce numeros validos separados por espacios.")
+            print("Entrada no valida. Introduce numeros validos separados por espacios o comas.")
 
 
 # ── workflow arg builders ────────────────────────────────────────────────────
@@ -148,7 +169,9 @@ def _workflow_args_for_choice(choice: str) -> list[str] | None:
         files = _select_data_files()
         if not files:
             return None
-        maybe_review_configs("i")
+        from backend.src.cli.config_editor import columns_for_files
+
+        maybe_review_configs("i", columns_for_files(files))
         return ["--mode", "i", "--files", *files]
 
     if mode == "t":
@@ -162,7 +185,7 @@ def _workflow_args_for_choice(choice: str) -> list[str] | None:
                     .strip()
                     .lower()
                 )
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 review = ""
             if review in ("s", "si", "y", "yes"):
                 from backend.src.runs.catalog.inspections import list_available_inspections
@@ -178,14 +201,28 @@ def _workflow_args_for_choice(choice: str) -> list[str] | None:
                 if insp_item:
                     inspect_catalog_item("inspections", insp_item)
                 else:
-                    print("  No se encontro la inspeccion seleccionada.")
-            maybe_review_configs("t")
+                    print("  No se encontro la carga de datos seleccionada.")
+            from backend.src.cli.config_editor import columns_for_files
+            from backend.src.runs.catalog.inspections import list_available_inspections
+
+            insp = next(
+                (
+                    i
+                    for i in list_available_inspections()
+                    if i.get("inspection_id") == inspection_id
+                ),
+                None,
+            )
+            insp_cols = columns_for_files(insp.get("file_paths") or []) if insp else None
+            maybe_review_configs("t", insp_cols or None)
             return ["--mode", "t", "--inspection-id", inspection_id]
 
         files = _select_data_files()
         if not files:
             return None
-        maybe_review_configs("t")
+        from backend.src.cli.config_editor import columns_for_files
+
+        maybe_review_configs("t", columns_for_files(files))
         return ["--mode", "t", "--files", *files]
 
     if mode == "s":
@@ -204,7 +241,7 @@ def _workflow_args_for_choice(choice: str) -> list[str] | None:
         simulation_id = _select_catalog("simulations")
         if not simulation_id or simulation_id == "CANCEL":
             return None
-        print(f"\nEjecuta: make eval SIMULATION_ID={simulation_id}")
+        print(f"\nPara auditar esta generacion ejecuta: make eval SIMULATION_ID={simulation_id}")
         return None
 
     print("Opcion no reconocida. Escribe 'volver' para regresar o 'salir' para terminar.")
@@ -220,7 +257,7 @@ def _prompt_execution_menu() -> list[str] | str | None:
 
         try:
             raw_choice = input("\nends/ejecutar> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return INTERACTIVE_EXIT
 
@@ -243,15 +280,27 @@ def _prompt_execution_menu() -> list[str] | str | None:
 
 _CATALOG_BY_CHOICE: dict[str, str] = {
     "1": "inspections",
+    "cargas": "inspections",
+    "carga": "inspections",
+    "cargas de datos": "inspections",
+    # Legacy
     "inspecciones": "inspections",
     "i": "inspections",
     "2": "models",
     "modelos": "models",
     "m": "models",
     "3": "simulations",
+    "generaciones": "simulations",
+    "generacion": "simulations",
+    "g": "simulations",
+    # Legacy
     "simulaciones": "simulations",
     "s": "simulations",
     "4": "evaluations",
+    "auditorias": "evaluations",
+    "auditoria": "evaluations",
+    "a": "evaluations",
+    # Legacy
     "evaluaciones": "evaluations",
     "e": "evaluations",
     "5": "pipelines",
@@ -265,7 +314,7 @@ def _prompt_results_menu() -> str | None:
 
         try:
             raw_choice = input("\nends/resultados> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return INTERACTIVE_EXIT
 
@@ -291,7 +340,7 @@ def _prompt_results_menu() -> str | None:
                 sel = (
                     input("\n  Introduce un numero para ver detalles, o 'volver': ").strip().lower()
                 )
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 print()
                 return INTERACTIVE_EXIT
             if not sel or sel in _BACK_ALIASES:
@@ -320,7 +369,7 @@ def prompt_for_workflow() -> list[str] | str | None:
 
     try:
         raw_choice = input("\nends> ").strip()
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
         print()
         return INTERACTIVE_EXIT
 

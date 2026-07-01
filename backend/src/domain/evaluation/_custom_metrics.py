@@ -44,6 +44,36 @@ if LDiversityPyCanon is not None:
     CUSTOM_METRIC_CLASSES.append(LDiversityPyCanon)
 
 
+def _metric_overrides(
+    metric_name: str,
+    sensitive_columns: list[str] | None,
+    quasi_identifier_subsets: dict[str, list[str]] | None,
+    tvd_n_bins: int | None,
+    exact_match_show_filtered_rows: bool | None,
+    utility_tests: dict | None,
+) -> dict:
+    """Constructor kwargs for metrics that accept per-run (per-table) overrides.
+
+    Each metric that supports per-table tuning gets its relevant override; every
+    other metric is instantiated with no arguments. ``None`` values let the
+    metric fall back to its global config default.
+    """
+    if metric_name == "k_anonymity":
+        return {"quasi_identifier_subsets": quasi_identifier_subsets}
+    if metric_name == "l_diversity_pycanon":
+        return {
+            "quasi_identifier_subsets": quasi_identifier_subsets,
+            "sensitive_columns": sensitive_columns,
+        }
+    if metric_name == "distribution_comparison_report":
+        return {"n_bins": tvd_n_bins}
+    if metric_name == "exact_match_rows":
+        return {"show_filtered_rows": exact_match_show_filtered_rows}
+    if metric_name == "utility_tests":
+        return {"config": utility_tests}
+    return {}
+
+
 def run_custom_metrics(
     real: pd.DataFrame,
     syn: pd.DataFrame,
@@ -51,6 +81,12 @@ def run_custom_metrics(
     requested_metrics: list[str],
     real_data_dict: dict[str, pd.DataFrame] | None = None,
     synthetic_data_dict: dict[str, pd.DataFrame] | None = None,
+    evaluated_table: str | None = None,
+    sensitive_columns: list[str] | None = None,
+    quasi_identifier_subsets: dict[str, list[str]] | None = None,
+    tvd_n_bins: int | None = None,
+    exact_match_show_filtered_rows: bool | None = None,
+    utility_tests: dict | None = None,
 ) -> pd.DataFrame:
     """Append rows for each requested custom metric to ``report``.
 
@@ -61,6 +97,8 @@ def run_custom_metrics(
         requested_metrics (list[str]): Names (per ``MetricClass.name()``) to run.
         real_data_dict: All real tables, used by multitable metrics.
         synthetic_data_dict: All synthetic tables, used by multitable metrics.
+        evaluated_table: Name of the table being evaluated. Multitable metrics
+            that support it (``utility_tests``) restrict themselves to this table.
 
     Returns:
         pd.DataFrame: The same report with custom-metric rows appended.
@@ -82,9 +120,23 @@ def run_custom_metrics(
 
         try:
             with profiler.phase(custom_metric_phase_label(metric_name)):
-                metric = MetricClass()
+                metric = MetricClass(**_metric_overrides(
+                    metric_name,
+                    sensitive_columns,
+                    quasi_identifier_subsets,
+                    tvd_n_bins,
+                    exact_match_show_filtered_rows,
+                    utility_tests,
+                ))
                 if getattr(metric, "supports_multitable", False):
-                    results = metric.evaluate(real_data_dict, synthetic_data_dict)
+                    if getattr(metric, "supports_table_filter", False):
+                        results = metric.evaluate(
+                            real_data_dict,
+                            synthetic_data_dict,
+                            evaluated_table=evaluated_table,
+                        )
+                    else:
+                        results = metric.evaluate(real_data_dict, synthetic_data_dict)
                 else:
                     results = metric.evaluate(real, syn)
 

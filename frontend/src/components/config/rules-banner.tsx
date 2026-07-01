@@ -37,6 +37,7 @@ type Rule = {
   bins?: number[];
   rejection_sampling?: boolean;
   enforce_non_negative?: boolean;
+  unit?: string;
   canonical_col?: string;
   part_cols?: Record<string, string>;
 };
@@ -369,6 +370,14 @@ export function RulesBanner({
                             {r.type === "date_to_age" ? "Lapso libre" : "Duración libre"}
                           </Badge>
                         )
+                      )}
+                      {r.type === "date_inequality" && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] border-muted-foreground/30 text-muted-foreground"
+                        >
+                          {r.unit === "months" ? "Meses" : r.unit === "years" ? "Años" : "Días"}
+                        </Badge>
                       )}
                       <span className="font-mono text-xs text-muted-foreground">{summarize(r)}</span>
                       {compliance && !compliance.skipped && compliance.pct_compliant != null && (

@@ -48,10 +48,10 @@ def run_workflow(
             csv_delimiter=DEFAULT_CSV_DELIMITER,
         )
         if result is None:
-            logger.error("La inspeccion ha fallado.")
+            logger.error("La carga de datos ha fallado.")
             return
         logger.info(
-            "Inspeccion lista en '%s'.\n"
+            "Carga de datos lista en '%s'.\n"
             "  Revisa / edita: inspection_metadata.json "
             "(fuente de verdad para PKs, FKs y tipos de codificacion)\n"
             "  Para asignar un nombre, edita 'inspection_name' en inspection_card.json.\n"
@@ -90,7 +90,7 @@ def run_workflow(
             log_run_header(
                 logger,
                 mode,
-                subtitle="desde inspeccion previa",
+                subtitle="desde carga de datos previa",
                 inspection_id=inspection_id,
                 sample_size=sample_size,
             )
@@ -102,7 +102,7 @@ def run_workflow(
             log_run_header(
                 logger,
                 mode,
-                subtitle="desde archivos sin inspeccion previa",
+                subtitle="desde archivos sin carga de datos previa",
                 files=len(file_paths or []),
                 file_paths=file_paths or [],
                 sample_size=sample_size,
@@ -125,13 +125,13 @@ def run_workflow(
         )
 
         if sample_size is None:
-            logger.info("Entrenamiento finalizado. No se indico sample_size para simular.")
+            logger.info("Entrenamiento finalizado. No se indico sample_size para generar.")
             return
 
     if mode == "s":
         if not model_id:
             raise ValueError(
-                "model_id es obligatorio para el modo simulacion ('s'). Usa --model-id."
+                "model_id es obligatorio para el modo generación ('s'). Usa --model-id."
             )
 
         log_run_header(
@@ -148,7 +148,7 @@ def run_workflow(
                 )
             resolved_model_id = model_id
         except Exception as exc:
-            logger.error("No se pudieron inicializar los artefactos para simulacion: %s", exc)
+            logger.error("No se pudieron inicializar los artefactos para generación: %s", exc)
             return
 
     if generator and metadata and rule_manager and resolved_model_id:
@@ -166,4 +166,4 @@ def run_workflow(
                 "s", simulation_id, os.path.join("backend/outputs/simulations", simulation_id)
             )
         else:
-            logger.error("La simulacion ha fallado.")
+            logger.error("La generación ha fallado.")

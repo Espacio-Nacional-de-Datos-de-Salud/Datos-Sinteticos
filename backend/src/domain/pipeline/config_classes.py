@@ -56,11 +56,19 @@ class EvaluateStepConfig:
         simulation_id (str | None): Explicit simulation ID to evaluate. If None and
             a simulate step precedes this in the same job, that simulation is used.
         model_id (str | None): Explicit model ID. If None, inferred from job context.
+        table_configs (list[dict] | None): Per-table evaluation configs. Each
+            entry is ``{"table": <name>, "config": <evaluation.yaml-shaped dict>}``;
+            ``config`` overrides the global evaluation defaults for that table only
+            (TSTR target, utility tests, sensitive/quasi-identifier columns, …) and
+            any omitted key falls back to the global config. This is the headless
+            equivalent of the per-table config the UI sends as ``evaluated_tables``.
+            When ``None`` the eval defaults to the mother table with global config.
     """
 
     real_data: list[str] | None = None
     simulation_id: str | None = None
     model_id: str | None = None
+    table_configs: list[dict] | None = None
 
 
 @dataclass

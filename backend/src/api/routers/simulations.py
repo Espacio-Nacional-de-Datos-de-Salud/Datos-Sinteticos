@@ -40,6 +40,7 @@ from backend.src.runs.catalog.models import list_model_key_columns
 from backend.src.runs.catalog.simulations import (
     SYNTHETIC_DATA_DIRNAME,
     list_available_simulations,
+    list_simulation_column_types,
     list_simulation_columns,
 )
 from backend.src.runs.catalog.simulations import (
@@ -497,3 +498,15 @@ def get_simulation_columns(simulation_id: SimulationId) -> dict[str, list[str]]:
         return list_simulation_columns(simulation_id)
     except Exception as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
+
+
+@router.get("/{simulation_id}/columns/types", response_model=dict[str, dict[str, str]])
+def get_simulation_column_types(simulation_id: SimulationId) -> dict[str, dict[str, str]]:
+    """Returns ``{table: {column: kind}}`` for the data in this simulation.
+
+    ``kind`` is ``numeric``, ``datetime`` or ``categorical``. The evaluation UI
+    uses it to offer only the columns that fit a given utility metric (e.g. a
+    mean only on numeric columns). Returns an empty dict when encoding metadata
+    is unavailable.
+    """
+    return list_simulation_column_types(simulation_id)

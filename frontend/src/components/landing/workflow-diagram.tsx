@@ -4,16 +4,22 @@ import { Fragment, useState } from "react";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import {
+  ArrowDown,
   ArrowRight,
   Brain,
+  BrainCircuit,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  Database,
+  FileBarChart,
+  FileCheck2,
   Folder,
   Settings,
   ShieldCheck,
   Sparkles,
+  Table2,
   Wand2,
 } from "lucide-react";
 
@@ -34,12 +40,15 @@ type SubGroup = {
   advanced?: boolean;
   children?: SubStep[];
 };
+// The single most important artefact a stage hands off to the next one.
+type StageOutput = { label: string; desc: string; Icon: LucideIcon };
 type Stage = {
   slug: string;
   title: string;
   text: string;
   Icon: LucideIcon;
   advanced?: boolean;
+  output: StageOutput;
   groups: SubGroup[];
 };
 
@@ -49,6 +58,7 @@ const STAGES: Stage[] = [
     title: "Carga de Datos",
     text: "Carga y análisis inicial de las tablas, con detección de claves, tipos y estructura e informes de profiling.",
     Icon: Folder,
+    output: { label: "Datos analizados", desc: "Tablas con tipos, claves y relaciones detectadas.", Icon: Database },
     groups: [
       {
         id: "preparacion",
@@ -66,12 +76,16 @@ const STAGES: Stage[] = [
         desc: "La herramienta infiere la estructura de los datos.",
         children: [
           { id: "tablas-detectadas", label: "Tablas detectadas", desc: "Tablas y su tamaño." },
-          { id: "relaciones-detectadas", label: "Relaciones detectadas", desc: "Se puede revisar lo detectado.", children: [
-            { id: "relaciones-modificar", label: "Modificar relaciones", desc: "Edita o añade claves foráneas manualmente.", advanced: true },
-          ]},
-          { id: "tipos-codificacion", label: "Tipos de codificación", desc: "Se puede revisar lo detectado.", children: [
-            { id: "tipos-modificar", label: "Modificar tipos", desc: "Cambia el tipo de codificación por columna.", advanced: true },
-          ]},
+          {
+            id: "relaciones-detectadas", label: "Relaciones detectadas", desc: "Se puede revisar lo detectado.", children: [
+              { id: "relaciones-modificar", label: "Modificar relaciones", desc: "Edita o añade claves foráneas manualmente.", advanced: true },
+            ]
+          },
+          {
+            id: "tipos-codificacion", label: "Tipos de codificación", desc: "Se puede revisar lo detectado.", children: [
+              { id: "tipos-modificar", label: "Modificar tipos", desc: "Cambia el tipo de codificación por columna.", advanced: true },
+            ]
+          },
         ],
       },
       {
@@ -100,11 +114,14 @@ const STAGES: Stage[] = [
     text: "Definición de reglas de preprocesamiento, exclusión de columnas y validaciones aplicadas antes de entrenar.",
     Icon: Settings,
     advanced: true,
+    output: { label: "Datos preprocesados", desc: "Datos procesados tras aplicar las reglas de negocio.", Icon: FileCheck2 },
     groups: [
-      { id: "biblioteca-reglas", label: "Biblioteca de reglas", desc: "Gestiona sets de reglas guardados.", advanced: true, children: [
-        { id: "biblioteca-cargar", label: "Cargar configuración guardada", desc: "Recupera un set de reglas de la biblioteca o de una ejecución anterior." },
-        { id: "biblioteca-guardar", label: "Guardar set de reglas", desc: "Archiva las reglas actuales para reutilizarlas sin necesidad de ejecutar." },
-      ]},
+      {
+        id: "biblioteca-reglas", label: "Biblioteca de reglas", desc: "Gestiona sets de reglas guardados.", advanced: true, children: [
+          { id: "biblioteca-cargar", label: "Cargar configuración guardada", desc: "Recupera un set de reglas de la biblioteca o de una ejecución anterior." },
+          { id: "biblioteca-guardar", label: "Guardar set de reglas", desc: "Archiva las reglas actuales para reutilizarlas sin necesidad de ejecutar." },
+        ]
+      },
       {
         id: "columnas",
         label: "Crear / eliminar columnas",
@@ -144,6 +161,7 @@ const STAGES: Stage[] = [
     title: "Entrenamiento",
     text: "Configuración y entrenamiento del generador a partir de una carga de datos validada.",
     Icon: Brain,
+    output: { label: "Modelo entrenado", desc: "Generador listo para sintetizar datos.", Icon: BrainCircuit },
     groups: [
       {
         id: "preparacion",
@@ -151,9 +169,11 @@ const STAGES: Stage[] = [
         desc: "Prepara y lanza el entrenamiento.",
         children: [
           { id: "nuevo-entrenamiento", label: "Selector de reglas", desc: "Elige el conjunto de reglas." },
-          { id: "configuracion-modelo", label: "Configuración del modelo", desc: "Hiperparámetros del generador.", children: [
-            { id: "configuracion-modelo-per-table", label: "Configuración por tabla", desc: "Ajusta hiperparámetros individualmente por tabla.", advanced: true },
-          ]},
+          {
+            id: "configuracion-modelo", label: "Configuración del modelo", desc: "Hiperparámetros del generador.", children: [
+              { id: "configuracion-modelo-per-table", label: "Configuración por tabla", desc: "Ajusta hiperparámetros individualmente por tabla.", advanced: true },
+            ]
+          },
           { id: "ejecutar-entrenamiento", label: "Ejecución del entrenamiento", desc: "Lanza el entrenamiento." },
         ],
       },
@@ -176,6 +196,7 @@ const STAGES: Stage[] = [
     title: "Generación",
     text: "Producción de datos sintéticos con controles de tamaño, formato y condiciones.",
     Icon: Wand2,
+    output: { label: "Dataset sintético", desc: "Datos artificiales listos para descargar.", Icon: Table2 },
     groups: [
       {
         id: "preparacion",
@@ -183,9 +204,11 @@ const STAGES: Stage[] = [
         desc: "Configura y lanza la generación.",
         children: [
           { id: "nueva-generacion", label: "Selección de modelo", desc: "Elige el modelo entrenado." },
-          { id: "configuracion-volumen", label: "Configuración de volumen", desc: "Nº de filas a generar.", children: [
-            { id: "configuracion-volumen-tablas", label: "Volumen por tabla hija", desc: "Ajusta el volumen de cada tabla hija individualmente.", advanced: true },
-          ]},
+          {
+            id: "configuracion-volumen", label: "Configuración de volumen", desc: "Nº de filas a generar.", children: [
+              { id: "configuracion-volumen-tablas", label: "Volumen por tabla hija", desc: "Ajusta el volumen de cada tabla hija individualmente.", advanced: true },
+            ]
+          },
           { id: "condiciones", label: "Condicionar la generación", desc: "Fija valores condicionales.", advanced: true },
           { id: "ejecutar-generacion", label: "Ejecutar generación", desc: "Lanza la generación." },
         ],
@@ -212,6 +235,7 @@ const STAGES: Stage[] = [
     title: "Auditoría",
     text: "Evaluación final de utilidad, calidad y privacidad del resultado sintético.",
     Icon: ShieldCheck,
+    output: { label: "Reporte de calidad", desc: "Fidelidad, utilidad y privacidad evaluadas.", Icon: FileBarChart },
     groups: [
       {
         id: "preparacion",
@@ -220,11 +244,13 @@ const STAGES: Stage[] = [
         children: [
           { id: "nueva-evaluacion", label: "Nueva evaluación", desc: "Elige qué resultado evaluar." },
           { id: "reglas-preprocesamiento", label: "Reglas de negocio", desc: "Reglas de referencia." },
-          { id: "configuracion-avanzada", label: "Configuración avanzada", desc: "Ajustes de los ejes de evaluación.", children: [
-            { id: "config-privacidad", label: "Privacidad", desc: "Umbrales y métricas de privacidad." },
-            { id: "config-fidelidad", label: "Fidelidad", desc: "Métricas de similitud estadística." },
-            { id: "config-utilidad", label: "Utilidad", desc: "Métricas de validez para casos de uso reales.", advanced: true },
-          ]},
+          {
+            id: "configuracion-avanzada", label: "Configuración avanzada", desc: "Ajustes de los ejes de evaluación.", children: [
+              { id: "config-privacidad", label: "Privacidad", desc: "Umbrales y métricas de privacidad." },
+              { id: "config-fidelidad", label: "Fidelidad", desc: "Métricas de similitud estadística." },
+              { id: "config-utilidad", label: "Utilidad", desc: "Métricas de validez para casos de uso reales.", advanced: true },
+            ]
+          },
           { id: "ejecutar-evaluacion", label: "Ejecutar evaluación", desc: "Lanza la evaluación." },
         ],
       },
@@ -404,6 +430,99 @@ function StageDetail({ stage }: { stage: Stage }) {
   );
 }
 
+// ── Outputs flow (bottom) ────────────────────────────────────────────────────
+// A small, minimalist echo of the top flow: one card per stage showing the
+// single most important artefact it produces. Collapsible. When a stage is
+// selected above, its matching output card is highlighted so the substeps in
+// between visually bridge the stage (top) with what it hands off (bottom).
+
+function OutputsFlow({
+  selected,
+  onSelect,
+}: {
+  selected: number | null;
+  onSelect: (index: number) => void;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="rounded-2xl border border-[#d8e3f4] bg-white/60 p-3 dark:border-border dark:bg-card/40">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <span className="text-xs font-semibold uppercase tracking-wide text-[#114da6] dark:text-[#FFDB00]">
+          Qué obtienes en cada fase
+        </span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-[#114da6] transition-transform dark:text-[#FFDB00]",
+            !open && "-rotate-90",
+          )}
+        />
+      </button>
+
+      {open && (
+        <div className="mt-3 flex flex-col gap-1.5 lg:flex-row lg:items-stretch lg:gap-1">
+          {STAGES.map((stage, index) => {
+            const isSelected = index === selected;
+            const OutputIcon = stage.output.Icon;
+            return (
+              <Fragment key={stage.slug}>
+                <button
+                  type="button"
+                  aria-expanded={isSelected}
+                  onClick={() => onSelect(index)}
+                  className={cn(
+                    "flex flex-1 items-start gap-2 rounded-xl border px-2.5 py-2 text-left transition-colors",
+                    isSelected
+                      ? "border-[#114da6] bg-[#eef3ff] dark:border-[#FFDB00] dark:bg-accent"
+                      : "border-[#e4ecf7] bg-white hover:border-[#114da6]/50 hover:bg-[#f7fbff] dark:border-border dark:bg-card dark:hover:bg-accent/50",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+                      isSelected
+                        ? "bg-[#00215C] text-[#FFDB00] dark:bg-[#FFDB00] dark:text-[#00215C]"
+                        : "bg-[#eef3ff] text-[#114da6] dark:bg-accent dark:text-[#FFDB00]",
+                    )}
+                  >
+                    <OutputIcon className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold text-[#00215C] dark:text-white">
+                      {stage.output.label}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] leading-snug text-slate-500 dark:text-muted-foreground">
+                      {stage.output.desc}
+                    </span>
+                  </span>
+                </button>
+
+                {index < STAGES.length - 1 && (
+                  <div className="flex shrink-0 items-center justify-center lg:px-0.5">
+                    <ArrowRight
+                      className="hidden h-[18px] w-[18px] text-[#7d9bc6] lg:block dark:text-muted-foreground"
+                      strokeWidth={2.25}
+                    />
+                    <ChevronDown
+                      className="h-4 w-4 text-[#7d9bc6] lg:hidden dark:text-muted-foreground"
+                      strokeWidth={2.25}
+                    />
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Public component ─────────────────────────────────────────────────────────
 
 export function WorkflowDiagram() {
@@ -514,12 +633,34 @@ export function WorkflowDiagram() {
         )}
       </div>
 
-      {/* Disaggregated detail of the selected stage */}
+      {/* Disaggregated detail of the selected stage — the substeps that bridge
+          the stage (top) with what it produces (bottom). */}
       {selectedStage && (
         <div className="rounded-2xl border border-[#114da6]/40 bg-[#f7fbff] p-4 dark:border-[#FFDB00]/40 dark:bg-accent/40">
           <StageDetail key={selectedStage.slug} stage={selectedStage} />
         </div>
       )}
+
+      {/* Subtle connector pointing down toward the matching output card */}
+      {selected !== null && (
+        <>
+          <div className="relative hidden h-1 lg:block">
+            <ArrowDown
+              className="absolute -top-1 h-5 w-5 -translate-x-1/2 text-[#114da6]/45 dark:text-[#FFDB00]/45"
+              style={{ left: `calc(${((selected + 0.5) / STAGES.length) * 100}%)` }}
+            />
+          </div>
+          <div className="flex justify-center lg:hidden">
+            <ArrowDown className="h-5 w-5 text-[#114da6]/45 dark:text-[#FFDB00]/45" />
+          </div>
+        </>
+      )}
+
+      {/* Outputs flow (bottom) */}
+      <OutputsFlow
+        selected={selected}
+        onSelect={(index) => setSelected((prev) => (prev === index ? null : index))}
+      />
 
       {selected === null && (
         <p className="text-center text-xs text-slate-500 dark:text-muted-foreground">

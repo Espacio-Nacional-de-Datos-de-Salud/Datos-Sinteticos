@@ -842,6 +842,44 @@ def list_simulation_columns(simulation_id: str) -> dict[str, list[str]]:
     raise SimulationNotFoundError(f"Could not find columns for simulation '{simulation_id}'.")
 
 
+def list_simulation_column_types(simulation_id: str) -> dict[str, dict[str, str]]:
+    """Return ``{table: {column: kind}}`` for a completed simulation.
+
+    ``kind`` is one of ``numeric``, ``datetime`` or ``categorical`` — a coarse
+    classification derived from each column's Mostly AI encoding type. Mirrors
+    :func:`list_model_column_types`: it lets the evaluation UI offer only the
+    columns that make sense for a given utility metric (e.g. a mean only on
+    numeric columns).
+
+    Prefers the source inspection metadata, then the model's ``metadata.json``.
+    Returns an empty dict when neither is available rather than raising — the
+    UI then falls back to offering every column.
+    """
+    resolved = resolve_simulation_inputs(simulation_id)
+    model_dir = os.path.dirname(resolved.metadata_path)
+    model_card_path = os.path.join(model_dir, MODEL_CARD_FILENAME)
+    try:
+        with open(model_card_path, encoding="utf-8") as f:
+            inspection_id = json.load(f).get("inspection_id")
+    except Exception:
+        inspection_id = None
+
+    sources = (
+        lambda: _column_types_from_inspection_metadata(inspection_id),
+        lambda: _column_types_from_model_metadata(resolved.metadata_path),
+    )
+    for load_types in sources:
+        try:
+            types_by_table = load_types()
+        except Exception as exc:
+            logger.warning("Could not load column types for simulation %s: %s", simulation_id, exc)
+            continue
+        if types_by_table:
+            return types_by_table
+
+    return {}
+
+
 def main() -> None:
     """CLI entrypoint with selectable output format."""
     parser = argparse.ArgumentParser(description="List available simulations")

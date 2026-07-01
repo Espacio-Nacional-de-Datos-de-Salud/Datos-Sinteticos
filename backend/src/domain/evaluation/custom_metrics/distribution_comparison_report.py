@@ -51,9 +51,9 @@ def _mean(values: list[float | None]) -> float | None:
 class DistributionComparisonReport(MetricEvaluator):
     """Build distribution-comparison data used by ``synthetic_eval_report.html``."""
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, n_bins: int | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.n_bins = TVD_N_BINS
+        self.n_bins = n_bins if n_bins is not None else TVD_N_BINS
 
     @staticmethod
     def name() -> str:

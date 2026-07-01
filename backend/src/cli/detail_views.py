@@ -23,7 +23,7 @@ def _print_inspection_detail(item: dict) -> None:
     folder = item.get("folder", "")
 
     print("\n" + "─" * 64)
-    print(f"  INSPECCION: {name}")
+    print(f"  CARGA DE DATOS: {name}")
     print(f"  ID:     {inspection_id}")
     print(f"  Estado: {status}    Fecha: {timestamp}")
     print("─" * 64)
@@ -89,7 +89,7 @@ def _print_model_detail(item: dict) -> None:
     print(f"  ID:     {model_id}")
     print(f"  Estado: {status}    Fecha: {timestamp}")
     if inspection_id:
-        print(f"  Inspeccion origen: {inspection_id}")
+        print(f"  Carga de datos origen: {inspection_id}")
     print("─" * 64)
 
     if accuracy is not None:
@@ -120,7 +120,7 @@ def _print_simulation_detail(item: dict) -> None:
     folder = item.get("folder", "")
 
     print("\n" + "─" * 64)
-    print(f"  SIMULACION: {name}")
+    print(f"  GENERACION: {name}")
     print(f"  ID:     {simulation_id}")
     print(f"  Estado: {status}    Fecha: {timestamp}")
     if model_id:
@@ -161,11 +161,11 @@ def _print_evaluation_detail(item: dict) -> None:
     folder = item.get("folder", "")
 
     print("\n" + "─" * 64)
-    print(f"  EVALUACION: {name}")
+    print(f"  AUDITORIA: {name}")
     print(f"  ID:     {evaluation_id}")
     print(f"  Estado: {status}    Fecha: {timestamp}")
     if simulation_id:
-        print(f"  Simulacion: {simulation_id}")
+        print(f"  Generacion: {simulation_id}")
     if model_id:
         print(f"  Modelo:     {model_id}")
     print("─" * 64)
@@ -195,11 +195,11 @@ def inspect_catalog_item(catalog_type: str, item: dict) -> None:
             print("  Acciones:")
             print("    e. Editar tipos de codificacion")
             print("    r. Editar relaciones (PKs/FKs)")
-            print("    d. eliminar  Borrar inspeccion")
+            print("    d. eliminar  Borrar carga de datos")
             print("    volver")
             try:
-                raw = input("\n  inspeccion> ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
+                raw = input("\n  carga> ").strip().lower()
+            except EOFError:
                 print()
                 return
             if not raw or raw in _BACK_ALIASES or raw in _QUIT_ALIASES:
@@ -229,11 +229,11 @@ def inspect_catalog_item(catalog_type: str, item: dict) -> None:
         model_id = item.get("model_id", "")
         while True:
             print("  Acciones:")
-            print("    d. eliminar  Borrar modelo y sus simulaciones vinculadas")
+            print("    d. eliminar  Borrar modelo y sus generaciones vinculadas")
             print("    volver")
             try:
                 raw = input("\n  modelo> ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 print()
                 return
             if not raw or raw in _BACK_ALIASES or raw in _QUIT_ALIASES:
@@ -247,11 +247,11 @@ def inspect_catalog_item(catalog_type: str, item: dict) -> None:
         simulation_id = item.get("simulation_id", "")
         while True:
             print("  Acciones:")
-            print("    d. eliminar  Borrar simulación y evaluaciones vinculadas")
+            print("    d. eliminar  Borrar generación y auditorías vinculadas")
             print("    volver")
             try:
-                raw = input("\n  simulacion> ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
+                raw = input("\n  generacion> ").strip().lower()
+            except EOFError:
                 print()
                 return
             if not raw or raw in _BACK_ALIASES or raw in _QUIT_ALIASES:
@@ -265,11 +265,11 @@ def inspect_catalog_item(catalog_type: str, item: dict) -> None:
         evaluation_id = item.get("evaluation_id", "")
         while True:
             print("  Acciones:")
-            print("    d. eliminar  Borrar evaluación")
+            print("    d. eliminar  Borrar auditoría")
             print("    volver")
             try:
-                raw = input("\n  evaluacion> ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
+                raw = input("\n  auditoria> ").strip().lower()
+            except EOFError:
                 print()
                 return
             if not raw or raw in _BACK_ALIASES or raw in _QUIT_ALIASES:
@@ -288,7 +288,7 @@ def inspect_catalog_item(catalog_type: str, item: dict) -> None:
 def _confirm_delete(label: str) -> bool:
     try:
         ans = input(f"  ¿Eliminar {label}? [s/N]: ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
         return False
     return ans in ("s", "si", "y", "yes")
 
@@ -301,7 +301,7 @@ def _delete_inspection_interactive(inspection_id: str) -> None:
         return
     outcome = delete_inspection(inspection_id)
     if outcome.status == "not_found":
-        print("  Inspección no encontrada.")
+        print("  Carga de datos no encontrada.")
     elif outcome.status == "has_linked_models":
         linked = ", ".join(outcome.linked_model_ids)
         print(f"  No se puede eliminar: tiene modelos vinculados ({linked}).")
@@ -321,8 +321,8 @@ def _delete_model_interactive(model_id: str) -> None:
         print("  Modelo no encontrado.")
     elif outcome.status == "has_linked_simulations":
         linked = ", ".join(outcome.linked_simulation_ids)
-        print(f"  No se puede eliminar: tiene simulaciones vinculadas ({linked}).")
-        print("  Elimina primero esas simulaciones.")
+        print(f"  No se puede eliminar: tiene generaciones vinculadas ({linked}).")
+        print("  Elimina primero esas generaciones.")
     else:
         print(f"  Eliminado: {model_id}")
 
@@ -335,11 +335,11 @@ def _delete_simulation_interactive(simulation_id: str) -> None:
         return
     outcome = delete_simulation(simulation_id)
     if outcome.status == "not_found":
-        print("  Simulación no encontrada.")
+        print("  Generación no encontrada.")
     elif outcome.status == "has_linked_evaluations":
         linked = ", ".join(outcome.linked_evaluation_ids)
-        print(f"  No se puede eliminar: tiene evaluaciones vinculadas ({linked}).")
-        print("  Elimina primero esas evaluaciones.")
+        print(f"  No se puede eliminar: tiene auditorías vinculadas ({linked}).")
+        print("  Elimina primero esas auditorías.")
     else:
         print(f"  Eliminada: {simulation_id}")
 
@@ -353,4 +353,4 @@ def _delete_evaluation_interactive(evaluation_id: str) -> None:
     if delete_evaluation(evaluation_id):
         print(f"  Eliminada: {evaluation_id}")
     else:
-        print("  Evaluación no encontrada.")
+        print("  Auditoría no encontrada.")

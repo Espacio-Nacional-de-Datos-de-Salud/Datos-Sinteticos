@@ -167,18 +167,18 @@ def test_date_inequality_with_constant_reconstructs_from_non_negative_duration()
 
     # Pre-processing: encode as days since deadline (must be >= 0)
     preprocessed = rule.apply_pre(original)
-    assert preprocessed["duration_discharge_date_days"].tolist() == [11, 0]
+    assert preprocessed["duration_discharge_date"].tolist() == [11, 0]
     assert "discharge_date" not in preprocessed.columns
 
     # Post-processing: reconstruct dates from durations (clamps negatives to deadline)
-    synthetic = pd.DataFrame({"duration_discharge_date_days": [-5, 3]})
+    synthetic = pd.DataFrame({"duration_discharge_date": [-5, 3]})
     reconstructed = rule.apply_post(synthetic)
 
     assert reconstructed["discharge_date"].tolist() == [
         pd.Timestamp("2020-01-31"),
         pd.Timestamp("2020-01-28"),
     ]
-    assert "duration_discharge_date_days" not in reconstructed.columns
+    assert "duration_discharge_date" not in reconstructed.columns
 
     # Sanity check: flag dates that violate the constraint
     failures = rule.sanity_check(pd.DataFrame({"discharge_date": ["2020-02-01"]}))
@@ -204,7 +204,7 @@ def test_date_inequality_pre_outputs_are_tz_naive() -> None:
     preprocessed = rule.apply_pre(original)
 
     assert preprocessed["condition_start_datetime"].dt.tz is None
-    assert preprocessed["duration_condition_end_datetime_days"].tolist() == [5, 2]
+    assert preprocessed["duration_condition_end_datetime"].tolist() == [5, 2]
 
 
 def test_date_inequality_constant_mode_round_trip_stays_tz_naive() -> None:
@@ -240,7 +240,7 @@ def test_date_inequality_handles_tz_aware_constraint_from_old_rule_managers() ->
     rule._constraint_dt = pd.to_datetime("2002-09-08", utc=True)
 
     reconstructed = rule.apply_post(
-        pd.DataFrame({"duration_condition_end_datetime_days": [3]})
+        pd.DataFrame({"duration_condition_end_datetime": [3]})
     )
     assert reconstructed["condition_end_datetime"].dt.tz is None
     assert reconstructed["condition_end_datetime"].tolist() == [pd.Timestamp("2002-09-05")]
@@ -345,7 +345,7 @@ def test_date_inequality_post_flags_fully_blank_reconstruction() -> None:
 
     reconstructed = rule.apply_post(
         pd.DataFrame(
-            {"duration_condition_start_datetime_days": pd.array([None, None], dtype="Int64")}
+            {"duration_condition_start_datetime": pd.array([None, None], dtype="Int64")}
         )
     )
 
@@ -368,7 +368,7 @@ def test_date_inequality_post_flags_nulls_introduced_by_unparseable_origin() -> 
         pd.DataFrame(
             {
                 "condition_start_datetime": ["not-a-date", "2020-01-10"],
-                "duration_condition_end_datetime_days": [5, 3],
+                "duration_condition_end_datetime": [5, 3],
             }
         )
     )
@@ -391,7 +391,7 @@ def test_date_inequality_post_does_not_flag_legitimately_nullable_durations() ->
 
     rule.apply_post(
         pd.DataFrame(
-            {"duration_condition_end_datetime_days": pd.array([3, None], dtype="Int64")}
+            {"duration_condition_end_datetime": pd.array([3, None], dtype="Int64")}
         )
     )
 
@@ -410,7 +410,7 @@ def test_manager_apply_all_post_collects_degradation_warnings() -> None:
     )
     data = {
         "condition_occurrence": pd.DataFrame(
-            {"duration_condition_start_datetime_days": pd.array([None, None], dtype="Int64")}
+            {"duration_condition_start_datetime": pd.array([None, None], dtype="Int64")}
         )
     }
 
@@ -433,7 +433,7 @@ def test_date_inequality_with_invalid_origin_date_coerces_to_nat() -> None:
         pd.DataFrame(
             {
                 "condition_start_date": ["-- 00", "2020-01-10"],
-                "duration_condition_end_date_days": [5, 3],
+                "duration_condition_end_date": [5, 3],
             }
         )
     )
@@ -1787,7 +1787,7 @@ def test_sort_concat_rules_large_integration_all_rule_types() -> None:
     rule_long_stay = NumericThresholdRule(
         table_target="visits",
         table_origin="visits",
-        origin_col="duration_visit_end_date_days",
+        origin_col="duration_visit_end_date",
         aux_col="long_stay",
         threshold=10,
         operator=">=",
@@ -1957,7 +1957,7 @@ def test_full_pipeline_with_add_rule_orders_and_transforms() -> None:
     rule_long_stay = NumericThresholdRule(
         table_target="visits",
         table_origin="visits",
-        origin_col="duration_visit_end_date_days",
+        origin_col="duration_visit_end_date",
         aux_col="long_stay",
         threshold=5,
         operator=">=",
@@ -2024,7 +2024,7 @@ def test_full_pipeline_with_add_rule_orders_and_transforms() -> None:
     assert "diagnosis_score" in preprocessed["patients"].columns
     assert "risk_band_score" in preprocessed["patients"].columns
     assert "visit_end_date" not in preprocessed["visits"].columns
-    assert "duration_visit_end_date_days" in preprocessed["visits"].columns
+    assert "duration_visit_end_date" in preprocessed["visits"].columns
     assert "long_stay" in preprocessed["visits"].columns
     assert "lab_value" not in preprocessed["labs"].columns
     assert "diff_lab_value" in preprocessed["labs"].columns

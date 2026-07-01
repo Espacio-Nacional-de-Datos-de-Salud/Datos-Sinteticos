@@ -328,6 +328,15 @@ export async function getSimulationColumns(simulationId: string): Promise<Simula
   return data;
 }
 
+export async function getSimulationColumnTypes(
+  simulationId: string,
+): Promise<SimulationColumnTypes> {
+  const { data } = await api.get<SimulationColumnTypes>(
+    `/simulations/${simulationId}/columns/types`,
+  );
+  return data;
+}
+
 export async function getModelColumns(modelId: string): Promise<ModelColumns> {
   const { data } = await api.get<ModelColumns>(`/models/${modelId}/columns`);
   return data;
@@ -335,6 +344,7 @@ export async function getModelColumns(modelId: string): Promise<ModelColumns> {
 
 export type ColumnKind = "numeric" | "datetime" | "categorical";
 export type ModelColumnTypes = Record<string, Record<string, ColumnKind>>;
+export type SimulationColumnTypes = Record<string, Record<string, ColumnKind>>;
 
 export async function getModelColumnTypes(
   modelId: string,

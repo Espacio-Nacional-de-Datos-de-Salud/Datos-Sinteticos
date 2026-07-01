@@ -44,6 +44,38 @@ def _resolve_relative_path(raw: str) -> str:
     return raw
 
 
+def _parse_table_configs(raw_tables: object) -> list[dict] | None:
+    """Normalize a pipeline ``evaluate.tables`` block into ``table_configs``.
+
+    Accepts a list where each entry is either a bare table name (string) or a
+    mapping ``{name|table: <str>, config: <dict>}``. Returns the shape expected by
+    :func:`backend.src.domain.evaluation.orchestrator.run_evaluation`:
+    ``[{"table": <name>, "config": <dict | None>}, ...]``. Returns ``None`` when
+    no tables are given, so the eval falls back to its mother-table default.
+    """
+    if not raw_tables:
+        return None
+    if not isinstance(raw_tables, list):
+        raise ValueError("Pipeline 'evaluate.tables' must be a list.")
+
+    configs: list[dict] = []
+    for entry in raw_tables:
+        if isinstance(entry, str):
+            configs.append({"table": entry, "config": None})
+            continue
+        if isinstance(entry, dict):
+            table = entry.get("name") or entry.get("table")
+            if not table:
+                raise ValueError("Each 'evaluate.tables' entry needs a 'name' (table).")
+            config = entry.get("config")
+            if config is not None and not isinstance(config, dict):
+                raise ValueError(f"'config' for table '{table}' must be a mapping.")
+            configs.append({"table": table, "config": config})
+            continue
+        raise ValueError("Each 'evaluate.tables' entry must be a string or a mapping.")
+    return configs
+
+
 def load_pipeline_config(config_path: str) -> PipelineConfig:
     """Load and parse a pipeline configuration YAML file.
 
@@ -102,6 +134,7 @@ def load_pipeline_config(config_path: str) -> PipelineConfig:
                 real_data=real_data,
                 simulation_id=raw_eval.get("simulation_id"),
                 model_id=raw_eval.get("model_id"),
+                table_configs=_parse_table_configs(raw_eval.get("tables")),
             )
 
         job_config_overrides = None

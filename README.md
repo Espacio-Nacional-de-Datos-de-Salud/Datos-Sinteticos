@@ -1,4 +1,4 @@
-# Synthetic Data Tool for the ENDS (National Health Data Space)
+# Synthetic Data Tool for the ENDS (Espacio Nacional de Datos de Salud)
 
 <p align="center">
   <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Logotipo_del_Ministerio_para_la_Transformaci%C3%B3n_Digital_y_de_la_Funci%C3%B3n_P%C3%BAblica.svg/960px-Logotipo_del_Ministerio_para_la_Transformaci%C3%B3n_Digital_y_de_la_Funci%C3%B3n_P%C3%BAblica.svg.png" alt="Ministerio" width="200"/>
@@ -8,46 +8,40 @@
 
 This tool generates synthetic tabular health data for the National Health Data Space (ENDS) in Spain.
 
-
-## 0. Pick your path
+## Pick your path
 
 | If you want to… | Read |
 | :--- | :--- |
-| 🚀 **Use the tool from a browser** (Docker or `make local`) | **[Use the UI](docs/developer/setup/use_ui.md)** |
-| 💻 **Use the tool from the terminal** (interactive wizard or `make` one-shots) | **[Use the CLI](docs/developer/setup/use_cli.md)** |
-| 🛠 **Maintain or extend the codebase** | **[Developer Onboarding](docs/developer/setup/onboarding.md)** |
+| 🚀 **Use the tool from a browser** (Docker or `make local`) | **[Use the UI](docs/setup/use_ui.md)** |
+| 💻 **Use the tool from the terminal** (interactive wizard or `make` one-shots) | **[Use the CLI](docs/setup/use_cli.md)** |
+| 🛠 **Maintain or extend the codebase** | **[Developer Onboarding](docs/setup/onboarding.md)** |
 
 
-## 1. Reference docs
+## Setup & reference
 
-- **[Installation](docs/developer/setup/install.md)** — `make setup`, venvs, config bootstrap. The single source of install steps.
-- **[Configuration](docs/developer/setup/configuration.md)** — every YAML knob under `backend/config/`.
+- **[Installation](docs/setup/install.md)** — `make setup`, the two venvs, config bootstrap. The single source of install steps.
+- **[Configuration](docs/setup/configuration.md)** — every YAML knob under `backend/config/`.
 - **[Contributing](CONTRIBUTING.md)** — coding standards, commit style, docstring format.
-- **[Testing](docs/developer/setup/testing.md)** — `make test` (core venv) and `make test-eval` (eval venv).
+- **[Testing](docs/setup/testing.md)** — `make test` (core venv) and `make test-eval` (eval venv).
 
 
-## 2. Architecture & concepts
+## Deployment & runtime
 
-### Codebase architecture
-- **[Backend Layout](docs/developer/concepts/backend_layout.md)** — tour of `backend/src/`: the five layers and the one-direction import rule.
-- **[Adding a Feature](docs/developer/concepts/adding_a_feature.md)** — end-to-end walkthrough of a change crossing every backend layer + the frontend.
-
-### Data-side concepts
-- **[OMOP Data](docs/developer/concepts/omop.md)** — common data model, issues, preprocessing.
-- **[Logical Rules](docs/developer/concepts/logical_rules.md)** — enforcing date inequalities, numeric constraints, semantic consistency.
-- **[Business Rules Configurations](docs/developer/concepts/business_rules_configurations.md)** — staging step that previews rule-transformed data before training.
-- **[Conditional Generation](docs/developer/concepts/conditional_generation.md)** — generating data conditioned on existing column values.
-- **[Pipelines](docs/developer/concepts/pipelines.md)** — the YAML-driven multi-job engine.
-- **[Mostly AI](docs/developer/concepts/mostly_ai.md)** — how the tabular generator is customised.
-- **[Evaluation & Metrics](docs/developer/concepts/evaluation.md)** — fidelity, privacy, and detection metrics.
-
-### Deployment & runtime
-- **[API](docs/developer/deployment/api.md)** — REST endpoints and schemas.
-- **[Frontend](docs/developer/deployment/frontend.md)** — the Next.js app.
-- **[Docker](docs/developer/deployment/docker.md)** — compose files, image structure, volume model.
-- **[EC2](docs/developer/deployment/ec2.md)** — running on a bare EC2 box.
+- **[Docker](docs/deployment/docker.md)** — compose files, image structure, volume model.
+- **[API](docs/deployment/api.md)** — REST endpoints and schemas (the UI is a client of this API).
 
 
-## 3. Troubleshooting
+## Complete & final documentation
 
-- **[Training Failure Diagnostics](docs/developer/concepts/batch_size_errors.md)** — pre-flight checks, batch-size errors, DP+context-chain crashes, and failure summarisation.
+The markdown guides in this repository cover only practical setup and usage. The
+**complete and final documentation** (which goes far deeper) lives as the
+project deliverables under [`docs/documentacion-completa/`](docs/documentacion-completa):
+
+| Document | What it covers |
+| :--- | :--- |
+| [Documentación técnica](<docs/documentacion-completa/Documentación técnica 20260630.docx>) | The authoritative technical reference: layered backend architecture, OMOP data model, logical/business rules, conditional generation, the Mostly AI generator, evaluation methodology, and the pipeline engine. |
+| [Manual de instrucciones (manual de usuario)](<docs/documentacion-completa/Manual de instrucciones de la herramienta de generación de datos sintéticos 20260630.docx>) | Full end-user manual for operating the tool. |
+| [Informe de validación de la herramienta](<docs/documentacion-completa/Informe de validación de la herramienta 20260630.docx>) | Validation report for the tool. |
+| [Documento de cierre del proyecto](<docs/documentacion-completa/Documento de cierre del proyecto - Datos sintéticos 20260630.docx>) | Project closure document. |
+
+These `.docx` files are a snapshot of the final documents handed-in as deliverables, the markdown here is a quick-start layer on top of them.

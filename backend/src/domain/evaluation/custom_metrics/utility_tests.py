@@ -21,6 +21,19 @@ class UtilityTests(MetricEvaluator):
     """
 
     supports_multitable = True
+    # Each per-table evaluation report only shows the tests targeting that table.
+    supports_table_filter = True
+
+    def __init__(self, config: dict | None = None, **kwargs) -> None:
+        """Initialize the metric.
+
+        Args:
+            config: Per-run override for the ``utility_tests`` config block
+                (enabled flag + tests). ``None`` ⇒ global config.
+            **kwargs: Forwarded to the base evaluator.
+        """
+        super().__init__(**kwargs)
+        self._config = config
 
     @staticmethod
     def name() -> str:
@@ -30,12 +43,15 @@ class UtilityTests(MetricEvaluator):
         self,
         real_data: dict[str, pd.DataFrame],
         synthetic_data: dict[str, pd.DataFrame],
+        evaluated_table: str | None = None,
     ) -> dict:
-        config = UTILITY_TESTS_CONFIG or {}
+        config = self._config if self._config is not None else (UTILITY_TESTS_CONFIG or {})
         if not config.get("enabled", False):
             return self._empty_result("utility_tests disabled")
 
         tests = config.get("tests", [])
+        if evaluated_table is not None:
+            tests = [test for test in tests if test.get("table") == evaluated_table]
         if not tests:
             return self._empty_result("no utility tests configured")
 
@@ -54,6 +70,8 @@ class UtilityTests(MetricEvaluator):
                     {
                         "name": test.get("name", "unknown"),
                         "metric": test.get("metric"),
+                        "table": test.get("table"),
+                        "column": test.get("column"),
                         "weight": float(test.get("weight", 1.0)),
                         "real_value": None,
                         "synthetic_value": None,
@@ -120,7 +138,9 @@ class UtilityTests(MetricEvaluator):
                     "reason": reason,
                 },
                 "tests": [],
-                "config": UTILITY_TESTS_CONFIG or {},
+                "config": (
+                    self._config if self._config is not None else (UTILITY_TESTS_CONFIG or {})
+                ),
             },
         }
 

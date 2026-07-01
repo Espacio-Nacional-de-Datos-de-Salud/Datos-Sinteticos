@@ -13,7 +13,14 @@ import { getConfigSchemas } from "@/lib/api";
 
 export type FieldKind = "boolean" | "number" | "text" | "select" | "list" | "json" | "checklist";
 
-export type SelectOption = { value: string; label: string };
+export type SelectOption = {
+  value: string;
+  label: string;
+  // Optional per-option YAML path override (checklist only). Lets one checklist
+  // mix options stored under different config keys; when absent the option uses
+  // its FieldSchema's `path`. Mirrors FieldOption.path in field_schemas.py.
+  path?: string | null;
+};
 
 export type FieldSchema = {
   // Dotted path inside the parsed YAML, e.g. "settings.default_csv_delimiter".

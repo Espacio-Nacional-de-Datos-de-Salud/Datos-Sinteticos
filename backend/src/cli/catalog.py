@@ -4,7 +4,7 @@ from __future__ import annotations
 
 _CATALOGS: dict[str, dict[str, str]] = {
     "inspections": {
-        "label": "inspecciones",
+        "label": "cargas de datos",
         "id_key": "inspection_id",
         "name_key": "inspection_name",
     },
@@ -14,12 +14,12 @@ _CATALOGS: dict[str, dict[str, str]] = {
         "name_key": "model_name",
     },
     "simulations": {
-        "label": "simulaciones",
+        "label": "generaciones",
         "id_key": "simulation_id",
         "name_key": "simulation_name",
     },
     "evaluations": {
-        "label": "evaluaciones",
+        "label": "auditorias",
         "id_key": "evaluation_id",
         "name_key": "evaluation_name",
     },

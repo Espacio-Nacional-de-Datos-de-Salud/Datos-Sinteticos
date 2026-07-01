@@ -23,3 +23,8 @@ function isTruthy(raw: string | undefined): boolean {
 export const ALLOW_SERVER_FILES = isTruthy(
   process.env.NEXT_PUBLIC_ALLOW_SERVER_FILES,
 );
+
+// When true, the sidebar displays the Pipelines page link for advanced users.
+export const ENABLE_PIPELINES = isTruthy(
+  process.env.NEXT_PUBLIC_ENABLE_PIPELINES,
+);

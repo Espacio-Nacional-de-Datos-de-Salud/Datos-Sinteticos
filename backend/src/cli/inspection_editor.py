@@ -75,7 +75,7 @@ def _edit_encoding_types(folder: str, metadata: dict) -> None:
 
         try:
             raw = input("\n  tipos> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return
 
@@ -147,7 +147,7 @@ def _edit_relationships(folder: str, metadata: dict) -> None:
 
         try:
             raw = input("\n  relaciones> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return
 
@@ -216,7 +216,7 @@ def _handle_pk_edit(
                 print(f"  PK de '{t}' → '{cols[c_idx]}'.")
             else:
                 print("  Numero fuera de rango.")
-    except (ValueError, EOFError, KeyboardInterrupt):
+    except (ValueError, EOFError):
         print("\n  Operacion cancelada.")
 
 
@@ -276,7 +276,11 @@ def _handle_fk_edit(
             print(f"\n  Columnas PK disponibles en '{parent}':")
             for j, c in enumerate(parent_cols, 1):
                 print(f"    [{j}] {c}")
-            pk_col = parent_cols[int(input("  Columna PK: ").strip()) - 1]
+            pk_idx = int(input("  Columna PK: ").strip()) - 1
+            if not (0 <= pk_idx < len(parent_cols)):
+                print("  Numero fuera de rango.")
+                return
+            pk_col = parent_cols[pk_idx]
 
             child_cols = columns_for(child)  # type: ignore[operator]
             if not child_cols:
@@ -285,7 +289,11 @@ def _handle_fk_edit(
             print(f"\n  Columnas FK disponibles en '{child}':")
             for j, c in enumerate(child_cols, 1):
                 print(f"    [{j}] {c}")
-            fk_col = child_cols[int(input("  Columna FK: ").strip()) - 1]
+            fk_idx = int(input("  Columna FK: ").strip()) - 1
+            if not (0 <= fk_idx < len(child_cols)):
+                print("  Numero fuera de rango.")
+                return
+            fk_col = child_cols[fk_idx]
 
             is_ctx = input("  ¿Es de contexto? [s/N]: ").strip().lower() in (
                 "s",
@@ -304,7 +312,7 @@ def _handle_fk_edit(
                 }
             )
             print(f"  FK añadida: {child}.{fk_col} → {parent}.{pk_col}")
-        except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+        except (ValueError, IndexError, EOFError):
             print("\n  Operacion cancelada.")
         return
 

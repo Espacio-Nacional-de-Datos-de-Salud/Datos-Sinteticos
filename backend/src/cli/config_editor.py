@@ -50,6 +50,26 @@ def _load_columns_from_data() -> dict[str, list[str]]:
         return {}
 
 
+def columns_for_files(paths: list[str]) -> dict[str, list[str]]:
+    """Return {table_name: [col, ...]} for an explicit set of data-file paths.
+
+    Used to scope the rule editor's table/column pickers to the files chosen for
+    the current run, instead of every CSV/parquet discovered under data/.
+    """
+    from pathlib import Path
+
+    from backend.src.sessions.files import FilePreviewError, preview_file
+
+    result: dict[str, list[str]] = {}
+    for path in paths:
+        try:
+            preview = preview_file(path, sample_rows=0)
+            result[Path(path).stem] = preview.columns
+        except FilePreviewError:
+            pass
+    return result
+
+
 # ── low-level I/O ─────────────────────────────────────────────────────────────
 
 
@@ -176,7 +196,7 @@ def _prompt_select(label: str, options: list, current: Any) -> Any:
         print(f"  {i}.{mark} {opt.label}")
     try:
         sel = input(f"  Selecciona [1-{len(options)}] o Enter para conservar: ").strip()
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
         print()
         return current
     if not sel:
@@ -201,7 +221,7 @@ def _edit_checklist(title: str, options: list, current: list[str]) -> list[str] 
         print("  <numero> activar/desactivar  |  listo  |  volver")
         try:
             raw = input("    > ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return None
         if raw in ("listo", "ok", "done"):
@@ -274,7 +294,7 @@ def _edit_field(cfg: dict, f: FieldSchema) -> bool:
         print("  Introduce JSON en una sola línea (Enter=conservar):")
         try:
             v = input("  > ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return False
         if not v:
@@ -378,7 +398,7 @@ def edit_config(config_id: str) -> None:
 
         try:
             raw = input(f"\n  {config_id}> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return
         cmd = raw.lower()
@@ -482,14 +502,14 @@ def _prompt_rule_field(
     current_table: str | None = None,
 ) -> str | None:
     if key == "constraint_operator":
-        opts_objs = [type("O", (), {"value": v, "label": l})() for v, l in _OP_OPTIONS]
+        opts_objs = [type("O", (), {"value": v, "label": lbl})() for v, lbl in _OP_OPTIONS]
         print(f"\n  {label}:")
         for i, o in enumerate(opts_objs, 1):
             mark = " *" if o.value == (current or ">=") else "  "
             print(f"  {i}.{mark} {o.label}")
         try:
             sel = input("  Selecciona [1-2] o Enter para conservar: ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             return current
         if not sel:
             return current or ">="
@@ -508,7 +528,7 @@ def _prompt_rule_field(
             print(f"    {i}. {t}")
         try:
             sel = input("  Número o nombre: ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             return None
         if not sel:
             return current if not required else None
@@ -534,7 +554,7 @@ def _prompt_rule_field(
                 print(f"    {i:3d}. {c}")
             try:
                 sel = input("  Número o nombre: ").strip()
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 return None
             if not sel:
                 return current if not required else None
@@ -551,7 +571,7 @@ def _prompt_rule_field(
     )
     try:
         val = input(f"  {label}{hint}: ").strip()
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
         return None
     return val if val else (current or None)
 
@@ -578,10 +598,12 @@ def edit_rules(columns_by_table: dict[str, list[str]] | None = None) -> None:
         print("  edit <n>  Editar regla n")
         print("  listo     Guardar y salir")
         print("  volver    Cancelar sin guardar")
+        if modified:
+            print("\n  * Cambios pendientes de guardar")
 
         try:
             raw = input("\n  reglas> ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return
         parts = raw.split()
@@ -590,6 +612,15 @@ def edit_rules(columns_by_table: dict[str, list[str]] | None = None) -> None:
         cmd = parts[0].lower()
 
         if cmd in _BACK_ALIASES or cmd in _QUIT_ALIASES:
+            if modified:
+                try:
+                    confirm = (
+                        input("  Hay cambios sin guardar. ¿Descartar? [s/N]: ").strip().lower()
+                    )
+                except EOFError:
+                    confirm = ""
+                if _parse_bool(confirm) is not True:
+                    continue
             return
         if cmd == "listo":
             if _save_cfg("rules", {"rules": rules}):
@@ -606,7 +637,7 @@ def edit_rules(columns_by_table: dict[str, list[str]] | None = None) -> None:
                 if not (0 <= type_idx < len(_RULE_TYPES)):
                     print("  Fuera de rango.")
                     continue
-            except (ValueError, EOFError, KeyboardInterrupt):
+            except (ValueError, EOFError):
                 continue
 
             rtype, _ = _RULE_TYPES[type_idx]
@@ -682,7 +713,7 @@ def edit_rules(columns_by_table: dict[str, list[str]] | None = None) -> None:
                 elif not required and key in rule:
                     try:
                         rem = input(f"  Eliminar '{label}'? [s/n]: ").strip().lower()
-                    except (EOFError, KeyboardInterrupt):
+                    except EOFError:
                         rem = "n"
                     if _parse_bool(rem):
                         rule.pop(key, None)
@@ -698,7 +729,7 @@ def edit_rules(columns_by_table: dict[str, list[str]] | None = None) -> None:
 _MENU_ENTRIES = [
     ("1", "general", "Configuración general     (general.yaml)"),
     ("2", "mostly_ai", "Configuración Mostly AI   (mostly_ai.yaml)"),
-    ("3", "evaluation", "Configuración evaluación  (evaluation.yaml)"),
+    ("3", "evaluation", "Configuración auditoría   (evaluation.yaml)"),
     ("4", "rules", "Reglas de preprocesamiento(rules.yaml)"),
 ]
 
@@ -715,7 +746,7 @@ def config_menu(columns_by_table: dict[str, list[str]] | None = None) -> None:
 
         try:
             raw = input("\n  config> ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return
         if not raw or raw in _BACK_ALIASES or raw in _QUIT_ALIASES:
@@ -741,13 +772,13 @@ def maybe_review_configs(mode: str, columns_by_table: dict[str, list[str]] | Non
     labels = {
         "general": "configuración general",
         "mostly_ai": "configuración del modelo (Mostly AI)",
-        "evaluation": "configuración de evaluación",
+        "evaluation": "configuración de auditoría",
     }
     for cid in config_ids:
         label = labels.get(cid, cid)
         try:
             ans = input(f"\n  ¿Revisar {label} antes de continuar? [s/N]: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return
         if _parse_bool(ans) is True:
@@ -757,7 +788,7 @@ def maybe_review_configs(mode: str, columns_by_table: dict[str, list[str]] | Non
     if mode in ("i", "t"):
         try:
             ans = input("\n  ¿Revisar reglas de preprocesamiento? [s/N]: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
             return
         if _parse_bool(ans) is True:

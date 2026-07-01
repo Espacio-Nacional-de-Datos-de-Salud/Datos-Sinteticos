@@ -12,13 +12,13 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos:
-  # Inspeccionar datos de entrada
+  # Carga de datos: detectar esquema de los datos de entrada
   python -m backend.src.cli --mode i --files data/table1.csv data/table2.csv
 
-    # Definir reglas logicas para una inspeccion
+    # Definir reglas logicas para una carga de datos
     python -m backend.src.cli --mode r --inspection-id inspection_20240501_120000
 
-  # Entrenar desde una inspeccion existente
+  # Entrenar desde una carga de datos existente
   python -m backend.src.cli --mode t --inspection-id inspection_20240501_120000
 
   # Generar datos sinteticos desde un modelo entrenado
@@ -30,7 +30,8 @@ Ejemplos:
         "--mode",
         choices=["i", "r", "t", "s"],
         help=(
-            "Modo de ejecucion: 'i' (inspeccionar), 'r' (reglas), 't' (entrenar), 's' (simular)."
+            "Modo de ejecucion: 'i' (carga de datos), 'r' (reglas), "
+            "'t' (entrenar), 's' (generar)."
         ),
     )
     parser.add_argument(
@@ -47,11 +48,11 @@ Ejemplos:
     )
     parser.add_argument(
         "--model-id",
-        help="ID del modelo para modo simulacion.",
+        help="ID del modelo para modo generación.",
     )
     parser.add_argument(
         "--inspection-id",
-        help="ID de inspeccion desde la que entrenar.",
+        help="ID de carga de datos desde la que entrenar.",
     )
     return parser
 

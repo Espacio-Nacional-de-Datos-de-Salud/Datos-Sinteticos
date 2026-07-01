@@ -20,6 +20,7 @@ import { api, type EvaluationSummary, type InspectionSummary, type ModelSummary,
 import { stepHref, PIPELINE_STEPS } from "@/lib/pipeline-steps";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { cn } from "@/lib/utils";
+import { ENABLE_PIPELINES } from "@/lib/features";
 
 const STEP_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   inspeccion: Folder,
@@ -150,18 +151,20 @@ export function Sidebar() {
               </Link>
             );
           })}
-          {/* <Link
-            href="/pipelines"
-            title="Pipelines · avanzado"
-            className={cn(
-              iconBtn,
-              "relative",
-              isPipelinesPage ? itemActive : "border-l-transparent text-sidebar-foreground/70 hover:bg-sidebar-accent/60",
-            )}
-          >
-            <Workflow className="h-4 w-4" />
-            <Sparkles className="absolute right-0.5 top-0.5 h-2.5 w-2.5 text-violet-400" />
-          </Link> */}
+          {ENABLE_PIPELINES && (
+            <Link
+              href="/pipelines"
+              title="Pipelines · avanzado"
+              className={cn(
+                iconBtn,
+                "relative",
+                isPipelinesPage ? itemActive : "border-l-transparent text-sidebar-foreground/70 hover:bg-sidebar-accent/60",
+              )}
+            >
+              <Workflow className="h-4 w-4" />
+              <Sparkles className="absolute right-0.5 top-0.5 h-2.5 w-2.5 text-violet-400" />
+            </Link>
+          )}
         </nav>
       </aside>
     );
@@ -236,21 +239,25 @@ export function Sidebar() {
           })}
         </ul>
 
-        {/* <div className="px-4 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.08em] text-sidebar-foreground/50">
-          Avanzado
-        </div>
-        <Link href="/pipelines" className={cn(itemBase, isPipelinesPage ? itemActive : itemIdle)}>
-          <Workflow
-            className={cn(
-              "h-3.5 w-3.5 shrink-0",
-              isPipelinesPage
-                ? "text-sidebar-accent-foreground"
-                : "text-sidebar-foreground/55",
-            )}
-          />
-          <span className="truncate">Pipelines</span>
-          <Sparkles className="ml-1 h-3 w-3 shrink-0 text-violet-400" aria-label="avanzado" />
-        </Link> */}
+        {ENABLE_PIPELINES && (
+          <>
+            <div className="px-4 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.08em] text-sidebar-foreground/50">
+              Avanzado
+            </div>
+            <Link href="/pipelines" className={cn(itemBase, isPipelinesPage ? itemActive : itemIdle)}>
+              <Workflow
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0",
+                  isPipelinesPage
+                    ? "text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/55",
+                )}
+              />
+              <span className="truncate">Pipelines</span>
+              <Sparkles className="ml-1 h-3 w-3 shrink-0 text-violet-400" aria-label="avanzado" />
+            </Link>
+          </>
+        )}
       </nav>
 
       <div className="flex flex-col gap-2 border-t border-sidebar-border bg-white px-4 py-3 dark:bg-white/95">

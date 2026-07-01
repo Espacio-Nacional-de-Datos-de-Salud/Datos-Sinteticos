@@ -43,6 +43,21 @@ class ExactMatchRows(MetricEvaluator):
     (the actual rows) only for those combinations with CRP > 0.
     """
 
+    def __init__(self, show_filtered_rows: bool | None = None, **kwargs) -> None:
+        """Initialize the metric.
+
+        Args:
+            show_filtered_rows: Per-run override for whether matching (verbatim
+                real) rows are surfaced in the report. ``None`` ⇒ global config.
+            **kwargs: Forwarded to the base evaluator.
+        """
+        super().__init__(**kwargs)
+        self._show_filtered_rows = (
+            show_filtered_rows
+            if show_filtered_rows is not None
+            else EXACT_MATCH_SHOW_FILTERED_ROWS
+        )
+
     @staticmethod
     def name() -> str:
         return "exact_match_rows"
@@ -59,7 +74,7 @@ class ExactMatchRows(MetricEvaluator):
         syn_str = synthetic_data[shared_cols].astype(str)
         syn_indexed = syn_str.reset_index().rename(columns={"index": "__syn_idx__"})
         syn_total = len(synthetic_data)
-        include_rows = EXACT_MATCH_SHOW_FILTERED_ROWS
+        include_rows = self._show_filtered_rows
 
         full = _crp_and_matches(
             syn_indexed,

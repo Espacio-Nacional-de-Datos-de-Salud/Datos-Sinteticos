@@ -52,7 +52,7 @@ Runtime tunables plus the per-run execution parameters used when invoking
 Parameters passed to the deep learning architecture of Mostly AI.
 
 * **What it Does:** Dictates engine parameters (e.g. `max_epochs`, `max_training_time`, `batch_size`) and privacy layers (`differential_privacy`).
-* **`per_table`:** Any `model_settings` key can be overridden for a specific table. Useful for disabling DP on tables that form a deep context chain (see [Mostly AI](../concepts/mostly_ai.md#known-limitations)).
+* **`per_table`:** Any `model_settings` key can be overridden for a specific table. Useful for disabling DP on tables that form a deep context chain (see the [Documentación técnica](<../documentacion-completa/Documentación técnica 20260630.docx>) for this Mostly AI limitation).
 * **When to Touch:**
   - You encounter RAM constraints and need to lower `batch_size`.
   - You require an expedited, low-quality test run so you lower `max_epochs: 1` or cap `max_training_time`.
@@ -75,7 +75,7 @@ parameters, and the per-column statistics list.
 
 * **`metrics.default`**: list of metrics to calculate. Comment out heavy
   ones like `DomiasMIA_BNAF` while iterating.
-* **`metrics.confidence_interval_level`**, **`num_bootstrap_samples`**,
+* **`num_bootstrap_samples`**,
   **`average_complementary_tvd_n_bins`**: statistical knobs.
 * **`metrics.tstr.target_column` / `task_type`**: TSTR performance metric
   configuration.

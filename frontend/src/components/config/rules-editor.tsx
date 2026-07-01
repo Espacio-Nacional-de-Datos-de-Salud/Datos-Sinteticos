@@ -280,6 +280,7 @@ const RULE_TYPE_FIELDS: Record<RuleType, (keyof Rule)[]> = {
     "aux_col",
     "constraint",
     "constraint_operator",
+    "unit",
     "enforce_non_negative",
     "rejection_sampling",
   ],
@@ -1340,29 +1341,51 @@ function RuleForm({
           </div>
 
           {draft.type === "date_inequality" && (
-            <div
-              className={
-                "col-span-3 " + (draft.rejection_sampling ? "opacity-50" : "")
-              }
-            >
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  disabled={!!draft.rejection_sampling}
-                  checked={draft.enforce_non_negative !== false}
-                  onChange={(e) =>
-                    update({ enforce_non_negative: e.target.checked })
+            <>
+              <div className="col-span-3">
+                <Label className="text-xs">
+                  Unidad de la duración
+                  <Tooltip
+                    side="top"
+                    content="Granularidad del valor auxiliar que el modelo aprende. «Días» es lo habitual para estancias y episodios cortos. Usa «Meses» o «Años» si la diferencia suele ser larga — de lo contrario un episodio de 5 días redondea a 0 meses o años."
+                  />
+                </Label>
+                <NativeSelect
+                  value={draft.unit ?? "days"}
+                  onValueChange={(v) =>
+                    update({ unit: v as "years" | "months" | "days" })
                   }
-                />
-                <span>Forzar duraciones no negativas</span>
-              </label>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {draft.rejection_sampling
-                  ? "No aplica en muestreo por rechazo: no se reconstruye nada, las filas se resimulan."
-                  : "Limita las duraciones a valores ≥ 0. Desactiva para permitir duraciones negativas (p. ej., edades futuras)."}
-              </p>
-            </div>
+                  className="mt-1 h-8 rounded-lg"
+                >
+                  <option value="days">Días</option>
+                  <option value="months">Meses</option>
+                  <option value="years">Años</option>
+                </NativeSelect>
+              </div>
+              <div
+                className={
+                  "col-span-3 " + (draft.rejection_sampling ? "opacity-50" : "")
+                }
+              >
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    disabled={!!draft.rejection_sampling}
+                    checked={draft.enforce_non_negative !== false}
+                    onChange={(e) =>
+                      update({ enforce_non_negative: e.target.checked })
+                    }
+                  />
+                  <span>Forzar duraciones no negativas</span>
+                </label>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {draft.rejection_sampling
+                    ? "No aplica en muestreo por rechazo: no se reconstruye nada, las filas se resimulan."
+                    : "Limita las duraciones a valores ≥ 0. Desactiva para permitir duraciones negativas (p. ej., edades futuras)."}
+                </p>
+              </div>
+            </>
           )}
         </div>
       ) : (

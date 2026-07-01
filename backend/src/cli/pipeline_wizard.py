@@ -81,6 +81,7 @@ def _select_pipeline_config() -> Path | None:
 
 def _select_files() -> list[str]:
     """Wrapper around wizard's file selector logic, returns list of paths."""
+    from backend.src.cli.wizard import _data_file_location
     from backend.src.sessions.files import list_data_files
 
     files = list_data_files(extensions={"csv", "parquet"})
@@ -89,21 +90,26 @@ def _select_files() -> list[str]:
         return []
     print("\n  Archivos disponibles:")
     for i, f in enumerate(files, 1):
-        print(f"  {i:3d}. {f.name}")
+        location = _data_file_location(f.path)
+        suffix = f"  [{location}]" if location else ""
+        print(f"  {i:3d}. {f.name}{suffix}")
     try:
-        sel = input("  Números separados por espacios (Enter=ninguno): ").strip()
+        sel = input("  Números separados por espacios o comas (Enter=ninguno): ").strip()
     except (EOFError, KeyboardInterrupt):
         return []
     if not sel:
         return []
     selected: list[str] = []
-    for part in sel.split():
+    for part in sel.replace(",", " ").split():
         try:
             idx = int(part) - 1
-            if 0 <= idx < len(files):
-                selected.append(files[idx].path)
         except ValueError:
-            pass
+            print(f"  Se ignoró la entrada no válida: '{part}'.")
+            continue
+        if 0 <= idx < len(files):
+            selected.append(files[idx].path)
+        else:
+            print(f"  Número fuera de rango (1-{len(files)}): '{part}'.")
     return selected
 
 
@@ -161,8 +167,8 @@ def _build_job_interactive(job_num: int) -> dict | None:
             return False
 
     do_train = _yn("¿Entrenar?")
-    do_simulate = _yn("¿Simular?")
-    do_evaluate = _yn("¿Evaluar?")
+    do_simulate = _yn("¿Generar?")
+    do_evaluate = _yn("¿Auditar?")
 
     if not any([do_train, do_simulate, do_evaluate]):
         print("  Al menos un paso es obligatorio. Cancelando job.")
@@ -172,13 +178,13 @@ def _build_job_interactive(job_num: int) -> dict | None:
     if do_train:
         train: dict = {}
         print("\n  PASO TRAIN")
-        use_inspection = _yn("  ¿Reanudar desde inspección existente?")
+        use_inspection = _yn("  ¿Reanudar desde una carga de datos existente?")
         if use_inspection:
-            insp_id = _select_from_catalog("inspections", "Inspección")
+            insp_id = _select_from_catalog("inspections", "Carga de datos")
             if insp_id:
                 train["inspection_id"] = insp_id
             else:
-                print("  Sin inspección seleccionada; se usarán archivos.")
+                print("  Sin carga de datos seleccionada; se usarán archivos.")
         if not train.get("inspection_id"):
             files = _select_files()
             if not files:
@@ -192,7 +198,7 @@ def _build_job_interactive(job_num: int) -> dict | None:
     # ── simulate step ─────────────────────────────────────────────────────────
     if do_simulate:
         sim: dict = {}
-        print("\n  PASO SIMULATE")
+        print("\n  PASO GENERACIÓN")
         if not do_train:
             model_id = _select_from_catalog("models", "Modelo a usar")
             if model_id:
@@ -215,11 +221,11 @@ def _build_job_interactive(job_num: int) -> dict | None:
     # ── evaluate step ─────────────────────────────────────────────────────────
     if do_evaluate:
         ev: dict = {}
-        print("\n  PASO EVALUATE")
+        print("\n  PASO AUDITORÍA")
         if not do_train:
-            use_existing_sim = _yn("  ¿Evaluar simulación existente?")
+            use_existing_sim = _yn("  ¿Auditar una generación existente?")
             if use_existing_sim:
-                sim_id = _select_from_catalog("simulations", "Simulación a evaluar")
+                sim_id = _select_from_catalog("simulations", "Generación a auditar")
                 if sim_id:
                     ev["simulation_id"] = sim_id
         # The eval flow auto-binds real_data to the model's preprocessed
@@ -465,8 +471,6 @@ def _delete_pipeline_interactive(pipeline_id: str) -> None:
 
 def _view_pipeline_log(pipeline_id: str) -> None:
     """Print the last 40 lines of the pipeline log file."""
-    import os
-
     from backend.src.config.general import PIPELINES_DIR
 
     log_path = Path(PIPELINES_DIR) / f"{pipeline_id}.log"

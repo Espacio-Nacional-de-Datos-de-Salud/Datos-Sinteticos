@@ -13,6 +13,9 @@ no Docker. Two flavours, same backend:
 You can mix them freely — they read and write the same run folders
 under `backend/outputs/`.
 
+> For the complete, in-depth usage guide see the full user manual:
+> [Manual de instrucciones](<../documentacion-completa/Manual de instrucciones de la herramienta de generación de datos sintéticos 20260630.docx>).
+
 ---
 
 ## 0. Install
@@ -183,8 +186,9 @@ every child run (inspection / model / simulation / evaluation) with
 the same `pipeline_id` so you can group them later.
 
 The pipeline YAML format is annotated line-by-line in
-`backend/config/pipelines/example_pipeline.example.yaml`. Conceptual
-overview: [Pipelines](../concepts/pipelines.md).
+`backend/config/pipelines/example_pipeline.example.yaml`. For the
+conceptual overview of the pipeline engine, see the
+[Documentación técnica](<../documentacion-completa/Documentación técnica 20260630.docx>).
 
 ---
 

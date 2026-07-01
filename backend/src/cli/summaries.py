@@ -5,7 +5,7 @@ from __future__ import annotations
 
 def print_run_summary(mode: str, result_id: str, output_dir: str) -> None:
     """Print a prominent summary of the run results."""
-    mode_map = {"i": "INSPECCION", "t": "ENTRENAMIENTO", "s": "SIMULACION"}
+    mode_map = {"i": "CARGA DE DATOS", "t": "ENTRENAMIENTO", "s": "GENERACION"}
     mode_name = mode_map.get(mode, mode.upper())
 
     print("\n" + "╔" + "═" * 78 + "╗")

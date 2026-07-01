@@ -144,14 +144,14 @@ inspect:
 
 train:
 	$(call set_mode,t)
-	$(CORE_PYTHON) -m backend.src.cli --mode t
+	$(CORE_PYTHON) -m backend.src.cli --mode t $(if $(INSPECTION_ID),--inspection-id $(INSPECTION_ID))
 
 simulate:
 	$(call set_mode,s)
-	$(CORE_PYTHON) -m backend.src.cli --mode s
+	$(CORE_PYTHON) -m backend.src.cli --mode s $(if $(MODEL_ID),--model-id $(MODEL_ID)) $(if $(SAMPLE_SIZE),--sample-size $(SAMPLE_SIZE))
 
 eval:
-	$(EVAL_PYTHON) -m backend.src.domain.evaluation
+	$(EVAL_PYTHON) -m backend.src.domain.evaluation $(if $(SIMULATION_ID),--simulation-id $(SIMULATION_ID))
 
 pipeline:
 	$(CORE_PYTHON) -m backend.src.domain.pipeline --config $(CONFIG)

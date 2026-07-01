@@ -58,6 +58,24 @@ class LDiversityPyCanon(MetricEvaluator):
     avoids producing misleading values from guessed privacy columns.
     """
 
+    def __init__(
+        self,
+        quasi_identifier_subsets: dict[str, list[str]] | None = None,
+        sensitive_columns: list[str] | None = None,
+        **kwargs,
+    ) -> None:
+        """Initialize the metric evaluator.
+
+        Args:
+            quasi_identifier_subsets: Per-run QI subsets overriding the global
+                config (e.g. table-specific). ``None`` ⇒ use global config.
+            sensitive_columns: Per-run sensitive columns overriding the global
+                config. ``None`` ⇒ use global config.
+        """
+        super().__init__(**kwargs)
+        self._quasi_identifier_subsets = quasi_identifier_subsets
+        self._sensitive_columns = sensitive_columns
+
     @staticmethod
     def name() -> str:
         """Return the canonical metric name used by the custom runner."""
@@ -68,11 +86,19 @@ class LDiversityPyCanon(MetricEvaluator):
         if len(real_data) == 0 or len(synthetic_data) == 0:
             return self._skipped_result("empty_dataset")
 
-        qi_subsets = evaluation_config.QUASI_IDENTIFIER_SUBSETS
+        qi_subsets = (
+            self._quasi_identifier_subsets
+            if self._quasi_identifier_subsets is not None
+            else evaluation_config.QUASI_IDENTIFIER_SUBSETS
+        )
         if not qi_subsets:
             return self._skipped_result("missing_quasi_identifier_subsets")
 
-        sensitive_columns = _normalize_column_list(evaluation_config.SENSITIVE_COLUMNS)
+        sensitive_columns = _normalize_column_list(
+            self._sensitive_columns
+            if self._sensitive_columns is not None
+            else evaluation_config.SENSITIVE_COLUMNS
+        )
         if not sensitive_columns:
             return self._skipped_result("missing_sensitive_columns")
 

@@ -62,7 +62,9 @@ def _coerce_str_sample(series: pd.Series) -> pd.Series:
     return s
 
 
-def _decide_dayfirst(sample: pd.Series, col_name: str | None = None, log_warnings: bool = True) -> tuple[bool | None, bool]:
+def _decide_dayfirst(
+    sample: pd.Series, col_name: str | None = None, log_warnings: bool = True
+) -> tuple[bool | None, bool]:
     if sample.str.match(_ISO_RE).all():
         return False, False
 
@@ -83,7 +85,9 @@ def _decide_dayfirst(sample: pd.Series, col_name: str | None = None, log_warning
     return _ambiguous_fallback(sample, col_name, log_warnings)
 
 
-def _ambiguous_fallback(sample: pd.Series, col_name: str | None = None, log_warnings: bool = True) -> tuple[bool | None, bool]:
+def _ambiguous_fallback(
+    sample: pd.Series, col_name: str | None = None, log_warnings: bool = True
+) -> tuple[bool | None, bool]:
     rate_mf = pd.to_datetime(sample, errors="coerce", dayfirst=False).notna().mean()
     rate_df = pd.to_datetime(sample, errors="coerce", dayfirst=True).notna().mean()
     if rate_df > rate_mf:

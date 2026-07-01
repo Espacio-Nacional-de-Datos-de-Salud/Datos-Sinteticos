@@ -22,6 +22,11 @@ from typing import Any
 class FieldOption:
     value: str
     label: str
+    # Optional per-option YAML path override. Lets a single checklist mix
+    # options that live under different config keys (e.g. a metric stored under
+    # ``metrics.default.custom`` shown alongside ``metrics.default.stats``
+    # options). When ``None``, the option uses its FieldSchema's ``path``.
+    path: str | None = None
 
 
 @dataclass
@@ -68,8 +73,8 @@ class ConfigSchema:
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
-def _opt(value: str, label: str) -> FieldOption:
-    return FieldOption(value=value, label=label)
+def _opt(value: str, label: str, path: str | None = None) -> FieldOption:
+    return FieldOption(value=value, label=label, path=path)
 
 
 # Schema field names that need snake_case → camelCase for the frontend.
@@ -177,7 +182,10 @@ GENERAL_SCHEMA = ConfigSchema(
                     label="Tamaño de muestra",
                     kind="number",
                     nullable=True,
-                    help="Filas a generar en simulación cuando no se pasa por línea de comandos. Vacío = valor por defecto.",
+                    help=(
+                        "Filas a generar en simulación cuando no se pasa por línea de comandos. "
+                        "Vacío = valor por defecto."
+                    ),
                 ),
                 FieldSchema(
                     path="execution.model_id",
@@ -214,7 +222,11 @@ MOSTLY_AI_SCHEMA = ConfigSchema(
                     label="Tamaño de batch",
                     kind="number",
                     min=2,
-                    help="Filas por lote en cada paso de entrenamiento. En modos predeterminados se calcula automáticamente en función de la cantidad de filas presentes en la mayor tabla real.",
+                    help=(
+                        "Filas por lote en cada paso de entrenamiento. En modos predeterminados se "
+                        "calcula automáticamente en función de la cantidad de filas presentes en la "
+                        "mayor tabla real."
+                    ),
                     per_table=True,
                 ),
                 FieldSchema(
@@ -364,7 +376,10 @@ EVALUATION_SCHEMA = ConfigSchema(
                     label="k-anonimato y derivados",
                     kind="checklist",
                     subgroup="Anonimato por grupos (k / l)",
-                    help="Métricas de anonimato y ataques de inferencia de membresía. L-diversity requiere columnas sensibles y subconjuntos QI explícitos.",
+                    help=(
+                        "Métricas de anonimato y ataques de inferencia de membresía. "
+                        "L-diversity requiere columnas sensibles y subconjuntos QI explícitos."
+                    ),
                     options=[
                         _opt("k-anonymization", "k-anonymization"),
                         _opt("distinct l-diversity", "distinct l-diversity"),
@@ -389,14 +404,21 @@ EVALUATION_SCHEMA = ConfigSchema(
                     label="Mostrar filas coincidentes en el reporte",
                     kind="boolean",
                     subgroup="Copias exactas",
-                    help="Si Exact Match Rows está activo, incluye en el reporte las filas reales que el sintético copió literalmente. Desactivado por defecto: son registros reales.",
+                    help=(
+                        "Si Exact Match Rows está activo, incluye en el reporte las filas reales "
+                        "que el sintético copió literalmente. Desactivado por defecto: son "
+                        "registros reales."
+                    ),
                 ),
                 FieldSchema(
                     path="metrics.default.detection",
                     label="Detectabilidad",
                     kind="checklist",
                     subgroup="Indistinguibilidad y ataques",
-                    help="Clasificador que intenta distinguir filas reales de sintéticas. Cerca de 0.5 = indistinguibles.",
+                    help=(
+                        "Clasificador que intenta distinguir filas reales de sintéticas. "
+                        "Cerca de 0.5 = indistinguibles."
+                    ),
                     options=[_opt("detection_mlp", "Detection MLP")],
                 ),
                 FieldSchema(
@@ -405,7 +427,10 @@ EVALUATION_SCHEMA = ConfigSchema(
                     kind="json",
                     nullable=True,
                     subgroup="Ajustes",
-                    help="Grupos de columnas QI usados por k-anonimato y l-diversity. L-diversity se omite si no hay grupos explícitos.",
+                    help=(
+                        "Grupos de columnas QI usados por k-anonimato y l-diversity. "
+                        "L-diversity se omite si no hay grupos explícitos."
+                    ),
                 ),
                 FieldSchema(
                     path="metrics.sensitive_columns",
@@ -424,10 +449,9 @@ EVALUATION_SCHEMA = ConfigSchema(
             fields=[
                 FieldSchema(
                     path="metrics.default.stats",
-                    label="Distancias entre distribuciones",
+                    label="",
                     kind="checklist",
                     subgroup="Distribuciones marginales",
-                    help="Comparan distribuciones marginales reales vs sintéticas.",
                     options=[
                         _opt("jensenshannon_dist", "Jensen-Shannon Distance"),
                         _opt("inv_kl_divergence", "Inverse KL Divergence"),
@@ -435,16 +459,14 @@ EVALUATION_SCHEMA = ConfigSchema(
                 ),
                 FieldSchema(
                     path="metrics.default.custom",
-                    label="Correlaciones y distribuciones",
+                    label="",
                     kind="checklist",
-                    subgroup="Relaciones entre columnas",
-                    help="Preservación de correlaciones estructurales y comparación de distribuciones marginales/conjuntas.",
+                    subgroup="Distribuciones conjuntas",
                     options=[
+                        # 1-TVD and the correlation-matrix distance both live under
+                        # metrics.default.custom and describe joint distributions.
+                        _opt("distribution_comparison_report", "1-TVD"),
                         _opt("correlation_matrix_distance", "Correlation Matrix Distance"),
-                        _opt(
-                            "distribution_comparison_report",
-                            "Distribution Comparison (1-TVD uni/bi/tri)",
-                        ),
                     ],
                 ),
                 FieldSchema(
@@ -495,7 +517,11 @@ EVALUATION_SCHEMA = ConfigSchema(
                     label="Precisión",
                     kind="boolean",
                     subgroup="Utilidad estadística",
-                    help="Calcula la precisión (1-discrepancia) de las agregaciones definidas (proporciones, medias, conteos, tasas, fórmulas…) comparando real vs sintético. Si está desactivado, no se calcula.",
+                    help=(
+                        "Calcula la precisión (1-discrepancia) de las agregaciones definidas "
+                        "(proporciones, medias, conteos, tasas, fórmulas…) comparando real vs "
+                        "sintético. Si está desactivado, no se calcula."
+                    ),
                 ),
                 FieldSchema(
                     path="metrics.utility_tests.tests",
@@ -503,7 +529,11 @@ EVALUATION_SCHEMA = ConfigSchema(
                     kind="json",
                     nullable=True,
                     subgroup="Utilidad estadística",
-                    help="Define cada agregación: métrica (predefinida o fórmula personalizada sobre una o varias columnas), tabla, columna(s), filtro opcional y peso. La precisión relativa de cada una es 1 − error relativo.",
+                    help=(
+                        "Define cada agregación: métrica (predefinida o fórmula personalizada "
+                        "sobre una o varias columnas), tabla, columna(s), filtro opcional y peso. "
+                        "La precisión relativa de cada una es 1 − error relativo."
+                    ),
                 ),
             ],
         ),

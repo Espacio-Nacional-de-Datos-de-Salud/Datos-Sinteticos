@@ -81,13 +81,15 @@ This starts the backend (uvicorn on port 8000) and the frontend
 
 > **Windows users without WSL**: it's possible but you're on your own —
 > you'd need to run the backend and frontend manually with native
-> Python and Node, no `make`. Strongly prefer **WSL** ([Quick WSL
-> Setup](wsl_setup.md)) or Path A (Docker).
+> Python and Node, no `make`. Strongly prefer **WSL**
+> (`wsl --install -d Ubuntu` from an admin PowerShell) or Path A (Docker).
 
 ---
 
 ## What's next?
 
+- **Full user manual** (complete, final usage guide, in depth) →
+  [Manual de instrucciones](<../documentacion-completa/Manual de instrucciones de la herramienta de generación de datos sintéticos 20260630.docx>).
 - **Configure a run** (input file paths, sample sizes, rules) →
   [Configuration](configuration.md).
 - **Understand what the buttons do** (inspect / train / simulate /

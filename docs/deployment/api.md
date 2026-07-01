@@ -87,7 +87,7 @@ Verifies that the API process is running and reachable. Returns `{"status": "ok"
 
 ### Business Rules Configurations (`/business-rules-configurations`)
 
-A BRC run applies the logical rules' PRE phase on top of a completed upload's preprocessed data, producing a versioned snapshot the model can train from. See [Business Rules Configurations](../concepts/business_rules_configurations.md) for the concept.
+A BRC run applies the logical rules' PRE phase on top of a completed upload's preprocessed data, producing a versioned snapshot the model can train from. See the [Documentación técnica](<../documentacion-completa/Documentación técnica 20260630.docx>) for the concept.
 
 *   **GET `/`**: Lists all BRC runs. Optional `inspection_id` query param filters by source upload.
 *   **POST `/`**: Launches a BRC run asynchronously. Body: `inspection_id` (required), optional `name`, `rules_config_path` (defaults to the active `rules` config), `enable_profiling` (default `true`). Returns `202` with `brc_id`.

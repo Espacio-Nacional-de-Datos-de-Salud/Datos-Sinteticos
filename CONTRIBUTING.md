@@ -10,13 +10,13 @@
 ### Directory Overview
 | Path | Purpose |
 | :--- | :--- |
-| `backend/config/` | YAML configuration (`default/` committed, `overrides/` gitignored and deep-merged) — `general.yaml`, `evaluation.yaml`, `mostly_ai.yaml`, `rules.yaml`, `pipelines/` |
+| `backend/config/` | YAML configuration — `*.example.yaml` templates are committed and bootstrapped into the real (gitignored) `*.yaml`: `general.yaml`, `evaluation.yaml`, `mostly_ai.yaml`, `rules.yaml`, `pipelines/` |
 | `backend/src/config/` | Config-loading code and non-tunable constants (`general.py`, `execution.py`, `evaluation.py`) |
-| `data/` | Input datasets (usually symlinked) |
+| `backend/data/` | Input datasets (gitignored) |
+| `backend/src/` | Main source code (core logic, preprocessing, evaluation) |
+| `backend/outputs/` | Resulting artifacts (`models/`, `simulations/`, `evaluations/`) — gitignored |
 | `docs/` | Repository documentation (Markdown) |
-| `outputs/` | Resulting artifacts (`models/`, `simulations/`, `evaluations/`) |
 | `scripts/` | Automation and setup scripts |
-| `src/` | Main source code (core logic, preprocessing, evaluation) |
 | `tests/` | Pytest categorization |
 
 ---
@@ -65,7 +65,7 @@ Unnecessary modifications clutter the git history and make reviewing code diffic
 ### 3. Formatting & Linting
 - **Tool**: We use `ruff` (configured in `pyproject.toml`).
     - Enable automatic formatting in VSCode, if not you would need to run `ruff format` manually every time before committing.
-- **Line Length**: 100 characters.
+- **Line Length**: 120 characters.
 - **Rules**: Always adhere to the selected rule sets (`E`, `F`, `I`, `UP`, `B`).
 
 ### 4. Language & Naming

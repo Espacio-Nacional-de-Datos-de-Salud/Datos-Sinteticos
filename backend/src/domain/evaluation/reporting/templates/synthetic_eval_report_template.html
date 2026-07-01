@@ -466,6 +466,18 @@
       padding: 0;
     }
 
+    .global-mean-note {
+      grid-column: 1 / -1;
+      margin: 0;
+      padding: 10px 12px;
+      border-left: 3px solid var(--info);
+      border-radius: var(--radius-sm);
+      background: #eef5fb;
+      color: #314e65;
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+
     .interpretation-block-title {
       grid-column: 1 / -1;
       margin: 0;
@@ -735,6 +747,60 @@
       border-radius: inherit;
       width: 0;
       transition: width 500ms ease;
+    }
+
+    .axis-table-control {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #f6fafd;
+    }
+
+    .axis-table-control .axis-mean-label {
+      font-size: 0.9rem;
+      color: #314e65;
+    }
+
+    .axis-table-control .axis-mean-label strong {
+      font-size: 1.05rem;
+      font-weight: 850;
+    }
+
+    .axis-table-control .axis-table-picker {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .axis-table-control select {
+      font: inherit;
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: #fff;
+      color: var(--ink, #1f2d3d);
+    }
+
+    .axis-table-notice {
+      margin: 0 0 12px;
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      background: #eef5fb;
+      color: #314e65;
+      font-size: 0.85rem;
+    }
+
+    .axis-table-notice[hidden] {
+      display: none;
     }
 
     .axis-score-banner {
@@ -1441,6 +1507,22 @@
       max-width: 100%;
     }
 
+    .evaluated-table-banner {
+      border: 1px solid #b8daff;
+      border-left: 5px solid #2b6cb0;
+      border-radius: var(--radius-md);
+      background: #eef5ff;
+      color: #1b3a5b;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      font-size: 0.92rem;
+      line-height: 1.4;
+    }
+
+    .evaluated-table-banner strong {
+      font-weight: 850;
+    }
+
     .utility-subsection {
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
@@ -1771,6 +1853,7 @@
         <span id="headerStatus" class="status-badge">-</span>
       </header>
       <div class="panel-content">
+        <div id="evaluatedTableBanner" class="evaluated-table-banner" hidden></div>
         <h2 class="training-params-title">Parámetros de entrenamiento del modelo:</h2>
         <div id="trainingParametersGrid" class="training-params-section"></div>
         <div id="metadataGrid" class="header-grid"></div>
@@ -1881,6 +1964,7 @@
           <span class="summary-right" id="fidelitySummaryRight">-</span>
         </summary>
         <div class="panel-content">
+          <div id="fidelityAxisControl" class="axis-table-control"></div>
           <div id="fidelityAxisScore" class="axis-score-banner"></div>
           <div id="fidelityAggregated" class="metrics-grid"></div>
           <div id="fidelityTvdBars" class="fidelity-bars"></div>
@@ -1945,6 +2029,7 @@
           <span class="summary-right" id="privacySummaryRight">-</span>
         </summary>
         <div class="panel-content">
+          <div id="privacyAxisControl" class="axis-table-control"></div>
           <div id="privacyAxisScore" class="axis-score-banner"></div>
           <div id="privacyScoreBreakdown" class="score-breakdown"></div>
           <p class="explain">
@@ -2021,6 +2106,7 @@
           <span class="summary-right" id="utilitySummaryRight">-</span>
         </summary>
         <div class="panel-content">
+          <div id="utilityAxisControl" class="axis-table-control"></div>
           <section class="utility-subsection" id="predictiveUtilitySection">
             <h3 class="utility-subsection-title">Utilidad predictiva</h3>
             <p class="utility-subsection-copy">
@@ -3408,6 +3494,29 @@ __REPORT_DATA_JSON__
 
       renderTrainingParameters(metadata);
       renderMetadataGrid(metadata);
+      renderEvaluatedTableBanner(metadata);
+    }
+
+    function renderEvaluatedTableBanner(metadata) {
+      const banner = document.getElementById("evaluatedTableBanner");
+      if (!banner) return;
+      const params = (metadata && metadata.evaluation_parameters) || {};
+      const table = params.evaluated_table;
+      if (!table) {
+        banner.hidden = true;
+        return;
+      }
+      banner.hidden = false;
+      banner.replaceChildren();
+      const strong = document.createElement("strong");
+      strong.textContent = table;
+      banner.append(
+        document.createTextNode("Esta evaluación se realizó sobre la tabla "),
+        strong,
+        document.createTextNode(
+          ". La fidelidad, la privacidad y la utilidad predictiva se calculan solo sobre esa tabla."
+        )
+      );
     }
 
     function globalFormulaText(scores) {
@@ -3589,9 +3698,9 @@ __REPORT_DATA_JSON__
       const utility = (((window.__reportData || {}).summary || {}).utility || {});
       const utilityDetails = (((window.__reportData || {}).details || {}).utility || {});
       const utilityTestsSummary = utilityDetails.utility_tests_summary || {};
-      const predictiveValue = isValidNumber(scores.utility_relative_score)
-        ? scores.utility_relative_score
-        : scores.utility_score;
+      // Predictive facet only — never borrow the combined utility_score, or a
+      // failed/absent predictive run would falsely display the statistical score.
+      const predictiveValue = scores.utility_relative_score;
       const statisticalValue = isValidNumber(utility.utility_tests_score)
         ? utility.utility_tests_score
         : utilityTestsSummary.score;
@@ -3675,7 +3784,21 @@ __REPORT_DATA_JSON__
     function renderAxisQuestions(scores) {
       const root = document.getElementById("interpretationHelp");
       if (!root) return;
+      const data = window.__combinedReportData || {};
+      const order = Array.isArray(data.table_order) ? data.table_order : [];
       root.replaceChildren();
+      if (!order.length) return;
+      const note = document.createElement("p");
+      note.className = "global-mean-note";
+      const tablesText = order.length === 1
+        ? "la tabla evaluada"
+        : "las " + order.length + " tablas evaluadas";
+      note.append(
+        document.createTextNode("Las puntuaciones globales son la "),
+        Object.assign(document.createElement("strong"), { textContent: "media no ponderada" }),
+        document.createTextNode(" de " + tablesText + " (" + order.join(", ") + "): cada tabla pesa igual, sin importar su tamaño, y pueden no ser todas las tablas generadas. En cada eje, usa el desplegable para ver el detalle por tabla.")
+      );
+      root.append(note);
     }
 
     function addInsight(insights, condition, text, level = "info") {
@@ -3695,10 +3818,8 @@ __REPORT_DATA_JSON__
       const root = document.getElementById("keyInsights");
       if (!root) return;
 
-      const utilityRelativeScore =
-        typeof scores.utility_relative_score === "number"
-          ? scores.utility_relative_score
-          : scores.utility_score;
+      // Predictive facet only (see renderUtility): no fallback to utility_score.
+      const utilityRelativeScore = scores.utility_relative_score;
       const insights = [];
 
       addInsight(insights, scores.fidelity_score >= 0.75, "Buena fidelidad global.", "good");
@@ -3752,8 +3873,28 @@ __REPORT_DATA_JSON__
         "info"
       );
 
+      // Surface notable per-table warnings so the unified summary flags issues
+      // that the cross-table mean would otherwise hide (e.g. one weak table).
+      const tables = (window.__combinedReportData || {}).tables || {};
+      const order = (window.__combinedReportData || {}).table_order || Object.keys(tables);
+      const tableWarnings = [];
+      order.forEach((name) => {
+        const ts = (tables[name] || {}).scores || {};
+        if (ts.fidelity_score != null && ts.fidelity_score < 0.5) {
+          tableWarnings.push({ text: name + ": fidelidad baja (" + formatScore(ts.fidelity_score, 2) + ").", level: "bad" });
+        }
+        if (ts.privacy_score != null && ts.privacy_score < 0.5) {
+          tableWarnings.push({ text: name + ": riesgo de privacidad elevado (" + formatScore(ts.privacy_score, 2) + ").", level: "bad" });
+        }
+        if (ts.utility_relative_score != null && ts.utility_relative_score < 0.6) {
+          tableWarnings.push({ text: name + ": utilidad predictiva degradada (" + formatScore(ts.utility_relative_score, 2) + ").", level: "warning" });
+        }
+      });
+
+      const combined = insights.slice(0, 4).concat(tableWarnings);
+
       root.replaceChildren(
-        ...insights.slice(0, 6).map((insight) => {
+        ...combined.slice(0, 10).map((insight) => {
           const card = document.createElement("article");
           card.className = "insight-card";
           card.style.borderLeftColor = insightColor(insight.level);
@@ -4118,7 +4259,8 @@ __REPORT_DATA_JSON__
       };
       const taskLabel = taskLabels[String(taskType)] || taskType;
 
-      root.replaceChildren(
+      const scores = (window.__reportData && window.__reportData.scores) || {};
+      const cards = [
         createPrivacyInfoCard(
           "Variable objetivo",
           String(targetColumn),
@@ -4129,7 +4271,25 @@ __REPORT_DATA_JSON__
           String(taskLabel),
           "Tipo de problema usado por las métricas predictivas."
         )
-      );
+      ];
+
+      // When no predictive score is available, the charts/banner are empty by
+      // design; spell out why so the user does not read it as a silent 0/100%.
+      if (!isValidNumber(scores.utility_relative_score)) {
+        cards.push(
+          createPrivacyInfoCard(
+            "Sin resultado predictivo",
+            "No disponible",
+            "Las métricas predictivas no produjeron resultados en esta evaluación. " +
+            "Suele deberse a que la columna objetivo no está presente en la tabla evaluada " +
+            "(p. ej. el target vive en otra tabla y se evalúa solo la primera), a que el " +
+            "modelo predictivo falló, o a que la tarea no encaja con el tipo de la columna. " +
+            "Revisa el log de la evaluación para el detalle."
+          )
+        );
+      }
+
+      root.replaceChildren(...cards);
     }
 
     function renderPrivacy(summary, details) {
@@ -4399,10 +4559,9 @@ __REPORT_DATA_JSON__
     function renderUtility(summary, details) {
       const aggRoot = document.getElementById("utilityAggregated");
       const scores = (window.__reportData && window.__reportData.scores) || {};
-      const utilityRelativeScore =
-        isValidNumber(scores.utility_relative_score)
-          ? scores.utility_relative_score
-          : scores.utility_score;
+      // Predictive facet only — must NOT fall back to the combined utility_score,
+      // otherwise a failed/absent predictive run shows the statistical value.
+      const utilityRelativeScore = scores.utility_relative_score;
       const mapTips = {
         utility_relative_score: {
           label: "Utilidad relativa",
@@ -4615,7 +4774,20 @@ __REPORT_DATA_JSON__
         return formatScore(value * 100, 2) + "%";
       };
 
-      const fmtScore = (value) => {
+      const fmtScore = (value, row) => {
+        // Failed tests carry no score; surface the reason inline instead of a
+        // blank cell so the user understands why the row is empty.
+        if (row && row.status === "failed") {
+          const span = document.createElement("span");
+          span.textContent = "⚠ Falló";
+          span.style.color = qualityColor("bad");
+          span.style.fontWeight = "700";
+          if (row.error) {
+            span.title = String(row.error);
+            span.style.cursor = "help";
+          }
+          return span;
+        }
         const span = document.createElement("span");
         span.textContent = fmtNumber(value, 2);
         if (typeof value === "number" && !Number.isNaN(value)) {
@@ -4631,12 +4803,13 @@ __REPORT_DATA_JSON__
         [
           { key: "name", label: "Prueba" },
           { key: "metric", label: "Métrica" },
+          { key: "column", label: "Columna", tooltip: "Columna del dataset sobre la que se calcula la métrica. En métricas que no operan sobre una columna concreta (count/proportion/fórmulas) aparece «-»." },
           { key: "real_value", label: "Valor real" },
-          { key: "real_std", label: "Std real", tooltip: "Desviación estándar de la columna evaluada en el dataset real. Solo aplica a métricas sobre una columna (mean, median, etc.); en count/proportion/fórmulas aparece «-»." },
           { key: "synthetic_value", label: "Valor sintético" },
+          { key: "real_std", label: "Std real", tooltip: "Desviación estándar de la columna evaluada en el dataset real. Solo aplica a métricas sobre una columna (mean, median, etc.); en count/proportion/fórmulas aparece «-»." },
           { key: "synthetic_std", label: "Std sintético", tooltip: "Desviación estándar de la columna evaluada en el dataset sintético. Solo aplica a métricas sobre una columna; en count/proportion/fórmulas aparece «-»." },
           { key: "relative_discrepancy", label: "Discrepancia rel.", tooltip: "Discrepancia relativa simétrica: |real − sintético| / (|real| + |sintético|). Acotada entre 0% y 100% e independiente de cuál sea mayor (no es el error relativo clásico, que divide solo por el real)." },
-          { key: "relative_precision", label: "Precisión rel.", tooltip: "Precisión relativa = 1 − discrepancia relativa = 1 − |real − sintético| / (|real| + |sintético|). Escala simétrica y acotada en [0,1]: 1 = idéntico, 0 = máxima discrepancia. La utilidad estadística global es su media ponderada por el peso de cada prueba." }
+          { key: "relative_precision", label: "Precisión rel.", tooltip: "Precisión relativa = 1 − discrepancia relativa = 1 − |real − sintético| / (|real| + |sintético|). Escala simétrica y acotada en [0,1]: 1 = idéntico, 0 = máxima discrepancia. La utilidad estadística global es su media ponderada por el peso de cada prueba. Las pruebas que fallaron no entran en el score." }
         ],
         {
           formatters: {
@@ -4789,16 +4962,116 @@ __REPORT_DATA_JSON__
       return JSON.parse(embeddedText);
     }
 
+    // ── Multi-table report ──────────────────────────────────────────────────
+    // The report is unified: headline scores (Resumen) are the per-axis mean
+    // across every evaluated table, while each axis page can switch the
+    // per-metric detail by table from a dropdown. The "Media (todas las tablas)"
+    // option shows the averaged axis score with no per-table detail.
+    const MEAN_KEY = "__mean__";
+    const AXIS_MEAN_SCORE_KEY = {
+      fidelity: "fidelity_score",
+      privacy: "privacy_score",
+      utility: "utility_relative_score"
+    };
+    const AXIS_LABEL = {
+      fidelity: "Fidelidad",
+      privacy: "Privacidad",
+      utility: "Utilidad predictiva"
+    };
+
+    function viewDataForTable(key) {
+      const data = window.__combinedReportData || {};
+      if (key === MEAN_KEY) {
+        return { scores: data.scores || {}, summary: data.summary || {}, details: {} };
+      }
+      return (data.tables || {})[key] || { scores: {}, summary: {}, details: {} };
+    }
+
+    function renderAxisForTable(axis, key) {
+      const view = viewDataForTable(key);
+      const previous = window.__reportData;
+      // The axis render functions read scores from window.__reportData; point it
+      // at the selected table's view so the axis banner and per-metric cards
+      // reflect that table, then restore the combined data for the Resumen tab.
+      window.__reportData = view;
+      try {
+        const summary = view.summary || {};
+        const details = view.details || {};
+        if (axis === "fidelity") {
+          renderFidelity(summary.fidelity || {}, details.fidelity || {});
+        } else if (axis === "privacy") {
+          renderPrivacy(summary.privacy || {}, details.privacy || {});
+        } else if (axis === "utility") {
+          renderUtility(summary.utility || {}, details.utility || {});
+          renderUtilityTests(details.utility || {});
+        }
+      } finally {
+        window.__reportData = previous;
+      }
+      const notice = document.getElementById(axis + "AxisNotice");
+      if (notice) notice.hidden = key !== MEAN_KEY;
+    }
+
+    function buildAxisControl(axis, data) {
+      const root = document.getElementById(axis + "AxisControl");
+      if (!root) return;
+      const order = Array.isArray(data.table_order) ? data.table_order : [];
+      const meanScore = (data.scores || {})[AXIS_MEAN_SCORE_KEY[axis]];
+
+      const label = document.createElement("div");
+      label.className = "axis-mean-label";
+      label.title = "Media no ponderada sobre las tablas evaluadas (" + order.join(", ") + "). Cada tabla pesa igual, sin importar su número de filas; pueden no ser todas las tablas generadas.";
+      const strong = document.createElement("strong");
+      strong.textContent = formatScore(meanScore, 2);
+      label.append(
+        document.createTextNode("Media de " + AXIS_LABEL[axis] + " (" + order.length + " tabla" + (order.length === 1 ? "" : "s") + "): "),
+        strong
+      );
+
+      const picker = document.createElement("label");
+      picker.className = "axis-table-picker";
+      picker.append(document.createTextNode("Tabla:"));
+      const select = document.createElement("select");
+      const meanOption = document.createElement("option");
+      meanOption.value = MEAN_KEY;
+      meanOption.textContent = "Media (todas las tablas)";
+      select.append(meanOption);
+      order.forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        select.append(option);
+      });
+      select.addEventListener("change", () => renderAxisForTable(axis, select.value));
+      picker.append(select);
+
+      const notice = document.createElement("p");
+      notice.className = "axis-table-notice";
+      notice.id = axis + "AxisNotice";
+      notice.textContent = "Mostrando la media de todas las tablas. Selecciona una tabla para ver el detalle por métrica.";
+
+      root.replaceChildren(label, picker);
+      root.after(notice);
+
+      // Only show the picker when there is more than one table to choose from.
+      if (order.length <= 1) picker.style.display = "none";
+    }
+
+    function initMultiTableAxes(data) {
+      ["fidelity", "privacy", "utility"].forEach((axis) => {
+        buildAxisControl(axis, data);
+        renderAxisForTable(axis, MEAN_KEY);
+      });
+    }
+
     function renderReport(data) {
       window.__reportData = data;
+      window.__combinedReportData = data;
       renderHeader(data.metadata || {});
       renderScores(data.scores || {});
       renderAxisQuestions(data.scores || {});
       renderKeyInsights(data.scores || {});
-      renderFidelity((data.summary || {}).fidelity || {}, ((data.details || {}).fidelity || {}));
-      renderPrivacy((data.summary || {}).privacy || {}, ((data.details || {}).privacy || {}));
-      renderUtility((data.summary || {}).utility || {}, ((data.details || {}).utility || {}));
-      renderUtilityTests((data.details || {}).utility || {});
+      initMultiTableAxes(data);
       renderTechnical((data.details || {}));
       initTabs();
       initFloatingTooltips();

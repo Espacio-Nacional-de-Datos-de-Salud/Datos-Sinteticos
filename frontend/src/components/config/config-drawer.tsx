@@ -18,7 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import yaml from "js-yaml";
 import { CheckCircle2, CircleDot, FileCode2, ListTree, Lock, Plus, RotateCcw, Save, Settings, Trash2, X } from "lucide-react";
-import { api, getSimulationColumns, type ConfigContent, type SimulationColumns } from "@/lib/api";
+import { api, getSimulationColumns, getSimulationColumnTypes, type ConfigContent, type SimulationColumns, type SimulationColumnTypes } from "@/lib/api";
 import { extractDetail } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 import {
@@ -208,6 +208,10 @@ const UTILITY_COLUMN_METRICS = new Set([
   "nunique",
   "percentile",
 ]);
+// Of those, the metrics that only make sense on a numeric column. min/max and
+// nunique also work on dates/categoricals, so they stay unrestricted. When the
+// column types are known, the picker offers only numeric columns for these.
+const UTILITY_NUMERIC_METRICS = new Set(["mean", "median", "sum", "std", "percentile"]);
 const UTILITY_SUBSPEC_METRIC_OPTIONS: { value: string; label: string }[] = [
   { value: "count", label: "Conteo (count)" },
   { value: "proportion", label: "Proporción (proportion)" },
@@ -300,6 +304,11 @@ function ConfigEditor({ configId, contextId, tableNames, active, onSaved, onEdit
     queryKey: ["simulation-columns", contextId],
     enabled: active && !!contextId,
     queryFn: () => getSimulationColumns(contextId!),
+  });
+  const columnTypesQuery = useQuery({
+    queryKey: ["simulation-column-types", contextId],
+    enabled: active && !!contextId,
+    queryFn: () => getSimulationColumnTypes(contextId!),
   });
 
   useEffect(() => {
@@ -464,6 +473,7 @@ function ConfigEditor({ configId, contextId, tableNames, active, onSaved, onEdit
             onToggleGroup={onToggleGroup}
             exampleObj={exampleObj}
             simulationColumns={columnsQuery.data}
+            simulationColumnTypes={columnTypesQuery.data}
             tableNames={tableNames}
             activeGroup={activeGroup}
             onGroupChange={onGroupChange}
@@ -724,6 +734,126 @@ export function ConfigPanel({
   );
 }
 
+/**
+ * Controlled variant of the config form: edits an in-memory object instead of
+ * reading/saving a server config file. Reuses the exact same {@link SchemaForm}
+ * UI as {@link ConfigPanel}, so per-table evaluation tabs render the real config
+ * form (seeded from the global config) and emit overrides via {@link onChange}.
+ *
+ * It still fetches the config's *example* (for per-field reset / "modified"
+ * hints) and the simulation columns, both keyed by the shared react-query cache
+ * so multiple tabs don't refetch.
+ */
+export function ControlledSchemaForm({
+  configId,
+  value,
+  onChange,
+  contextId,
+  tableNames,
+  scopeTable,
+  activeGroup,
+  onGroupChange,
+}: {
+  configId: string;
+  value: AnyRecord;
+  onChange: (next: AnyRecord) => void;
+  contextId?: string;
+  tableNames?: string[];
+  /** When set, column pickers are scoped to this single table (no table
+      selector shown) — used by the per-table evaluation config tabs. */
+  scopeTable?: string;
+  activeGroup?: string;
+  onGroupChange?: (group: string) => void;
+}) {
+  const { schemas } = useConfigSchemas();
+  const schema: ConfigSchema | undefined = schemas[configId];
+
+  const configQuery = useQuery({
+    queryKey: ["config", configId],
+    queryFn: async () => {
+      const { data } = await api.get<ConfigContent>(
+        `/configs/${encodeURIComponent(configId)}`,
+      );
+      return data;
+    },
+  });
+  const columnsQuery = useQuery({
+    queryKey: ["simulation-columns", contextId],
+    enabled: !!contextId,
+    queryFn: () => getSimulationColumns(contextId!),
+  });
+  const columnTypesQuery = useQuery({
+    queryKey: ["simulation-column-types", contextId],
+    enabled: !!contextId,
+    queryFn: () => getSimulationColumnTypes(contextId!),
+  });
+
+  const exampleObj = useMemo<AnyRecord>(() => {
+    try {
+      return (yaml.load(configQuery.data?.example_content ?? "") as AnyRecord) ?? {};
+    } catch {
+      return {};
+    }
+  }, [configQuery.data]);
+
+  // Scope column pickers to a single table when requested, so the per-table
+  // tabs don't ask the user to re-select the table for column-based fields.
+  const scopedColumns = useMemo<SimulationColumns | undefined>(() => {
+    if (!scopeTable || !columnsQuery.data) return columnsQuery.data;
+    const cols = columnsQuery.data[scopeTable];
+    return cols ? { [scopeTable]: cols } : columnsQuery.data;
+  }, [scopeTable, columnsQuery.data]);
+  const scopedColumnTypes = useMemo<SimulationColumnTypes | undefined>(() => {
+    if (!scopeTable || !columnTypesQuery.data) return columnTypesQuery.data;
+    const kinds = columnTypesQuery.data[scopeTable];
+    return kinds ? { [scopeTable]: kinds } : columnTypesQuery.data;
+  }, [scopeTable, columnTypesQuery.data]);
+
+  if (!schema) return null;
+
+  const onChangeField = (field: FieldSchema, raw: string) =>
+    onChange(setByPath(value, field.path, inputToFieldValue(raw, field)));
+
+  const onResetField = (field: FieldSchema) => {
+    const defaultValue = getByPath(exampleObj, field.path);
+    // Checklist fields can share a path across two halves; scope the reset to
+    // this field's own options (mirrors ConfigEditor.onResetField).
+    if (field.kind === "checklist" && field.options && field.options.length > 0) {
+      const ownOptions = new Set(field.options.map((o) => o.value));
+      const current = getByPath(exampleObj, field.path);
+      const defaultOwn = Array.isArray(current)
+        ? current.filter((v) => ownOptions.has(String(v)))
+        : [];
+      const existing = getByPath(value, field.path);
+      const others = Array.isArray(existing)
+        ? existing.filter((v) => !ownOptions.has(String(v)))
+        : [];
+      onChange(setByPath(value, field.path, [...others, ...defaultOwn]));
+      return;
+    }
+    onChange(setByPath(value, field.path, defaultValue));
+  };
+
+  const onToggleGroup = (path: string, defaults: AnyRecord, on: boolean) =>
+    onChange(on ? setByPath(value, path, { ...defaults }) : deleteByPath(value, path));
+
+  return (
+    <SchemaForm
+      schema={schema}
+      draft={value}
+      onChange={onChangeField}
+      onResetField={onResetField}
+      onToggleGroup={onToggleGroup}
+      exampleObj={exampleObj}
+      simulationColumns={scopedColumns}
+      simulationColumnTypes={scopedColumnTypes}
+      tableNames={scopeTable ? [scopeTable] : tableNames}
+      activeGroup={activeGroup}
+      onGroupChange={onGroupChange}
+    />
+  );
+}
+
 const AXIS_GROUP_COLORS: Record<string, string> = {
   Privacidad: "#9a3412",
   Fidelidad: "#166534",
@@ -738,6 +868,7 @@ function SchemaForm({
   onToggleGroup,
   exampleObj,
   simulationColumns,
+  simulationColumnTypes,
   tableNames,
   activeGroup,
   onGroupChange,
@@ -750,6 +881,7 @@ function SchemaForm({
   onToggleGroup: (path: string, defaults: AnyRecord, on: boolean) => void;
   exampleObj: AnyRecord;
   simulationColumns?: SimulationColumns;
+  simulationColumnTypes?: SimulationColumnTypes;
   tableNames?: string[];
   activeGroup?: string;
   onGroupChange?: (group: string) => void;
@@ -767,6 +899,11 @@ function SchemaForm({
     }
     return false;
   };
+  // Path-aware setter for checklist options that target a YAML key other than
+  // their FieldSchema's `path` (FieldOption.path). Synthesised from the existing
+  // onChange(field, raw) plumbing so callers need no changes.
+  const onChangePath = (path: string, values: string[]) =>
+    onChange({ path, kind: "checklist", label: "" } as FieldSchema, values.join(","));
   const axisGroups = schema.groups.filter((g) => g.title in AXIS_GROUP_COLORS);
   const otherGroups = schema.groups.filter((g) => !(g.title in AXIS_GROUP_COLORS));
   const hasAxisTabs = axisGroups.length > 0 && !!activeGroup;
@@ -799,7 +936,9 @@ function SchemaForm({
                   field={field}
                   value={getByPath(draft, field.path)}
                   onChange={(raw) => onChange(field, raw)}
+                  onChangePath={onChangePath}
                   simulationColumns={simulationColumns}
+                  simulationColumnTypes={simulationColumnTypes}
                   draft={draft}
                   knownTables={tableNames}
                 />
@@ -872,7 +1011,7 @@ function SchemaForm({
                 })();
                 const locked = isLocked(field.path);
                 return (
-                  <Fragment key={field.path}>
+                  <Fragment key={`${field.path}-${fieldIdx}`}>
                   {showSubgroupHeading && (
                     <h4 className="mt-1 border-b pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground first:mt-0">
                       {field.subgroup}
@@ -909,27 +1048,33 @@ function SchemaForm({
                         </div>
                       ) : (
                         <>
-                          <div className="flex items-center gap-1">
-                            <Label htmlFor={field.path} className="text-xs">
-                              {field.label}
-                            </Label>
-                            {field.help && (
-                              <Tooltip content={field.help} side="top" />
-                            )}
-                            {locked && (
-                              <Tooltip
-                                content="Fijado por el preset seleccionado. Cambia a «Libre» para editarlo."
-                                side="top"
-                              >
-                                <Lock className="h-3 w-3 text-muted-foreground" />
-                              </Tooltip>
-                            )}
-                          </div>
+                          {(field.label || field.help || locked) && (
+                            <div className="flex items-center gap-1">
+                              {field.label && (
+                                <Label htmlFor={field.path} className="text-xs">
+                                  {field.label}
+                                </Label>
+                              )}
+                              {field.help && (
+                                <Tooltip content={field.help} side="top" />
+                              )}
+                              {locked && (
+                                <Tooltip
+                                  content="Fijado por el preset seleccionado. Cambia a «Libre» para editarlo."
+                                  side="top"
+                                >
+                                  <Lock className="h-3 w-3 text-muted-foreground" />
+                                </Tooltip>
+                              )}
+                            </div>
+                          )}
                           <FieldControl
                             field={field}
                             value={value}
                             onChange={(raw) => onChange(field, raw)}
+                            onChangePath={onChangePath}
                             simulationColumns={simulationColumns}
+                            simulationColumnTypes={simulationColumnTypes}
                             draft={draft}
                             knownTables={tableNames}
                           />
@@ -1004,14 +1149,20 @@ function FieldControl({
   field,
   value,
   onChange,
+  onChangePath,
   simulationColumns,
+  simulationColumnTypes,
   draft,
   knownTables,
 }: {
   field: FieldSchema;
   value: unknown;
   onChange: (raw: string) => void;
+  // Sets an arbitrary YAML path; used for checklist options whose `path`
+  // differs from the field's own path (FieldOption.path).
+  onChangePath?: (path: string, values: string[]) => void;
   simulationColumns?: SimulationColumns;
+  simulationColumnTypes?: SimulationColumnTypes;
   draft?: AnyRecord;
   knownTables?: string[];
 }) {
@@ -1084,6 +1235,7 @@ function FieldControl({
         value={value}
         onChange={(next) => onChange(next.length > 0 ? JSON.stringify(next) : "")}
         simulationColumns={simulationColumns}
+        simulationColumnTypes={simulationColumnTypes}
         knownTables={knownTables}
       />
     );
@@ -1119,7 +1271,7 @@ function FieldControl({
 
     return (
       <div className="mt-2 space-y-2">
-        {field.dynamicOptions === "columns" && tableNames.length > 0 && (
+        {field.dynamicOptions === "columns" && tableNames.length > 1 && (
           <NativeSelect
             value={activeTable}
             onValueChange={setSelectedTable}
@@ -1133,22 +1285,37 @@ function FieldControl({
           </NativeSelect>
         )}
         <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-          {options.map((opt) => (
-            <label key={opt.value} className="flex items-center gap-2 text-[11px]">
-              <input
-                type="checkbox"
-                className="h-3.5 w-3.5 rounded border-gray-300"
-                checked={selectedColumns.includes(opt.value)}
-                onChange={(e) => {
-                  const next = e.target.checked
-                    ? [...selectedColumns, opt.value]
-                    : selectedColumns.filter((v) => v !== opt.value);
-                  onChange(next.join(","));
-                }}
-              />
-              <span className="truncate">{opt.label}</span>
-            </label>
-          ))}
+          {options.map((opt) => {
+            // An option may live under a different YAML key than the field
+            // (FieldOption.path); read/write its own list in that case so one
+            // checklist can mix options from several config keys.
+            const optPath = opt.path && opt.path !== field.path ? opt.path : null;
+            const optList =
+              optPath && draft
+                ? (Array.isArray(getByPath(draft, optPath))
+                    ? (getByPath(draft, optPath) as unknown[]).map(String)
+                    : [])
+                : selectedColumns;
+            const checked = optList.includes(opt.value);
+            const toggle = (on: boolean) => {
+              const next = on
+                ? [...optList, opt.value]
+                : optList.filter((v) => v !== opt.value);
+              if (optPath && onChangePath) onChangePath(optPath, next);
+              else onChange(next.join(","));
+            };
+            return (
+              <label key={opt.value} className="flex items-center gap-2 text-[11px]">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-gray-300"
+                  checked={checked}
+                  onChange={(e) => toggle(e.target.checked)}
+                />
+                <span className="truncate">{opt.label}</span>
+              </label>
+            );
+          })}
         </div>
         {field.dynamicOptions === "columns" && selectedColumns.length > 0 && (
           <p className="text-[10px] text-muted-foreground">
@@ -1171,7 +1338,7 @@ function FieldControl({
 
     return (
       <div className="mt-1 space-y-2">
-        {field.dynamicOptions === "columns" && tableNames.length > 0 && (
+        {field.dynamicOptions === "columns" && tableNames.length > 1 && (
           <NativeSelect
             value={activeTable}
             onValueChange={(v) => {
@@ -1316,7 +1483,7 @@ function QiSubsetsBuilder({
   return (
     <div className="mt-2 space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row">
-        {tableNames.length > 0 && (
+        {tableNames.length > 1 && (
           <NativeSelect
             value={activeTable}
             onValueChange={setSelectedTable}
@@ -1430,11 +1597,13 @@ function UtilitySpecBody({
   onChange,
   tableNames,
   simulationColumns,
+  simulationColumnTypes,
 }: {
   spec: UtilitySpec;
   onChange: (patch: Partial<UtilitySpec>) => void;
   tableNames: string[];
   simulationColumns?: SimulationColumns;
+  simulationColumnTypes?: SimulationColumnTypes;
 }) {
   const needsColumn = spec.metric ? UTILITY_COLUMN_METRICS.has(spec.metric) : false;
   const isPercentile = spec.metric === "percentile";
@@ -1444,30 +1613,58 @@ function UtilitySpecBody({
   // what defines the subset being measured. For every other metric it's an
   // optional way to restrict the statistic to a subgroup.
   const filterDefinesMetric = spec.metric === "count" || spec.metric === "proportion";
+  // When the config is scoped to a single table, don't make the user pick it —
+  // the test belongs to that table. Force it (overriding any inherited value)
+  // and persist it on every edit so columns resolve from the right table.
+  const singleTable = tableNames.length === 1 ? tableNames[0] : undefined;
+  const effectiveTable = singleTable ?? spec.table;
+  const emit = (patch: Partial<UtilitySpec>) =>
+    onChange(singleTable ? { table: singleTable, ...patch } : patch);
+  const allColumns =
+    effectiveTable && simulationColumns ? simulationColumns[effectiveTable] ?? [] : [];
+  // For numeric-only metrics, restrict the picker to numeric columns when the
+  // types are known, so the user can't pick a categorical/text column that would
+  // silently evaluate to NaN (e.g. mean of MARITAL_STATUS).
+  const columnKinds =
+    effectiveTable && simulationColumnTypes ? simulationColumnTypes[effectiveTable] : undefined;
+  const numericOnly = spec.metric ? UTILITY_NUMERIC_METRICS.has(spec.metric) : false;
   const columnOptions =
-    spec.table && simulationColumns ? simulationColumns[spec.table] ?? [] : [];
+    numericOnly && columnKinds
+      ? allColumns.filter((c) => columnKinds[c] === "numeric")
+      : allColumns;
+  // The saved column no longer fits the catalog/metric (renamed, dropped, or a
+  // numeric metric on a non-numeric column): flag it instead of offering it as
+  // if it were valid.
+  const savedColumnInvalid =
+    !!spec.column && allColumns.length > 0 && !columnOptions.includes(spec.column);
 
   return (
     <div className="space-y-2">
-      <label className="block text-[11px] text-muted-foreground">
-        Tabla
-        <NativeSelect
-          value={spec.table ?? ""}
-          onValueChange={(table) => onChange({ table })}
-          className="mt-1 h-8 rounded-lg"
-        >
-          <option value="">Selecciona tabla…</option>
-          {tableNames.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-          {/* Keep a value set from YAML even if its table isn't in the catalog. */}
-          {spec.table && !tableNames.includes(spec.table) && (
-            <option value={spec.table}>{spec.table}</option>
-          )}
-        </NativeSelect>
-      </label>
+      {singleTable ? (
+        <p className="text-[11px] text-muted-foreground">
+          Tabla: <span className="font-mono">{singleTable}</span>
+        </p>
+      ) : (
+        <label className="block text-[11px] text-muted-foreground">
+          Tabla
+          <NativeSelect
+            value={spec.table ?? ""}
+            onValueChange={(table) => onChange({ table })}
+            className="mt-1 h-8 rounded-lg"
+          >
+            <option value="">Selecciona tabla…</option>
+            {tableNames.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+            {/* Keep a value set from YAML even if its table isn't in the catalog. */}
+            {spec.table && !tableNames.includes(spec.table) && (
+              <option value={spec.table}>{spec.table}</option>
+            )}
+          </NativeSelect>
+        </label>
+      )}
 
       {needsColumn && (
         <label className="block text-[11px] text-muted-foreground">
@@ -1475,7 +1672,7 @@ function UtilitySpecBody({
           {columnOptions.length > 0 ? (
             <NativeSelect
               value={spec.column ?? ""}
-              onValueChange={(column) => onChange({ column })}
+              onValueChange={(column) => emit({ column })}
               className="mt-1 h-8 rounded-lg"
             >
               <option value="">Selecciona columna…</option>
@@ -1484,17 +1681,24 @@ function UtilitySpecBody({
                   {c}
                 </option>
               ))}
-              {spec.column && !columnOptions.includes(spec.column) && (
-                <option value={spec.column}>{spec.column}</option>
+              {savedColumnInvalid && (
+                <option value={spec.column}>{spec.column} — no válida</option>
               )}
             </NativeSelect>
           ) : (
             <Input
               value={spec.column ?? ""}
-              onChange={(e) => onChange({ column: e.target.value })}
+              onChange={(e) => emit({ column: e.target.value })}
               placeholder="nombre_columna"
               className="mt-1 h-8"
             />
+          )}
+          {savedColumnInvalid && (
+            <span className="mt-1 block text-[10px] text-destructive">
+              {numericOnly && columnKinds && columnKinds[spec.column!]
+                ? `«${spec.column}» no es numérica; esta métrica necesita una columna numérica. Elige otra.`
+                : `«${spec.column}» no existe en la tabla. Elige una columna de la lista.`}
+            </span>
           )}
         </label>
       )}
@@ -1509,7 +1713,7 @@ function UtilitySpecBody({
             max={1}
             value={spec.percentile ?? ""}
             onChange={(e) =>
-              onChange({
+              emit({
                 percentile: e.target.value === "" ? undefined : Number(e.target.value),
               })
             }
@@ -1524,7 +1728,7 @@ function UtilitySpecBody({
           Fórmula personalizada
           <Input
             value={spec.formula ?? ""}
-            onChange={(e) => onChange({ formula: e.target.value || undefined })}
+            onChange={(e) => emit({ formula: e.target.value || undefined })}
             placeholder="df['charges'].sum() / df['age'].mean()"
             className="mt-1 h-8 font-mono"
           />
@@ -1548,7 +1752,7 @@ function UtilitySpecBody({
         )}
         <Input
           value={spec.filter ?? ""}
-          onChange={(e) => onChange({ filter: e.target.value || undefined })}
+          onChange={(e) => emit({ filter: e.target.value || undefined })}
           placeholder='p. ej. EXPIRE_FLAG == 1'
           className="mt-1 h-8 font-mono"
         />
@@ -1576,11 +1780,13 @@ function UtilityTestsBuilder({
   value,
   onChange,
   simulationColumns,
+  simulationColumnTypes,
   knownTables,
 }: {
   value: unknown;
   onChange: (next: UtilityTest[]) => void;
   simulationColumns?: SimulationColumns;
+  simulationColumnTypes?: SimulationColumnTypes;
   knownTables?: string[];
 }) {
   const tests = useMemo(() => normalizeUtilityTests(value), [value]);
@@ -1744,6 +1950,7 @@ function UtilityTestsBuilder({
                             onChange={(patch) => updateNested(idx, key, patch)}
                             tableNames={tableNames}
                             simulationColumns={simulationColumns}
+                            simulationColumnTypes={simulationColumnTypes}
                           />
                         </div>
                       </div>
@@ -1756,6 +1963,7 @@ function UtilityTestsBuilder({
                   onChange={(patch) => updateTest(idx, patch)}
                   tableNames={tableNames}
                   simulationColumns={simulationColumns}
+                  simulationColumnTypes={simulationColumnTypes}
                 />
               )}
 

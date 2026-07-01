@@ -96,13 +96,18 @@ class KAnonymity(MetricEvaluator):
     Higher k-values indicate better privacy. Returns 999 on fail.
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self, quasi_identifier_subsets: dict[str, list[str]] | None = None, **kwargs
+    ) -> None:
         """Initialize the metric evaluator.
 
         Args:
+            quasi_identifier_subsets: Per-run QI subsets overriding the global
+                config (e.g. table-specific). ``None`` ⇒ use global config.
             **kwargs: Optional keyword arguments for future extensions.
         """
         super().__init__(**kwargs)
+        self._quasi_identifier_subsets = quasi_identifier_subsets
 
     @staticmethod
     def name() -> str:
@@ -149,7 +154,9 @@ class KAnonymity(MetricEvaluator):
             logger.warning("Cannot compute k-anonymity: empty dataset(s)")
             return {"score": 999, "additional": {}}
 
-        quasi_identifier_subsets, subset_source = resolve_quasi_identifier_subsets(real_data)
+        quasi_identifier_subsets, subset_source = resolve_quasi_identifier_subsets(
+            real_data, self._quasi_identifier_subsets
+        )
 
         subset_results = self._compute_all_subset_entries(
             real_data, synthetic_data, quasi_identifier_subsets

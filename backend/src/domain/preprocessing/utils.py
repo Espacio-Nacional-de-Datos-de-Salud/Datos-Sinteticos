@@ -163,14 +163,16 @@ def assign_default_context_keys(relationships: dict) -> dict:
 
                     if len(cov) > len(best_cover):
                         if first_chosen_idx is None and is_self_ref and not curr_best_is_self:
-                            # New option offers more coverage, but it's a self-ref. Keep the non-self-ref if this is the first choice.
+                            # New option offers more coverage, but it's a self-ref. Keep
+                            # the non-self-ref if this is the first choice.
                             pass
                         else:
                             best_idx = i
                             best_cover = cov
                     elif len(cov) == len(best_cover):
                         if first_chosen_idx is None and curr_best_is_self and not is_self_ref:
-                            # Swap to the non-self-referencing option if coverage is exactly the same and we're picking the context key
+                            # Swap to the non-self-referencing option if coverage is exactly the same
+                            # and we're picking the context key
                             best_idx = i
                             best_cover = cov
 

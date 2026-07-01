@@ -8,7 +8,6 @@ evaluation report and per-metric detail artifacts on disk.
 
 import json
 import os
-from pathlib import Path
 
 import pandas as pd
 
@@ -58,6 +57,7 @@ class EvaluationTracker(BaseRunTracker):
         evaluation_id: str | None = None,
         training_parameters: dict | None = None,
         evaluation_parameters: dict | None = None,
+        evaluated_tables: list[str] | None = None,
     ) -> None:
         super().__init__()
         self.simulation_id = simulation_id
@@ -66,6 +66,7 @@ class EvaluationTracker(BaseRunTracker):
         self.job_name = job_name
         self.training_parameters = training_parameters or {}
         self.evaluation_parameters = evaluation_parameters or {}
+        self.evaluated_tables = evaluated_tables or []
 
         self.evaluation_id: str = evaluation_id or (
             f"{EVALUATION_RUN_FOLDER_PREFIX}_{general_config.get_run_timestamp()}"
@@ -80,16 +81,10 @@ class EvaluationTracker(BaseRunTracker):
         self.save_eval_card()
 
     def _on_exit(self, exc_type, exc_val, exc_tb) -> None:
+        # Report artifacts are generated per evaluated table by the orchestrator
+        # (each under ``tables/<table>/``), so the tracker only finalizes status.
         if exc_type is None:
-            try:
-                from backend.src.domain.evaluation.reporting.report_artifacts import (
-                    generate_report_artifacts,
-                )
-
-                self.update_card_status("completed")
-                generate_report_artifacts(Path(self.output_directory))
-            except Exception as report_exc:
-                logger.exception("Failed to generate HTML evaluation report: %s", report_exc)
+            self.update_card_status("completed")
 
     # ------------------------------------------------------------------
     # Public API
@@ -107,23 +102,27 @@ class EvaluationTracker(BaseRunTracker):
                 "job_name": self.job_name,
                 "training_parameters": self.training_parameters,
                 "evaluation_parameters": self.evaluation_parameters,
+                "evaluated_tables": self.evaluated_tables,
             }
         )
 
-    def save_report(self, report: pd.DataFrame) -> None:
+    def save_report(self, report: pd.DataFrame, output_dir: str | None = None) -> None:
         """Persist the evaluation report locally.
 
         Per-metric ``additional`` dicts are written as ``<metric>_report.json``;
-        the clean CSV strips ``figure`` and ``additional`` columns.
+        the clean CSV strips ``figure`` and ``additional`` columns. ``output_dir``
+        defaults to the evaluation root but is set to the per-table directory for
+        multi-table runs.
         """
-        self._save_per_metric_detail_json(report)
-        self._save_clean_csv(report)
+        target_dir = output_dir or self.output_directory
+        self._save_per_metric_detail_json(report, target_dir)
+        self._save_clean_csv(report, target_dir)
         self.patch_card(metrics_evaluated=report.index.tolist())
 
     # ------------------------------------------------------------------
     # Internal helpers — local artifacts
     # ------------------------------------------------------------------
-    def _save_per_metric_detail_json(self, report: pd.DataFrame) -> None:
+    def _save_per_metric_detail_json(self, report: pd.DataFrame, output_dir: str) -> None:
         if "additional" not in report.columns:
             return
         for metric_name, row in report.iterrows():
@@ -131,14 +130,14 @@ class EvaluationTracker(BaseRunTracker):
             if not isinstance(additional, dict) or not additional:
                 continue
             base_name = metric_name.split(".")[0] if "." in metric_name else metric_name
-            path = os.path.join(self.output_directory, f"{base_name}_report.json")
+            path = os.path.join(output_dir, f"{base_name}_report.json")
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(additional, fh, indent=2, ensure_ascii=False, default=str)
 
-    def _save_clean_csv(self, report: pd.DataFrame) -> None:
+    def _save_clean_csv(self, report: pd.DataFrame, output_dir: str) -> None:
         drop_cols = [c for c in ("figure", "additional") if c in report.columns]
         report_for_csv = report.drop(columns=drop_cols)
-        csv_path = os.path.join(self.output_directory, "eval_report.csv")
+        csv_path = os.path.join(output_dir, "eval_report.csv")
         report_for_csv.reset_index().rename(columns={"index": "metric"}).to_csv(
             csv_path, index=False
         )

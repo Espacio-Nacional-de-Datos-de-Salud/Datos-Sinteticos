@@ -167,6 +167,17 @@ export function FilePickerCard({
     (f) => selected.has(f.path) && f.extension === "csv",
   );
   const isUpload = (f: DataFile) => f.path.includes("/uploads/");
+  // The server-files list is flat (rglob over backend/data/), so files with
+  // the same name in different subfolders are indistinguishable by name alone.
+  // Surface the containing subfolder (relative to backend/data/) so the user
+  // can tell e.g. demo_omop_enriched/person.csv from demo_omop_live_small/.
+  const relDir = (p: string): string => {
+    const norm = p.replace(/\\/g, "/");
+    const i = norm.lastIndexOf("/data/");
+    const rel = i >= 0 ? norm.slice(i + "/data/".length) : norm;
+    const slash = rel.lastIndexOf("/");
+    return slash >= 0 ? rel.slice(0, slash) : "";
+  };
   // In production (ALLOW_SERVER_FILES=false) the server files tab is hidden
   // and only uploads are shown. In development the user can flip between
   // both with the source filter below.
@@ -388,7 +399,17 @@ export function FilePickerCard({
                               readOnly
                               className="h-4 w-4"
                             />
-                            <span className="truncate font-medium">{f.name}</span>
+                            <div className="flex min-w-0 flex-col">
+                              <span className="truncate font-medium">{f.name}</span>
+                              {(() => {
+                                const dir = relDir(f.path);
+                                return dir && dir !== "uploads" ? (
+                                  <span className="truncate text-[11px] text-muted-foreground">
+                                    {dir}/
+                                  </span>
+                                ) : null;
+                              })()}
+                            </div>
                           </div>
                           <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                             <span>{formatSize(f.size_bytes)}</span>

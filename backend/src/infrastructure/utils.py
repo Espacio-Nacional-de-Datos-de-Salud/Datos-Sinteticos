@@ -23,6 +23,13 @@ logger = get_logger(__name__)
 
 LAT_LONG_REGEX = re.compile(r"^\s*-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?\s*$")
 
+# Columns ending in ``_concept_id`` are OMOP vocabulary codes: identifiers that
+# point into the (usually un-loaded) ``concept`` table, NOT magnitudes. Their
+# integer dtype is incidental — modelled as numeric they get interpolated into
+# values like 4001234.7 that map to no real concept. Treat them as categorical
+# codes regardless of dtype (the user can still override per column in the UI).
+CODE_IDENTIFIER_REGEX = re.compile(r"_concept_id$", re.IGNORECASE)
+
 # ``ModelEncodingType`` now lives in ``backend.src.domain.encoding_types``; it is
 # imported above both because this module uses it and so existing
 # ``from backend.src.infrastructure.utils import ModelEncodingType`` imports keep
@@ -87,14 +94,20 @@ def auto_detect_encoding_type(x: pd.Series) -> ModelEncodingType:
     return ModelEncodingType.tabular_categorical
 
 
-def detect_series_encoding(series: pd.Series, *, refine: bool = True) -> ModelEncodingType:
+def detect_series_encoding(
+    series: pd.Series, *, refine: bool = True, column_name: str | None = None
+) -> ModelEncodingType:
     """Detect the encoding type for a single column from its values and dtype.
 
-    Booleans and 2-value binary flags are states, not magnitudes, so they stay
-    categorical regardless of dtype. Numeric dtypes map to numeric-auto; the
-    rest go through :func:`auto_detect_encoding_type` unless ``refine`` is
-    False (used for PK columns, which skip the deeper heuristics).
+    Columns whose name marks them as code identifiers (e.g. OMOP ``*_concept_id``
+    vocabulary codes) stay categorical regardless of dtype — see
+    :data:`CODE_IDENTIFIER_REGEX`. Booleans and 2-value binary flags are states,
+    not magnitudes, so they stay categorical too. Numeric dtypes map to
+    numeric-auto; the rest go through :func:`auto_detect_encoding_type` unless
+    ``refine`` is False (used for PK columns, which skip the deeper heuristics).
     """
+    if column_name is not None and CODE_IDENTIFIER_REGEX.search(column_name):
+        return ModelEncodingType.tabular_categorical
     non_null = series.dropna()
     if pd.api.types.is_bool_dtype(series) or (len(non_null) > 0 and non_null.nunique() <= 2):
         return ModelEncodingType.tabular_categorical

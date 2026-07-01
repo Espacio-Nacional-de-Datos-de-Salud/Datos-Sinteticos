@@ -99,12 +99,16 @@ class TestExactMatchRowsFullMatch:
         )
 
     def test_detected_rows_match_real_source(self, real_data, contaminated_synthetic):
-        result = ExactMatchRows().evaluate(real_data, contaminated_synthetic)
+        result = ExactMatchRows(show_filtered_rows=True).evaluate(
+            real_data, contaminated_synthetic
+        )
         rows = pd.DataFrame(result["additional"]["full_match"]["rows"])
         assert set(rows["age"].tolist()) == {"30", "40"}
 
     def test_synthetic_indices_are_valid(self, real_data, contaminated_synthetic):
-        result = ExactMatchRows().evaluate(real_data, contaminated_synthetic)
+        result = ExactMatchRows(show_filtered_rows=True).evaluate(
+            real_data, contaminated_synthetic
+        )
         indices = result["additional"]["full_match"]["synthetic_indices"]
         assert len(indices) == 2
         for idx in indices:
@@ -128,7 +132,7 @@ class TestExactMatchRowsLeaveOneOut:
         """Synthetic row that matches real on all columns except one should appear in loo."""
         syn = real_data.copy()
         syn.loc[0, "score"] = 999.0
-        result = ExactMatchRows().evaluate(real_data, syn)
+        result = ExactMatchRows(show_filtered_rows=True).evaluate(real_data, syn)
         assert result["additional"]["full_match"]["count"] == 4
         loo = result["additional"]["leave_one_out"]
         assert loo["score"]["count"] == 5

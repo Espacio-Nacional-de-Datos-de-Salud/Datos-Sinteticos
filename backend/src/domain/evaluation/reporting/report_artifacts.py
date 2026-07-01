@@ -56,6 +56,16 @@ def _load_time_report_text(evaluation_dir: Path) -> str:
     return Profiler._format_text(payload)
 
 
+def _evaluated_table_names(evaluated_tables: Any) -> list[str] | None:
+    """Normalize the card's ``evaluated_tables`` (dicts or strings) to names."""
+    if not isinstance(evaluated_tables, list):
+        return None
+    names = [
+        entry.get("table") if isinstance(entry, dict) else entry for entry in evaluated_tables
+    ]
+    return [name for name in names if isinstance(name, str)]
+
+
 def load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -134,6 +144,18 @@ def _find_simulation_dir(evaluation_dir: Path, simulation_id: str | None) -> Pat
     return None
 
 
+def _find_model_dir(evaluation_dir: Path, model_id: str | None) -> Path | None:
+    if not model_id:
+        return None
+
+    outputs_dir = evaluation_dir.parent.parent
+    model_dir = outputs_dir / "models" / model_id
+    if model_dir.exists():
+        return model_dir
+
+    return None
+
+
 def _extract_training_parameters(evaluation_dir: Path, eval_card: dict[str, Any]) -> dict[str, Any]:
     """Best-effort extraction of the training parameters used by Mostly AI."""
 
@@ -171,12 +193,25 @@ def _extract_training_parameters(evaluation_dir: Path, eval_card: dict[str, Any]
     if simulation_dir:
         for filename in [
             "simulation_card.json",
+            "sim_card.json",
             "sim_metadata.json",
             "job_progress.json",
             "metadata.json",
             "training/model_card.json",
         ]:
             candidates.append(load_json(simulation_dir / filename))
+
+    # The actual training settings (model type/size, flexible generation, DP)
+    # live in the model directory, not the evaluation or simulation outputs.
+    model_dir = _find_model_dir(evaluation_dir, eval_card.get("model_id"))
+    if model_dir:
+        for filename in [
+            "model_card.json",
+            "metadata.json",
+            "configs/mostly_config.json",
+            "configs/general_config.json",
+        ]:
+            candidates.append(load_json(model_dir / filename))
 
     model_settings: dict[str, Any] = {}
     differential_privacy: dict[str, Any] = {}
@@ -537,7 +572,24 @@ def build_scores(
         ]
     )
     utility_relative_score = bounded_ratio(utility_synthetic_score, utility_real_score)
-    utility_score = utility_relative_score
+
+    # The Utilidad badge combines both available facets: predictive (TSTR
+    # relative performance) and statistical (user-defined utility tests). When
+    # both are present it is their mean; when only one is available the badge
+    # shows that one and ``utility_source`` tells the UI which facet it reflects
+    # so it can label the value accordingly.
+    utility_tests_score = utility.get("utility_tests_score")
+    has_predictive = utility_relative_score is not None and not pd.isna(utility_relative_score)
+    has_statistical = utility_tests_score is not None and not pd.isna(utility_tests_score)
+    if has_predictive and has_statistical:
+        utility_source = "both"
+    elif has_predictive:
+        utility_source = "predictive"
+    elif has_statistical:
+        utility_source = "statistical"
+    else:
+        utility_source = "none"
+    utility_score = safe_mean([utility_relative_score, utility_tests_score])
 
     global_score = safe_mean(
         [
@@ -557,13 +609,37 @@ def build_scores(
         "utility_real_score": utility_real_score,
         "utility_synthetic_score": utility_synthetic_score,
         "utility_relative_score": utility_relative_score,
+        "utility_tests_score": utility_tests_score,
+        "utility_source": utility_source,
         "utility_score": utility_score,
         "global_score": global_score,
     }
 
 
-def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
-    eval_card = load_json(evaluation_dir / "eval_card.json")
+def build_report_data(
+    evaluation_dir: Path,
+    eval_card: dict[str, Any] | None = None,
+    evaluated_table: str | None = None,
+    base_dir: Path | None = None,
+    evaluation_parameters: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the structured report payload.
+
+    Args:
+        evaluation_dir: Directory holding the metric artifacts (``eval_report.csv``,
+            ``*_report.json``). For multi-table runs this is ``tables/<table>/``.
+        eval_card: Pre-loaded ``eval_card.json``. Loaded from ``evaluation_dir``
+            when omitted (legacy flat layout).
+        evaluated_table: Name of the single table this report covers.
+        base_dir: Evaluation root used to locate the parent simulation/model
+            directories for training-parameter extraction. Defaults to
+            ``evaluation_dir`` (legacy flat layout).
+        evaluation_parameters: Per-table TSTR parameters (target/task) for this
+            report. Falls back to the card's global parameters when omitted.
+    """
+    base_dir = base_dir or evaluation_dir
+    if eval_card is None:
+        eval_card = load_json(evaluation_dir / "eval_card.json")
     cmd_detail = load_json(evaluation_dir / "correlation_matrix_distance_report.json")
     k_detail = load_json(evaluation_dir / "k_anonymity_report.json")
     l_diversity_detail = load_json(evaluation_dir / "l_diversity_report.json") or load_json(
@@ -576,7 +652,7 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
     eval_report = pd.read_csv(evaluation_dir / "eval_report.csv")
     metrics = dict(zip(eval_report["metric"], eval_report["mean"], strict=False))
 
-    training_parameters = _extract_training_parameters(evaluation_dir, eval_card)
+    training_parameters = _extract_training_parameters(base_dir, eval_card)
     exact_emr = metrics.get("exact_match_rows")
     fallback_emr = metrics.get("sanity.common_rows_proportion.score")
     emr_value = exact_emr if exact_emr is not None and not pd.isna(exact_emr) else fallback_emr
@@ -596,10 +672,14 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
         "job_name": eval_card.get("job_name"),
         "timestamp": eval_card.get("timestamp"),
         "training_parameters": training_parameters,
-        "evaluation_parameters": eval_card.get("evaluation_parameters")
-        or {
-            "target_column": TSTR_TARGET_COLUMN,
-            "task_type": TSTR_TASK_TYPE,
+        "evaluation_parameters": {
+            **(
+                evaluation_parameters
+                or eval_card.get("evaluation_parameters")
+                or {"target_column": TSTR_TARGET_COLUMN, "task_type": TSTR_TASK_TYPE}
+            ),
+            "evaluated_table": evaluated_table,
+            "evaluated_tables": _evaluated_table_names(eval_card.get("evaluated_tables")),
         },
     }
 
@@ -783,8 +863,18 @@ def build_report_data(evaluation_dir: Path) -> dict[str, Any]:
     return report_data
 
 
-def generate_report_data_json(evaluation_dir: Path) -> Path:
-    report_data = _json_sanitize(build_report_data(evaluation_dir))
+def generate_report_data_json(
+    evaluation_dir: Path,
+    eval_card: dict[str, Any] | None = None,
+    evaluated_table: str | None = None,
+    base_dir: Path | None = None,
+    evaluation_parameters: dict[str, Any] | None = None,
+) -> Path:
+    report_data = _json_sanitize(
+        build_report_data(
+            evaluation_dir, eval_card, evaluated_table, base_dir, evaluation_parameters
+        )
+    )
     output_path = evaluation_dir / "report_data.json"
 
     with output_path.open("w", encoding="utf-8") as f:
@@ -793,30 +883,125 @@ def generate_report_data_json(evaluation_dir: Path) -> Path:
     return output_path
 
 
-def generate_report_artifacts(evaluation_dir: Path) -> dict[str, Path]:
-    report_data = _json_sanitize(build_report_data(evaluation_dir))
+def _write_report_files(output_dir: Path, report_data: dict[str, Any]) -> dict[str, Path]:
+    """Persist ``report_data.json`` and the self-contained HTML report.
 
-    report_data_path = evaluation_dir / "report_data.json"
+    The HTML template embeds the JSON inline (placeholder ``__REPORT_DATA_JSON__``)
+    so the report renders without a separate fetch.
+    """
+    report_data_path = output_dir / "report_data.json"
     with report_data_path.open("w", encoding="utf-8") as f:
         json.dump(report_data, f, indent=2, ensure_ascii=False, allow_nan=False)
 
     template_path = Path(__file__).parent / "templates" / "synthetic_eval_report_template.html"
-
     html_template = template_path.read_text(encoding="utf-8")
 
     embedded_json = json.dumps(report_data, ensure_ascii=False, indent=2, allow_nan=False).replace(
         "</script>", "<\\/script>"
     )
+    html = html_template.replace("__REPORT_DATA_JSON__", embedded_json)
 
-    html = html_template.replace(
-        "__REPORT_DATA_JSON__",
-        embedded_json,
-    )
-
-    html_path = evaluation_dir / "synthetic_eval_report.html"
+    html_path = output_dir / "synthetic_eval_report.html"
     html_path.write_text(html, encoding="utf-8")
 
+    return {"report_data": report_data_path, "html": html_path}
+
+
+def generate_report_artifacts(
+    evaluation_dir: Path,
+    eval_card: dict[str, Any] | None = None,
+    evaluated_table: str | None = None,
+    base_dir: Path | None = None,
+    evaluation_parameters: dict[str, Any] | None = None,
+) -> dict[str, Path]:
+    report_data = _json_sanitize(
+        build_report_data(
+            evaluation_dir, eval_card, evaluated_table, base_dir, evaluation_parameters
+        )
+    )
+    return _write_report_files(evaluation_dir, report_data)
+
+
+def _mean_merge(dicts: list[dict[str, Any]]) -> dict[str, Any]:
+    """Recursively merge structurally-identical dicts, averaging numeric leaves.
+
+    Numeric leaves become the mean of the present (non-null) values across
+    ``dicts``; nested dicts recurse; booleans and non-numeric values fall back to
+    the first present value. Keys missing everywhere yield ``None``.
+    """
+    keys: list[str] = []
+    for d in dicts:
+        for key in d:
+            if key not in keys:
+                keys.append(key)
+
+    out: dict[str, Any] = {}
+    for key in keys:
+        present = [d[key] for d in dicts if isinstance(d, dict) and key in d]
+        non_null = [v for v in present if v is not None]
+        if not non_null:
+            out[key] = None
+        elif all(isinstance(v, dict) for v in non_null):
+            out[key] = _mean_merge(non_null)
+        elif all(isinstance(v, bool) for v in non_null):
+            out[key] = non_null[0]
+        elif all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in non_null):
+            out[key] = float(sum(non_null) / len(non_null))
+        else:
+            out[key] = non_null[0]
+    return out
+
+
+def build_combined_report_data(
+    per_table: dict[str, dict[str, Any]],
+    base_dir: Path,
+) -> dict[str, Any]:
+    """Build the unified multi-table report payload.
+
+    The headline ``scores`` and ``summary`` are the per-axis mean across every
+    evaluated table; ``tables`` carries each table's full report data so the
+    HTML report can switch the per-metric detail by table via a dropdown.
+    """
+    tables = list(per_table.keys())
+    score_list = [rd.get("scores", {}) for rd in per_table.values()]
+    summary_list = [rd.get("summary", {}) for rd in per_table.values()]
+
+    combined_scores = _mean_merge(score_list)
+    # utility_source is categorical, not numeric: derive it from which facets any
+    # table contributed instead of averaging the string.
+    has_predictive = any(s.get("utility_relative_score") is not None for s in score_list)
+    has_statistical = any(s.get("utility_tests_score") is not None for s in score_list)
+    combined_scores["utility_source"] = (
+        "both"
+        if has_predictive and has_statistical
+        else "predictive"
+        if has_predictive
+        else "statistical"
+        if has_statistical
+        else "none"
+    )
+
+    first_metadata = next(iter(per_table.values())).get("metadata", {}) if per_table else {}
+    metadata = {**first_metadata}
+    eval_params = {**(metadata.get("evaluation_parameters") or {})}
+    eval_params["evaluated_table"] = None
+    eval_params["evaluated_tables"] = tables
+    metadata["evaluation_parameters"] = eval_params
+
     return {
-        "report_data": report_data_path,
-        "html": html_path,
+        "metadata": metadata,
+        "scores": combined_scores,
+        "summary": _mean_merge(summary_list),
+        "details": {"logs": {"time_report": _load_time_report_text(base_dir)}},
+        "tables": per_table,
+        "table_order": tables,
     }
+
+
+def generate_combined_report_artifacts(
+    base_dir: Path,
+    per_table: dict[str, dict[str, Any]],
+) -> dict[str, Path]:
+    """Write the single unified report (HTML + JSON) at the evaluation root."""
+    report_data = _json_sanitize(build_combined_report_data(per_table, base_dir))
+    return _write_report_files(base_dir, report_data)

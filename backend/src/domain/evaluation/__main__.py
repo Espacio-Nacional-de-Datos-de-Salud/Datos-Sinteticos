@@ -41,6 +41,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="JSON string with training parameters used to generate the synthetic data.",
     )
+    parser.add_argument(
+        "--table-configs",
+        default=None,
+        help="JSON list of per-table evaluation configs. Defaults to the first table.",
+    )
     return parser
 
 
@@ -51,6 +56,7 @@ def _run_with_explicit_paths(args: argparse.Namespace) -> None:
     os.makedirs(args.eval_dir, exist_ok=True)
 
     training_parameters = json.loads(args.training_parameters) if args.training_parameters else None
+    table_configs = json.loads(args.table_configs) if args.table_configs else None
 
     run_evaluation(
         real_data_files_path=args.real_data,
@@ -62,6 +68,7 @@ def _run_with_explicit_paths(args: argparse.Namespace) -> None:
         pipeline_id=args.pipeline_id,
         job_name=args.job_name,
         training_parameters=training_parameters,
+        table_configs=table_configs,
     )
 
 
@@ -73,8 +80,8 @@ def _run_from_execution_config(simulation_id: str | None = None) -> None:
     if not target_simulation_id:
         sys.exit(
             "No simulation_id provided. Set it in backend/config/general.yaml or use --simulation-id. "
-            "Discover available IDs with: "
-            "python -m src.core.catalog.simulations --format table"
+            "Discover available IDs with: make simulations "
+            "(or python -m backend.src.runs.catalog.simulations --format table)"
         )
 
     from backend.src.runs.catalog.simulations import resolve_simulation_inputs

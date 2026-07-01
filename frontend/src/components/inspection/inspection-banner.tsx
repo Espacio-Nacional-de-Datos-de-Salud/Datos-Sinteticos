@@ -31,16 +31,13 @@ export function InspectionBanner({
       title="Carga de Datos"
       subtitle={
         <>
-          La carga de datos es el primer paso para generar datos sintéticos:
-          analiza los ficheros de origen para detectar automáticamente las{" "}
-          <span className="font-medium text-foreground">tablas</span>, las{" "}
+          Analiza los ficheros de origen para detectar automáticamente tablas, las{" "}
           <span className="font-medium text-foreground">
             claves primarias y foráneas
           </span>{" "}
           que las relacionan y el{" "}
           <span className="font-medium text-foreground">tipo de cada columna</span>
-          . Después podrás revisar lo detectado, definir reglas de negocio y
-          consultar los datos preprocesados.
+          .
         </>
       }
       instructionsOpen={instructionsOpen}

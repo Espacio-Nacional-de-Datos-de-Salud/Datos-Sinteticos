@@ -14,6 +14,7 @@ from backend.src.config.general import (
     EVALUATIONS_DIR,
     MODEL_CARD_FILENAME,
     MODELS_DIR,
+    SIM_CARD_FILENAME,
     refresh_run_timestamp,
 )
 from backend.src.infrastructure.logging_config import get_logger
@@ -141,6 +142,7 @@ def run_evaluation_flow_from_simulation(
     real_data: list[str] | None = None,
     cancel_event: threading.Event | None = None,
     training_parameters: dict | None = None,
+    table_configs: list[dict] | None = None,
 ) -> str | None:
     """Run evaluation for a completed simulation, deriving all inputs automatically.
 
@@ -183,6 +185,12 @@ def run_evaluation_flow_from_simulation(
         mark_card_failed(session.card_path, error)
         return None
 
+    # Default to the master table when the caller (e.g. CLI/pipeline) didn't pick.
+    if not table_configs:
+        sim_card = read_json(os.path.join(inputs.simulation_dir, SIM_CARD_FILENAME))
+        mother_table = sim_card.get("mother_table") if isinstance(sim_card, dict) else None
+        table_configs = [{"table": mother_table}] if mother_table else None
+
     effective_real_data = real_data if real_data else inputs.real_data_files
     try:
         _validate_real_data_hashes(inputs.model_id, effective_real_data)
@@ -204,6 +212,7 @@ def run_evaluation_flow_from_simulation(
             pipeline_id=pipeline_id,
             job_name=job_name,
             training_parameters=training_parameters,
+            table_configs=table_configs,
         )
     else:
         succeeded = _run_inprocess(
@@ -217,6 +226,7 @@ def run_evaluation_flow_from_simulation(
             pipeline_id=pipeline_id,
             job_name=job_name,
             training_parameters=training_parameters,
+            table_configs=table_configs,
         )
     return evaluation_id if succeeded else None
 
@@ -232,6 +242,7 @@ def _run_subprocess(
     pipeline_id: str = "none",
     job_name: str | None = None,
     training_parameters: dict | None = None,
+    table_configs: list[dict] | None = None,
 ) -> bool:
     """Run evaluation in a separate subprocess.
 
@@ -271,6 +282,9 @@ def _run_subprocess(
 
     if training_parameters:
         cmd.extend(["--training-parameters", json.dumps(training_parameters)])
+
+    if table_configs:
+        cmd.extend(["--table-configs", json.dumps(table_configs)])
 
     if model_id:
         cmd += ["--model-id", model_id]
@@ -330,6 +344,7 @@ def _run_inprocess(
     pipeline_id: str,
     job_name: str | None,
     training_parameters: dict | None = None,
+    table_configs: list[dict] | None = None,
 ) -> bool:
     """Run evaluation in the current process.
 
@@ -359,6 +374,7 @@ def _run_inprocess(
             pipeline_id=pipeline_id,
             job_name=job_name,
             training_parameters=training_parameters,
+            table_configs=table_configs,
         )
         return True
     except Exception as error:

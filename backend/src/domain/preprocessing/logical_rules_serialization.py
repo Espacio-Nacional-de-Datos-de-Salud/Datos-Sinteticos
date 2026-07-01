@@ -37,6 +37,7 @@ _RULE_CLASSES: dict[str, type[LogicalRule]] = {
     cls.__name__: cls
     for cls in (
         _rules_module.DateToAgeRule,
+        _rules_module.DateCompositionRule,
         _rules_module.NumericThresholdRule,
         _rules_module.NumericBucketRule,
         _rules_module.ForeignKeysConsistencyRule,

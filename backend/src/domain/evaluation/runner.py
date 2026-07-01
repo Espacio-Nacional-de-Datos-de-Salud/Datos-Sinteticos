@@ -16,6 +16,8 @@ import backend.src.config.general as general_config
 from backend.src.config.evaluation import (
     DROP_ID_COLUMNS_FROM_METRICS,
     EVAL_DEFAULT_METRICS,
+    EXACT_MATCH_SHOW_FILTERED_ROWS,
+    TVD_N_BINS,
     UTILITY_TESTS_CONFIG,
 )
 from backend.src.domain.evaluation._custom_metrics import run_custom_metrics
@@ -24,6 +26,7 @@ from backend.src.domain.evaluation._synthcity_metrics import (
     evaluate_synthcity_metrics,
 )
 from backend.src.domain.evaluation.dtype_alignment import align_dtypes
+from backend.src.domain.evaluation.table_settings import TableEvalSettings
 from backend.src.domain.evaluation.utility_filter import drop_ood_performance_rows
 from backend.src.domain.evaluation.utils import filter_id_columns, normalize_for_exact_match
 from backend.src.infrastructure.logging_config import get_logger
@@ -58,29 +61,39 @@ class EvaluationRunner:
         self,
         real_data_dict: dict[str, pd.DataFrame],
         synthetic_data_dict: dict[str, pd.DataFrame],
-        target_column: str | None = None,
-        task_type: str = "classification",
         metadata_path: str | None = None,
+        settings: TableEvalSettings | None = None,
     ) -> pd.DataFrame:
-        """Run all configured metrics against the first table in each dict.
+        """Run all configured metrics against a single table.
 
         Args:
             real_data_dict (dict[str, pd.DataFrame]): Mapping of table name to real data.
             synthetic_data_dict (dict[str, pd.DataFrame]): Mapping of table name to synthetic data.
-            target_column (str | None): Optional target column for performance metrics.
-            task_type (str): Task type for performance metrics
-                (``classification`` / ``regression`` / ``survival_analysis``).
             metadata_path (str | None): Path to ``metadata.json`` used to drop
-                ID columns when ``DROP_ID_COLUMNS_FROM_METRICS`` is enabled.
+                ID columns when enabled.
+            settings (TableEvalSettings | None): Resolved per-table settings
+                (which table, target, sensitive columns, knobs…). When ``None``
+                the first table is evaluated with the global config defaults.
 
         Returns:
             pd.DataFrame: Report with one row per metric.
         """
-        real_data, synthetic_data = self._select_first_table(
-            real_data_dict, synthetic_data_dict, metadata_path
-        )
+        target_column = settings.target_column if settings else None
+        task_type = settings.task_type if settings else "classification"
+        evaluated_table = settings.table if settings else None
+        drop_id_columns = settings.drop_id_columns if settings else DROP_ID_COLUMNS_FROM_METRICS
+        utility_tests = settings.utility_tests if settings else (UTILITY_TESTS_CONFIG or {})
 
-        synthcity_metrics, custom_metric_names = self._partition_requested_metrics(target_column)
+        table_name = self._select_table_name(real_data_dict, evaluated_table)
+        real_data, synthetic_data = self._prepare_table(
+            real_data_dict[table_name], synthetic_data_dict[table_name], metadata_path,
+            drop_id_columns=drop_id_columns,
+        )
+        logger.info("Evaluating single table '%s'.", table_name)
+
+        synthcity_metrics, custom_metric_names = self._partition_requested_metrics(
+            target_column, utility_tests
+        )
 
         loader_real, loader_syn = build_data_loaders(real_data, synthetic_data, target_column)
 
@@ -106,6 +119,18 @@ class EvaluationRunner:
                 custom_metric_names,
                 real_data_dict=real_data_dict,
                 synthetic_data_dict=synthetic_data_dict,
+                evaluated_table=table_name,
+                sensitive_columns=settings.sensitive_columns if settings else None,
+                quasi_identifier_subsets=(
+                    settings.quasi_identifier_subsets if settings else None
+                ),
+                tvd_n_bins=settings.tvd_n_bins if settings else TVD_N_BINS,
+                exact_match_show_filtered_rows=(
+                    settings.exact_match_show_filtered_rows
+                    if settings
+                    else EXACT_MATCH_SHOW_FILTERED_ROWS
+                ),
+                utility_tests=utility_tests,
             )
 
         return drop_ood_performance_rows(report)
@@ -113,17 +138,15 @@ class EvaluationRunner:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _select_first_table(
+    def _prepare_table(
         self,
-        real_data_dict: dict[str, pd.DataFrame],
-        synthetic_data_dict: dict[str, pd.DataFrame],
+        real_data: pd.DataFrame,
+        synthetic_data: pd.DataFrame,
         metadata_path: str | None,
+        drop_id_columns: bool = DROP_ID_COLUMNS_FROM_METRICS,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """Pick the single table evaluated, strip ID columns, and align dtypes."""
-        real_data = next(iter(real_data_dict.values()))
-        synthetic_data = next(iter(synthetic_data_dict.values()))
-
-        if DROP_ID_COLUMNS_FROM_METRICS:
+        """Strip ID columns and align dtypes for the evaluated table."""
+        if drop_id_columns:
             real_data = filter_id_columns(real_data, metadata_path)
             synthetic_data = filter_id_columns(synthetic_data, metadata_path)
 
@@ -131,8 +154,32 @@ class EvaluationRunner:
         real_data, synthetic_data = normalize_for_exact_match(real_data, synthetic_data)
         return real_data, synthetic_data
 
+    @staticmethod
+    def _select_table_name(
+        real_data_dict: dict[str, pd.DataFrame],
+        evaluated_table: str | None,
+    ) -> str:
+        """Return the table to evaluate.
+
+        Uses the explicitly requested ``evaluated_table`` when present; otherwise
+        falls back to the first table (legacy behaviour).
+        """
+        first_table = next(iter(real_data_dict))
+        if not evaluated_table:
+            return first_table
+        if evaluated_table in real_data_dict:
+            return evaluated_table
+
+        logger.warning(
+            "Requested table '%s' not found among %s; evaluating first table '%s'.",
+            evaluated_table,
+            list(real_data_dict.keys()),
+            first_table,
+        )
+        return first_table
+
     def _partition_requested_metrics(
-        self, target_column: str | None
+        self, target_column: str | None, utility_tests: dict | None = None
     ) -> tuple[dict[str, list[str]], list[str]]:
         """Split configured metrics into a synthcity dict and a custom-name list.
 
@@ -174,7 +221,8 @@ class EvaluationRunner:
 
         # Statistical-utility tests are opt-in via their own config block rather
         # than a name in metrics.default; request them only when enabled.
-        utility_tests_enabled = (UTILITY_TESTS_CONFIG or {}).get("enabled")
+        utility_tests = utility_tests if utility_tests is not None else (UTILITY_TESTS_CONFIG or {})
+        utility_tests_enabled = utility_tests.get("enabled")
         if utility_tests_enabled and "utility_tests" not in custom_metric_names:
             logger.info("Statistical-utility tests enabled; requesting custom utility_tests.")
             custom_metric_names.append("utility_tests")

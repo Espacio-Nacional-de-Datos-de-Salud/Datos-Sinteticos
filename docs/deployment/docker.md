@@ -32,7 +32,7 @@ Restart after installation. Rancher Desktop runs as a background service and exp
 docker context use default
 ```
 
-A better alternative is to use **WSL** — open your WSL terminal and follow the Linux steps below, or set it up first if you still don't have it [Quick Setup on WSL](wsl_setup.md).
+A better alternative is to use **WSL** — open your WSL terminal and follow the Linux steps below, or set it up first if you still don't have it (`wsl --install -d Ubuntu` from an admin PowerShell).
 
 
 #### **macOS**
@@ -130,7 +130,7 @@ Since the tabular data we will work with is quite large, it should not be copied
 
 
 ## 2. Docker Compose
-The preferred method for deployment is Docker Compose. This facilitates the connection between the user interface (UI) and the backend, which run in separate containers. Additionally, manual build and run processes can be be omitted with a single command, ensuring a consistent start. Currently, Docker Compose is **not** working within Sagemaker. We have found success with within an independent EC2 instance, as well as on our local machines. Installation instructions for Docker Compose within a Linux EC2 instance, which should also apply to Linux/WSL local machines, can be found in **[EC2](ec2.md)**.
+The preferred method for deployment is Docker Compose. This facilitates the connection between the user interface (UI) and the backend, which run in separate containers. Additionally, manual build and run processes can be be omitted with a single command, ensuring a consistent start.
 
 ### compose.yaml
 The docker compose configuration file. Defines two services: `backend` and `frontend`, and declares one named volume: `outputs`.

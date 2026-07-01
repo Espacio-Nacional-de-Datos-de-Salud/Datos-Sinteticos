@@ -176,7 +176,8 @@ class MetadataExtractor:
             else:
                 logger.error(f"Could not infer PK for table '{name}'")
                 logger.warning(
-                    "Synthetic data engine requires PK. Consider adding an idx column or ensuring a unique identifier exists."
+                    "Synthetic data engine requires PK. Consider adding an idx column or "
+                    "ensuring a unique identifier exists."
                 )
 
         return pks
@@ -304,7 +305,8 @@ class MetadataExtractor:
                 each table column.
         """
         return {
-            col: detect_series_encoding(df[col], refine=col != pk_col) for col in df.columns
+            col: detect_series_encoding(df[col], refine=col != pk_col, column_name=col)
+            for col in df.columns
         }
 
     def _internal_sanity_check_relationship(
