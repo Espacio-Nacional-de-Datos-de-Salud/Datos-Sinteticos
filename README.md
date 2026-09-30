@@ -1,93 +1,47 @@
-# ENDS.AEMPS
+# Synthetic Data Tool for the ENDS (Espacio Nacional de Datos de Salud)
+
+<p align="center">
+  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Logotipo_del_Ministerio_para_la_Transformaci%C3%B3n_Digital_y_de_la_Funci%C3%B3n_P%C3%BAblica.svg/960px-Logotipo_del_Ministerio_para_la_Transformaci%C3%B3n_Digital_y_de_la_Funci%C3%B3n_P%C3%BAblica.svg.png" alt="Ministerio" width="200"/>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="https://www.seguritecnia.es/wp-content/uploads/2024/07/ntt-data.jpg" alt="NTT Data" width="200"/>
+</p>
+
+This tool generates synthetic tabular health data for the National Health Data Space (ENDS) in Spain.
+
+## Pick your path
+
+| If you want to… | Read |
+| :--- | :--- |
+| 🚀 **Use the tool from a browser** (Docker or `make local`) | **[Use the UI](docs/setup/use_ui.md)** |
+| 💻 **Use the tool from the terminal** (interactive wizard or `make` one-shots) | **[Use the CLI](docs/setup/use_cli.md)** |
+| 🛠 **Maintain or extend the codebase** | **[Developer Onboarding](docs/setup/onboarding.md)** |
 
 
+## Setup & reference
 
-## Getting started
+- **[Installation](docs/setup/install.md)** — `make setup`, the two venvs, config bootstrap. The single source of install steps.
+- **[Configuration](docs/setup/configuration.md)** — every YAML knob under `backend/config/`.
+- **[Contributing](CONTRIBUTING.md)** — coding standards, commit style, docstring format.
+- **[Testing](docs/setup/testing.md)** — `make test` (core venv) and `make test-eval` (eval venv).
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Deployment & runtime
 
-## Add your files
+- **[Docker](docs/deployment/docker.md)** — compose files, image structure, volume model.
+- **[API](docs/deployment/api.md)** — REST endpoints and schemas (the UI is a client of this API).
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
 
-```
-cd existing_repo
-git remote add origin https://gitlab-ic.scae.redsara.es/ends/ends.aemps.git
-git branch -M main
-git push -uf origin main
-```
+## Complete & final documentation
 
-## Integrate with your tools
+The markdown guides in this repository cover only practical setup and usage. The
+**complete and final documentation** (which goes far deeper) lives as the
+project deliverables under [`docs/documentacion-completa/`](docs/documentacion-completa):
 
-- [ ] [Set up project integrations](https://gitlab-ic.scae.redsara.es/ends/ends.aemps/-/settings/integrations)
+| Document | What it covers |
+| :--- | :--- |
+| [Documentación técnica](<docs/documentacion-completa/Documentación técnica 20260630.docx>) | The authoritative technical reference: layered backend architecture, OMOP data model, logical/business rules, conditional generation, the Mostly AI generator, evaluation methodology, and the pipeline engine. |
+| [Manual de instrucciones (manual de usuario)](<docs/documentacion-completa/Manual de instrucciones de la herramienta de generación de datos sintéticos 20260630.docx>) | Full end-user manual for operating the tool. |
+| [Informe de validación de la herramienta](<docs/documentacion-completa/Informe de validación de la herramienta 20260630.docx>) | Validation report for the tool. |
+| [Documento de cierre del proyecto](<docs/documentacion-completa/Documento de cierre del proyecto - Datos sintéticos 20260630.docx>) | Project closure document. |
 
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+These `.docx` files are a snapshot of the final documents handed-in as deliverables, the markdown here is a quick-start layer on top of them.

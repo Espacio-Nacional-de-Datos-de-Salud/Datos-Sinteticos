@@ -1,0 +1,14 @@
+.**
+!frontend/.dockerignore
+!frontend/.nvmrc
+**/*.pyc
+backend/outputs
+backend/data
+backend/config/*
+!backend/config/*.example.yaml
+!backend/config/pipelines/*.example.yaml
+!backend/config/pipelines/rules/*.example.yaml
+frontend/node_modules/**
+frontend/src/lib/api-types.ts
+frontend/tsconfig.tsbuildinfo
+notebooks/*

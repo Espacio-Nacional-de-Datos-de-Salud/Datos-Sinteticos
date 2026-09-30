@@ -1,0 +1,203 @@
+"use client";
+
+// Generic "Historial" catalog table card. Each wizard-step page configures
+// the column set (which is what varies most per kind) and provides a single
+// `actionsCell` slot for the per-row buttons (cancel running / delete).
+// Cleanup/purge buttons and the collapse toggle live in the card header and
+// are uniform across kinds.
+
+import { type ReactNode } from "react";
+import { Trash2 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatDuration, formatJobDate } from "@/lib/utils";
+
+export type HistoryColumn<T> = {
+  key: string;
+  header: ReactNode;
+  /** Width as a Tailwind percentage class fragment, e.g. "24%". */
+  width: string;
+  align?: "left" | "right";
+  render: (item: T) => ReactNode;
+};
+
+export function HistoryCard<T>({
+  title,
+  description,
+  items,
+  isLoading,
+  isError,
+  errorMessage,
+  emptyMessage,
+  columns,
+  actionsCell,
+  actionsWidth = "10%",
+  onCleanup,
+  onPurge,
+  isCleaning,
+  isPurging,
+  onSelect,
+  activeId,
+  getRowId,
+  getTimestamp,
+  getDuration,
+}: {
+  title: string;
+  description: string;
+  items: T[];
+  isLoading: boolean;
+  isError: boolean;
+  errorMessage: string;
+  emptyMessage: string;
+  columns: HistoryColumn<T>[];
+  /** Right-aligned per-row actions (cancel running / delete). */
+  actionsCell: (item: T) => ReactNode;
+  actionsWidth?: string;
+  onCleanup: () => void;
+  onPurge: () => void;
+  isCleaning: boolean;
+  isPurging: boolean;
+  /** When provided, rows become clickable and load that run as active. */
+  onSelect?: (id: string) => void;
+  activeId?: string | null;
+  /** Required when onSelect is provided. Returns the row's id. */
+  getRowId?: (item: T) => string;
+  /** Returns the row's YYYYMMDD_HHMMSS timestamp for the "Fecha" column. */
+  getTimestamp?: (item: T) => string | undefined;
+  /** Returns the row's elapsed time in seconds for the "Tiempo" column. */
+  getDuration?: (item: T) => number | null | undefined;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between space-y-0">
+        <div>
+          <CardTitle className="text-base">{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isCleaning || items.length === 0}
+            onClick={onCleanup}
+          >
+            <Trash2 className="mr-2 h-3.5 w-3.5" />
+            Limpiar sesiones incompletas
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isPurging || items.length === 0}
+            onClick={onPurge}
+          >
+            <Trash2 className="mr-2 h-3.5 w-3.5" />
+            Limpiar todas las sesiones
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+          {isLoading && <Skeleton className="h-24 w-full" />}
+          {isError && <p className="text-sm text-destructive">{errorMessage}</p>}
+          {!isLoading && !isError && items.length === 0 && (
+            <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+          )}
+          {items.length > 0 && (
+            // table-fixed + explicit widths keep the actions cell on screen
+            // even when long string columns push everything else right. The
+            // min-width guarantees each whitespace-nowrap cell keeps enough
+            // room for its content: in a narrow container (manual panel open,
+            // or 100% zoom on smaller screens) the percentage columns would
+            // otherwise be squeezed below their content and the status badge /
+            // action icons overflow on top of the neighbouring column. Below
+            // the min-width the container's overflow-x-auto scrolls instead.
+            <Table className="min-w-[820px] table-fixed">
+              <TableHeader>
+                <TableRow>
+                  {columns.map((col) => (
+                    <TableHead
+                      key={col.key}
+                      className={col.align === "right" ? "text-right" : undefined}
+                      style={{ width: col.width }}
+                    >
+                      {col.header}
+                    </TableHead>
+                  ))}
+                  {getDuration && (
+                    <TableHead style={{ width: "9%" }} className="text-right">Tiempo</TableHead>
+                  )}
+                  {getTimestamp && (
+                    <TableHead style={{ width: "16%" }}>Fecha</TableHead>
+                  )}
+                  <TableHead style={{ width: actionsWidth }} className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item, i) => {
+                  const rowId = getRowId ? getRowId(item) : undefined;
+                  const selectable = onSelect != null && rowId != null;
+                  const isActive = selectable && rowId === activeId;
+                  return (
+                    <TableRow
+                      key={i}
+                      onClick={selectable ? () => onSelect!(rowId!) : undefined}
+                      className={
+                        selectable
+                          ? "cursor-pointer " +
+                            (isActive ? "bg-primary/5" : "hover:bg-accent")
+                          : undefined
+                      }
+                    >
+                      {columns.map((col) => (
+                        <TableCell
+                          key={col.key}
+                          className={col.align === "right" ? "text-right" : undefined}
+                        >
+                          {col.render(item)}
+                        </TableCell>
+                      ))}
+                      {getDuration && (
+                        <TableCell className="whitespace-nowrap text-right tabular-nums text-xs text-muted-foreground">
+                          {formatDuration(getDuration(item))}
+                        </TableCell>
+                      )}
+                      {getTimestamp && (
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {formatJobDate(getTimestamp(item))}
+                        </TableCell>
+                      )}
+                      <TableCell
+                        className="text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end gap-1">
+                          {actionsCell(item)}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+    </Card>
+  );
+}

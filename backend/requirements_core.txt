@@ -1,0 +1,28 @@
+datasets==4.5.0
+s3fs==2025.10.0
+boto3==1.41.5
+transformers==4.57.6
+tokenizers==0.22.2
+peft==0.18.1
+model2vec==0.7.0
+huggingface-hub==0.36.0
+mostlyai[local]==5.10.1
+protobuf<6.0
+# streamlit
+ydata-profiling
+# great-expectations
+pytest
+pytest-cov
+networkx # believe this is covered by another dep, adding just in case
+
+# Path Fix Conflict with Outdated YDATA
+setuptools<82.0.0
+
+pandas
+ruff
+ty
+
+# API
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9

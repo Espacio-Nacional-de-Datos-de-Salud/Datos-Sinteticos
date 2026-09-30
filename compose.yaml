@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: synthetic-data-backend
+    command: sh -c "python -m backend.src.sessions.configs bootstrap && uvicorn backend.src.api.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    volumes:
+      - outputs:/app/backend/outputs
+      - ${DATA_PATH:-./backend/data}:/app/backend/data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: prod
+    container_name: synthetic-data-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - API_PROXY_TARGET=http://backend:8000
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+volumes:
+  outputs:

@@ -1,0 +1,5099 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reporte de Evaluacion de Datos Sinteticos</title>
+  <style>
+    :root {
+      --bg: #f3f6f9;
+      --bg-accent: radial-gradient(circle at top right, #d7efe0 0%, #f3f6f9 40%, #f9efe3 100%);
+      --surface: #ffffff;
+      --surface-alt: #f8fafc;
+      --text: #122231;
+      --muted: #5f7284;
+      --border: #d6e0e8;
+      --good: #1f8f5f;
+      --mid: #d39c19;
+      --bad: #bf3f3f;
+      --info: #2f6cb3;
+      --balance: #123a63;
+      --utility: #b36b00;
+      --warning: #d39c19;
+      --shadow: 0 10px 30px rgba(17, 34, 51, 0.08);
+      --radius-lg: 16px;
+      --radius-md: 10px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Manrope", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg-accent);
+      min-height: 100vh;
+    }
+
+    .container {
+      width: min(1280px, 94vw);
+      margin: 24px auto 42px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .report-tabs {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: var(--shadow);
+    }
+
+    .tab-button {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #fff;
+      color: #25465f;
+      padding: 8px 12px;
+      font: inherit;
+      font-size: 0.86rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .tab-button.active {
+      color: #fff;
+      border-color: var(--info);
+      background: var(--info);
+    }
+
+    .tab-panel {
+      display: none;
+      gap: 16px;
+    }
+
+    .tab-panel.active {
+      display: grid;
+    }
+
+    #sectionsRoot {
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(120deg, #ffffff 20%, #f5f9fd 100%);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 1.02rem;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: #1e4d7f;
+    }
+
+    .panel-content {
+      padding: 16px 20px 20px;
+    }
+
+    .header-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+    }
+
+    .field-label {
+      font-size: 0.78rem;
+      letter-spacing: 0.02em;
+      color: var(--muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+
+    .field-value {
+      font-weight: 700;
+      font-size: 0.95rem;
+      overflow-wrap: anywhere;
+    }
+
+    .training-params-section {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .training-param-card {
+      background: linear-gradient(135deg, #f9fbff 0%, #f5f9ff 100%);
+      border: 1px solid #d0dce8;
+      border-left: 4px solid #2f6cb3;
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .training-param-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.02em;
+      color: #3a4a60;
+      font-weight: 600;
+      text-transform: capitalize;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .training-param-value {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .status-badge {
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      border: 1px solid transparent;
+      display: inline-block;
+    }
+
+    .preview-notice {
+      display: none;
+      border: 1px solid #edcf83;
+      border-left: 6px solid var(--mid);
+      border-radius: var(--radius-md);
+      background: #fff6df;
+      color: #684600;
+      padding: 12px 14px;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      font-weight: 800;
+    }
+
+    .preview-notice.visible {
+      display: block;
+    }
+
+    .score-card {
+      border: 1px solid var(--border);
+      border-left: 7px solid;
+      border-radius: var(--radius-md);
+      background: linear-gradient(150deg, #ffffff 0%, #f8fbfd 100%);
+      padding: 14px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .score-card-info {
+      background: linear-gradient(150deg, #f5f5f5 0%, #f0f0f0 100%);
+      border-left-color: #989898 !important;
+      opacity: 0.95;
+      grid-column: 1 / -1;
+    }
+
+    .score-title {
+      font-size: 0.82rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .score-value {
+      font-size: 1.55rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .score-subtitle {
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.35;
+      font-weight: 700;
+    }
+
+    .score-scale {
+      height: 8px;
+      border-radius: 999px;
+      background: #e7edf2;
+      overflow: hidden;
+      margin-top: 3px;
+    }
+
+    .score-scale-bar {
+      height: 100%;
+      border-radius: inherit;
+      width: 0;
+      transition: width 500ms ease;
+    }
+
+    .global-summary {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .global-score-card {
+      border: 1px solid var(--border);
+      border-left: 7px solid var(--balance);
+      border-radius: var(--radius-md);
+      background: linear-gradient(150deg, #ffffff 0%, #f5f9fd 100%);
+      padding: 16px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .global-score-main {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .global-score-title {
+      margin: 0;
+      color: #25465f;
+      font-size: 0.88rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .global-score-value {
+      font-size: 2.15rem;
+      line-height: 1;
+      font-weight: 850;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .global-score-copy {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.4;
+      font-weight: 700;
+      max-width: 760px;
+    }
+
+    .global-contribution-panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .global-formula {
+      color: #25465f;
+      font-size: 0.88rem;
+      line-height: 1.35;
+      font-weight: 800;
+    }
+
+    .contribution-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+
+    .contribution-card {
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--info);
+      border-radius: var(--radius-md);
+      background: var(--surface-alt);
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .contribution-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+    }
+
+    .contribution-label {
+      color: #25465f;
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .contribution-value {
+      font-size: 1.25rem;
+      line-height: 1;
+      font-weight: 850;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .contribution-description {
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.35;
+      font-weight: 700;
+    }
+
+    .contribution-track,
+    .balance-track {
+      height: 8px;
+      border-radius: 999px;
+      background: #e7edf2;
+      overflow: hidden;
+    }
+
+    .contribution-fill {
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      transition: width 500ms ease;
+    }
+
+    .balance-panel {
+      display: grid;
+      gap: 6px;
+    }
+
+    .balance-title {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.35;
+      font-weight: 800;
+    }
+
+    .balance-track {
+      position: relative;
+      overflow: visible;
+      background: linear-gradient(90deg, var(--info), #e7edf2 50%, var(--good));
+    }
+
+    .balance-marker {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      background: var(--text);
+      box-shadow: 0 1px 4px rgba(18, 34, 49, 0.28);
+      transform: translate(-50%, -50%);
+    }
+
+    .balance-labels {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .supplementary-utility-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .supplementary-score-card {
+      border: 1px solid #ead7b8;
+      border-left: 5px solid var(--utility);
+      border-radius: var(--radius-md);
+      background: linear-gradient(150deg, #fffaf1 0%, #ffffff 100%);
+      padding: 12px;
+      display: grid;
+      gap: 7px;
+    }
+
+    .interpretation-help {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+      padding-top: 14px;
+      width: 100%;
+    }
+
+    .interpretation-help:empty {
+      display: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .global-mean-note {
+      grid-column: 1 / -1;
+      margin: 0;
+      padding: 10px 12px;
+      border-left: 3px solid var(--info);
+      border-radius: var(--radius-sm);
+      background: #eef5fb;
+      color: #314e65;
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+
+    .interpretation-block-title {
+      grid-column: 1 / -1;
+      margin: 0;
+      color: #25465f;
+      font-size: 0.92rem;
+      line-height: 1.25;
+      font-weight: 850;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .interpretation-question {
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--info);
+      border-radius: var(--radius-md);
+      background: #f8fbfd;
+      padding: 12px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .interpretation-question-title {
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+
+    .interpretation-question-text {
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .insights-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+    }
+
+    .insight-card {
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--info);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 12px;
+      color: #25465f;
+      font-size: 0.9rem;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .chart-wrap {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      height: 320px;
+    }
+
+    .utility-chart-wrap {
+      height: 300px;
+      margin-bottom: 14px;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .metric-pill {
+      padding: 12px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--info);
+      background: #fff;
+      display: grid;
+      gap: 8px;
+      min-height: 118px;
+    }
+
+    .metric-name {
+      font-size: 0.78rem;
+      color: #25465f;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .metric-value {
+      font-size: 1.35rem;
+      line-height: 1;
+      font-weight: 800;
+    }
+
+    .metric-topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .metric-quality {
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-size: 0.7rem;
+      line-height: 1.2;
+      font-weight: 800;
+      text-transform: uppercase;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .quality-good {
+      color: var(--good);
+      background: #e6f4ec;
+      border-color: #addbc3;
+    }
+
+    .quality-mid {
+      color: #9a6b09;
+      background: #fff6df;
+      border-color: #edcf83;
+    }
+
+    .quality-bad {
+      color: var(--bad);
+      background: #fde9e9;
+      border-color: #f0b7b7;
+    }
+
+    .quality-unknown {
+      color: var(--muted);
+      background: #edf2f6;
+      border-color: #c8d5df;
+    }
+
+    .metric-note {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.35;
+    }
+
+    .metric-scale {
+      display: grid;
+      gap: 4px;
+    }
+
+    .metric-scale-track {
+      position: relative;
+      height: 7px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--bad), var(--mid), var(--good));
+    }
+
+    .metric-scale-track.scale-lower {
+      background: linear-gradient(90deg, var(--good), var(--mid), var(--bad));
+    }
+
+    .metric-scale-track.scale-target {
+      background: linear-gradient(90deg, var(--bad), var(--mid), var(--good), var(--mid), var(--bad));
+    }
+
+    .metric-scale-marker {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      width: 10px;
+      height: 10px;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      background: var(--info);
+      box-shadow: 0 1px 4px rgba(18, 34, 49, 0.28);
+      transform: translate(-50%, -50%);
+      transition: left 500ms ease;
+    }
+
+    .metric-scale-labels {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .metric-scale-labels span:last-child {
+      text-align: right;
+    }
+
+    .metric-direction {
+      color: var(--muted);
+      font-size: 0.74rem;
+      line-height: 1.3;
+      font-weight: 700;
+    }
+
+    .fidelity-bars {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 12px;
+      margin-bottom: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .visual-title {
+      margin: 0;
+      color: #204d74;
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .visual-caption {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+
+    .tvd-bars-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .tvd-bar-row {
+      display: grid;
+      grid-template-columns: minmax(130px, 220px) 72px 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .tvd-bar-name {
+      color: #25465f;
+      font-size: 0.82rem;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .tvd-bar-value {
+      color: var(--text);
+      font-size: 0.82rem;
+      font-weight: 800;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tvd-bar-track {
+      height: 9px;
+      border-radius: 999px;
+      background: #e7edf2;
+      overflow: hidden;
+    }
+
+    .tvd-bar-fill {
+      height: 100%;
+      border-radius: inherit;
+      width: 0;
+      transition: width 500ms ease;
+    }
+
+    .axis-table-control {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #f6fafd;
+    }
+
+    .axis-table-control .axis-mean-label {
+      font-size: 0.9rem;
+      color: #314e65;
+    }
+
+    .axis-table-control .axis-mean-label strong {
+      font-size: 1.05rem;
+      font-weight: 850;
+    }
+
+    .axis-table-control .axis-table-picker {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .axis-table-control select {
+      font: inherit;
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: #fff;
+      color: var(--ink, #1f2d3d);
+    }
+
+    .axis-table-notice {
+      margin: 0 0 12px;
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      background: #eef5fb;
+      color: #314e65;
+      font-size: 0.85rem;
+    }
+
+    .axis-table-notice[hidden] {
+      display: none;
+    }
+
+    .axis-score-banner {
+      border: 1px solid var(--border);
+      border-left: 8px solid var(--info);
+      border-radius: var(--radius-md);
+      background: linear-gradient(120deg, #ffffff 0%, #f6fafd 100%);
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      display: grid;
+      grid-template-columns: minmax(140px, 220px) 1fr;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .axis-score-label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .axis-score-value {
+      font-size: 2.05rem;
+      line-height: 1;
+      font-weight: 850;
+    }
+
+    .axis-score-copy {
+      color: #314e65;
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .axis-score-bar {
+      height: 9px;
+      border-radius: 999px;
+      background: #e7edf2;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .axis-score-bar-fill {
+      height: 100%;
+      border-radius: inherit;
+      width: 0;
+    }
+
+    .score-breakdown {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .score-breakdown-card {
+      border: 1px solid var(--border);
+      border-top: 5px solid;
+      border-radius: var(--radius-md);
+      background: linear-gradient(150deg, #ffffff 0%, #f8fbfd 100%);
+      padding: 12px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .score-breakdown-label {
+      font-size: 0.76rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .score-breakdown-value {
+      font-size: 1.35rem;
+      line-height: 1;
+      font-weight: 800;
+    }
+
+    .score-breakdown-note {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.35;
+    }
+
+    details.section {
+      border-top: 1px solid var(--border);
+    }
+
+    details.section:first-of-type {
+      border-top: none;
+    }
+
+    details.section > summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      font-weight: 700;
+      background: #fcfeff;
+      user-select: none;
+    }
+
+    details.section > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .summary-right {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      margin-bottom: 12px;
+    }
+
+    .table-wrap-highlight {
+      border-color: #efc16a;
+      box-shadow: 0 0 0 3px rgba(211, 156, 25, 0.12);
+    }
+
+    .detail-table {
+      margin: 10px 0 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .detail-table > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 10px 12px;
+      background: #f8fbfd;
+      color: #204d74;
+      font-weight: 800;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .detail-table > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .detail-table > summary::after {
+      content: "+";
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .detail-table[open] > summary::after {
+      content: "-";
+    }
+
+    .detail-table .table-wrap {
+      border: 0;
+      border-top: 1px solid var(--border);
+      border-radius: 0;
+      margin-bottom: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 620px;
+      background: #fff;
+    }
+
+    th, td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #e7edf2;
+      text-align: left;
+      font-size: 0.88rem;
+      white-space: nowrap;
+    }
+
+    th {
+      background: #f4f8fb;
+      color: #204d74;
+      cursor: pointer;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      font-weight: 700;
+    }
+
+    th.sortable::after {
+      content: "  <>";
+      color: #89a0b2;
+      font-size: 0.74rem;
+    }
+
+    tr:hover td {
+      background: #fbfdff;
+    }
+
+    .tag-date {
+      background: #e5f1ff;
+      color: #2a67aa;
+      border: 1px solid #bdd6f0;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .risk-tag {
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 0.76rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      border: 1px solid transparent;
+      display: inline-block;
+    }
+
+    .risk-alto {
+      background: #fde9e9;
+      border-color: #f0b7b7;
+      color: var(--bad);
+    }
+
+    .risk-medio {
+      background: #fff6df;
+      border-color: #edcf83;
+      color: #9a6b09;
+    }
+
+    .risk-bajo {
+      background: #e6f4ec;
+      border-color: #addbc3;
+      color: var(--good);
+    }
+
+    .risk-desconocido {
+      background: #edf2f6;
+      border-color: #c8d5df;
+      color: var(--muted);
+    }
+
+    .privacy-risk-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .privacy-risk-card {
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--info);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .privacy-risk-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .privacy-risk-title {
+      color: #25465f;
+      font-size: 0.86rem;
+      font-weight: 800;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .privacy-risk-values {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .privacy-risk-values strong {
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .explain {
+      color: var(--muted);
+      line-height: 1.45;
+      margin: 8px 0 12px;
+      font-size: 0.92rem;
+    }
+
+    .tooltip {
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      border: 1px solid #97afc2;
+      color: #4c6f8e;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: help;
+      position: relative;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .tooltip:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 8px);
+      transform: translateX(-50%);
+      min-width: 210px;
+      max-width: 360px;
+      background: #1d2b38;
+      color: #fff;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.78rem;
+      line-height: 1.4;
+      z-index: 5;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+      white-space: pre-line;
+      text-align: left;
+      text-transform: none !important;
+      letter-spacing: 0;
+      overflow-wrap: break-word;
+    }
+
+    /* Tooltips flotantes: se renderizan fuera de los paneles para que no se corten por overflow. */
+    .tooltip:hover::after,
+    .tooltip:focus::after {
+      display: none !important;
+      content: none !important;
+    }
+
+    .floating-tooltip {
+      position: fixed;
+      z-index: 9999;
+      max-width: min(380px, calc(100vw - 24px));
+      max-height: min(70vh, 520px);
+      overflow-y: auto;
+      background: #1d2b38;
+      color: #fff;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      text-align: left;
+      text-transform: none !important;
+      letter-spacing: 0;
+      white-space: pre-line;
+      overflow-wrap: break-word;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.22);
+      pointer-events: none;
+    }
+
+    .code-block {
+      margin: 0;
+      max-height: 320px;
+      overflow: auto;
+      background: #11202d;
+      color: #dce8f2;
+      border-radius: var(--radius-md);
+      border: 1px solid #1d384d;
+      padding: 12px;
+      font: 13px/1.35 "IBM Plex Mono", Consolas, monospace;
+      white-space: pre;
+    }
+
+    .legend {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .legend-item {
+      font-size: 0.78rem;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      color: #3e5971;
+    }
+
+    .corr-heatmap {
+      overflow-x: auto;
+    }
+
+    .corr-heatmap-table {
+      border-collapse: separate;
+      border-spacing: 3px;
+      min-width: 0;
+      width: auto;
+      background: transparent;
+    }
+
+    .corr-heatmap-table th,
+    .corr-heatmap-table td {
+      border-bottom: 0;
+      padding: 5px 6px;
+      text-align: center;
+      white-space: nowrap;
+      font-size: 0.72rem;
+      min-width: 44px;
+    }
+
+    .corr-label {
+      background: #f4f8fb;
+      color: #204d74;
+      font-weight: 800;
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .corr-cell {
+      border-radius: 6px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: #122231;
+    }
+
+    .corr-empty {
+      color: var(--muted);
+      background: #edf2f6;
+      padding: 10px;
+      border-radius: var(--radius-md);
+    }
+
+    .plot-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .plot-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .plot-card-wide {
+      grid-column: 1 / -1;
+    }
+
+    .plot-card h4 {
+      margin: 0;
+      color: #204d74;
+      font-size: 0.88rem;
+      font-weight: 800;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+
+    .plot-meta {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .mini-chart {
+      height: 240px;
+      min-width: 0;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .matrix-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 12px;
+      min-width: 0;
+    }
+
+    .matrix-card h4 {
+      margin: 0 0 8px;
+      color: #204d74;
+      font-size: 0.88rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .dist-accuracy-box {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 16px 20px;
+      margin-bottom: 14px;
+      width: fit-content;
+      max-width: 100%;
+    }
+
+    .dist-acc-overall {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding-right: 22px;
+    }
+
+    .dist-acc-overall-label {
+      font-size: 0.74rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .dist-acc-overall-value {
+      font-size: 2.4rem;
+      line-height: 1.05;
+      font-weight: 850;
+      color: #24b37e;
+    }
+
+    .dist-acc-sep {
+      width: 1px;
+      background: var(--border);
+      margin: 0 22px;
+    }
+
+    .dist-acc-breakdown {
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 4px 18px;
+      align-items: center;
+      align-content: center;
+    }
+
+    .dist-acc-breakdown .k {
+      font-size: 0.86rem;
+      color: #25465f;
+      font-weight: 700;
+    }
+
+    .dist-acc-breakdown .v {
+      font-size: 0.86rem;
+      font-weight: 800;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .dist-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+      padding: 12px;
+    }
+
+    .dist-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 10px 12px 12px;
+      min-width: 0;
+    }
+
+    .dist-card-title {
+      text-align: center;
+      font-size: 0.86rem;
+      color: #122231;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+      margin-bottom: 6px;
+    }
+
+    .dist-card-title .dist-acc {
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: #24b37e;
+      margin-left: 5px;
+      vertical-align: super;
+    }
+
+    .dist-mini-chart {
+      height: 170px;
+      min-width: 0;
+    }
+
+    .biv-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .biv-pair-cell {
+      min-width: 0;
+    }
+
+    .biv-pair-cell h5 {
+      margin: 0 0 4px;
+      text-align: center;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .biv-pair-cell .corr-heatmap-table th,
+    .biv-pair-cell .corr-heatmap-table td {
+      font-size: 0.62rem;
+      min-width: 26px;
+      padding: 3px 4px;
+    }
+
+    /* Ajustes de layout para evitar overflow en la pestaña de privacidad */
+    .container > *,
+    .tab-panel,
+    #sectionsRoot,
+    .panel,
+    .panel-content,
+    details.section,
+    .detail-table {
+      min-width: 0;
+    }
+
+    #tab-privacy {
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    #tab-privacy .panel-content {
+      max-width: 100%;
+      overflow: hidden;
+    }
+
+    #tab-privacy .metrics-grid,
+    #tab-privacy .score-breakdown,
+    #tab-privacy .privacy-risk-grid {
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    #tab-privacy .metric-pill,
+    #tab-privacy .score-breakdown-card,
+    #tab-privacy .privacy-risk-card {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    #tab-privacy .table-wrap {
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      display: block;
+      margin: 0 auto;
+    }
+
+    #tab-privacy table {
+      width: 100%;
+      min-width: 760px;
+      margin: 0 auto;
+      table-layout: auto;
+    }
+
+    #tab-privacy #exactMatchTable,
+    #tab-privacy #kanonColumnTable,
+    #tab-privacy #lDiversityTable {
+      min-width: 640px;
+    }
+
+    #tab-privacy th,
+    #tab-privacy td {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      max-width: 220px;
+      vertical-align: top;
+    }
+
+    #tab-privacy .detail-table {
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .evaluated-table-banner {
+      border: 1px solid #b8daff;
+      border-left: 5px solid #2b6cb0;
+      border-radius: var(--radius-md);
+      background: #eef5ff;
+      color: #1b3a5b;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      font-size: 0.92rem;
+      line-height: 1.4;
+    }
+
+    .evaluated-table-banner strong {
+      font-weight: 850;
+    }
+
+    .utility-subsection {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 14px;
+      margin-bottom: 16px;
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .utility-subsection-title {
+      margin: 0;
+      color: #204d74;
+      font-size: 0.98rem;
+      font-weight: 850;
+      letter-spacing: 0.02em;
+    }
+
+    .utility-subsection-copy {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.45;
+      font-weight: 650;
+    }
+
+    .report-usage-intro {
+      border: 1px solid var(--border);
+      border-left: 6px solid var(--info);
+      border-radius: var(--radius-md);
+      background: linear-gradient(150deg, #ffffff 0%, #f7fbfd 100%);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+      margin-bottom: 14px;
+      min-width: 0;
+    }
+
+    .report-usage-intro h3 {
+      margin: 0;
+      color: #25465f;
+      font-size: 1rem;
+      font-weight: 850;
+    }
+
+    .report-usage-intro p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.45;
+      font-weight: 650;
+    }
+
+    .report-usage-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .report-usage-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-alt);
+      padding: 11px;
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .report-usage-card strong {
+      color: #25465f;
+      font-size: 0.86rem;
+    }
+
+    .report-usage-card span {
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.35;
+      font-weight: 650;
+    }
+
+    .report-usage-details {
+      border: 1px solid rgba(44, 111, 180, 0.22);
+      border-radius: var(--radius-sm);
+      background: #ffffff;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .report-usage-details > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 11px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: #25465f;
+      font-size: 0.86rem;
+      font-weight: 850;
+      border-bottom: 1px solid transparent;
+    }
+
+    .report-usage-details > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .report-usage-details > summary::after {
+      content: "Mostrar más";
+      flex: 0 0 auto;
+      border: 1px solid rgba(44, 111, 180, 0.28);
+      border-radius: 999px;
+      padding: 4px 9px;
+      color: var(--info);
+      background: #f5f9fd;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .report-usage-details[open] > summary {
+      border-bottom-color: rgba(44, 111, 180, 0.16);
+    }
+
+    .report-usage-details[open] > summary::after {
+      content: "Ocultar";
+    }
+
+    .report-usage-details-body {
+      padding: 13px 14px 15px;
+      display: grid;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.48;
+      font-weight: 600;
+    }
+
+    .report-usage-details-body p {
+      margin: 0;
+    }
+
+    .report-usage-details-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .report-usage-details-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-alt);
+      padding: 12px;
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .report-usage-details-card h4 {
+      margin: 0;
+      color: #25465f;
+      font-size: 0.86rem;
+      font-weight: 850;
+    }
+
+    .report-usage-details-card ul {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 5px;
+    }
+
+    .report-usage-note {
+      border-left: 4px solid var(--warning);
+      background: #fffaf0;
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      color: #6f5525;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      font-weight: 650;
+    }
+
+    .predictive-score-block,
+    .statistical-score-block,
+    .utility-model-section {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface-alt);
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .predictive-score-block h4,
+    .statistical-score-block h4,
+    .utility-model-section h4 {
+      margin: 0;
+      color: #25465f;
+      font-size: 0.9rem;
+      font-weight: 850;
+    }
+
+    .predictive-score-block p,
+    .statistical-score-block p,
+    .utility-model-section p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.4;
+      font-weight: 650;
+    }
+
+    .utility-model-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .utility-model-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .utility-model-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface-alt);
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .utility-model-card h4 {
+      margin: 0;
+      color: #25465f;
+      font-size: 0.9rem;
+      font-weight: 850;
+    }
+
+    .utility-model-chart {
+      height: 260px;
+      min-width: 0;
+    }
+
+    .training-params-title {
+      margin: 0 0 8px;
+      color: #25465f;
+      font-size: 0.9rem;
+      font-weight: 850;
+      letter-spacing: 0.02em;
+    }
+
+    #tab-summary > .panel:first-child .panel-content {
+      padding-top: 10px;
+    }
+
+    #tab-summary .global-summary {
+      margin-top: 0;
+    }
+
+    @media (max-width: 800px) {
+      .container {
+        width: min(1280px, 96vw);
+        margin-top: 12px;
+      }
+
+      .report-tabs {
+        position: static;
+        gap: 6px;
+      }
+
+      .tab-button {
+        flex: 1 1 auto;
+      }
+
+      .interpretation-help {
+        grid-template-columns: 1fr;
+      }
+
+      .panel-header,
+      .panel-content,
+      details.section > summary {
+        padding-inline: 12px;
+      }
+
+      .chart-wrap {
+        height: 270px;
+      }
+
+      .axis-score-banner {
+        grid-template-columns: 1fr;
+      }
+
+      .tvd-bar-row {
+        grid-template-columns: minmax(100px, 1fr) 64px;
+      }
+
+      .tvd-bar-track {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media print {
+      .report-tabs {
+        display: none;
+      }
+
+      .tab-panel,
+      .tab-panel.active {
+        display: grid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="panel">
+      <header class="panel-header">
+        <h1 class="panel-title">Reporte de Evaluación de Datos Sintéticos</h1>
+        <span id="headerStatus" class="status-badge">-</span>
+      </header>
+      <div class="panel-content">
+        <div id="evaluatedTableBanner" class="evaluated-table-banner" hidden></div>
+        <h2 class="training-params-title">Parámetros de entrenamiento del modelo:</h2>
+        <div id="trainingParametersGrid" class="training-params-section"></div>
+        <div id="metadataGrid" class="header-grid"></div>
+      </div>
+    </section>
+
+    <section class="report-usage-intro" aria-label="Cómo leer este reporte">
+      <h3>Cómo leer este reporte</h3>
+      <p>
+        Este informe ayuda a decidir si el dataset sintético es adecuado para su uso. El Balance Fidelidad/Privacidad resume los dos ejes principales; la utilidad se muestra como dimensión complementaria para valorar si el dato sintético sirve para el caso de uso previsto.
+      </p>
+      <div class="report-usage-grid">
+        <article class="report-usage-card">
+          <strong>Fidelidad</strong>
+          <span>¿El sintético reproduce correctamente las propiedades estadísticas del real?</span>
+        </article>
+        <article class="report-usage-card">
+          <strong>Privacidad</strong>
+          <span>¿Existe riesgo de re-identificación o de fuga de registros reales?</span>
+        </article>
+        <article class="report-usage-card">
+          <strong>Utilidad</strong>
+          <span>¿Los datos sintéticos siguen siendo útiles para entrenar modelos predictivos o reproducir indicadores estadísticos?</span>
+        </article>
+      </div>
+      <details class="report-usage-details">
+        <summary>Ver guía detallada de interpretación, contenido y limitaciones</summary>
+        <div class="report-usage-details-body">
+          <p>
+            Este reporte no certifica automáticamente que un dataset sintético sea apto para cualquier uso. Sirve para comparar evidencia de fidelidad, privacidad y utilidad, y para decidir si el resultado encaja con el caso de uso, el nivel de riesgo aceptable y las reglas de gobierno del dato.
+          </p>
+          <div class="report-usage-details-grid">
+            <article class="report-usage-details-card">
+              <h4>1. Revisa primero el balance principal</h4>
+              <ul>
+                <li><strong>Fidelidad</strong> resume si el sintético conserva distribuciones, relaciones y estadísticos del real.</li>
+                <li><strong>Privacidad</strong> resume señales de cercanía excesiva a registros reales, coincidencias o posible re-identificación.</li>
+                <li>El <strong>Balance Fidelidad/Privacidad</strong> ayuda a ver si el resultado mantiene un equilibrio razonable entre parecido estadístico y protección.</li>
+              </ul>
+            </article>
+            <article class="report-usage-details-card">
+              <h4>2. Usa la utilidad como validación del caso de uso</h4>
+              <ul>
+                <li>La <strong>utilidad predictiva</strong> compara modelos entrenados con datos reales frente a modelos entrenados con sintéticos.</li>
+                <li>La <strong>utilidad estadística</strong> compara indicadores definidos por el usuario, como proporciones, medias, conteos o tasas.</li>
+                <li>La utilidad es complementaria: no participa en el Balance Fidelidad/Privacidad, pero puede ser decisiva para aprobar o descartar el dataset.</li>
+              </ul>
+            </article>
+            <article class="report-usage-details-card">
+              <h4>3. Interpreta las métricas con contexto</h4>
+              <ul>
+                <li>Algunas métricas se muestran transformadas para que valores más altos indiquen mejor resultado; el tooltip explica la transformación cuando aplica.</li>
+                <li>Una puntuación agregada alta puede ocultar problemas en variables concretas, subgrupos o combinaciones de variables.</li>
+                <li>Si una métrica está desactivada o no tiene valor válido, el reporte puede ocultarla para no ocupar espacio ni inducir a error.</li>
+              </ul>
+            </article>
+            <article class="report-usage-details-card">
+              <h4>4. Revisa el modelo generativo</h4>
+              <ul>
+                <li><strong>Modelo generativo</strong>: indica la arquitectura usada para sintetizar los datos.</li>
+                <li>En modelos tabulares de MostlyAI, el motor se basa en <strong>TabularARGN</strong>, una red generativa auto-regresiva diseñada para datos tabulares mixtos.</li>
+                <li>La privacidad no depende solo de la arquitectura: también influyen la configuración, los datos, la privacidad diferencial, el tamaño de muestra y la evaluación posterior.</li>
+              </ul>
+            </article>
+          </div>
+          <div class="report-usage-note">
+            <strong>Consideraciones:</strong> valida siempre las variables críticas del caso de uso, revisa las tablas detalladas y contrasta los resultados con conocimiento experto. Un buen resultado en fidelidad no implica ausencia total de riesgo, y un buen resultado en privacidad puede venir acompañado de pérdida de utilidad.
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <nav class="report-tabs" role="tablist" aria-label="Secciones del reporte">
+      <button class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="tab-summary" data-tab="summary">Resumen</button>
+      <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="tab-fidelity" data-tab="fidelity">Fidelidad</button>
+      <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="tab-privacy" data-tab="privacy">Privacidad</button>
+      <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="tab-utility" data-tab="utility">Utilidad</button>
+    </nav>
+
+    <div id="previewNotice" class="preview-notice"></div>
+
+    <section id="tab-summary" class="tab-panel active" role="tabpanel">
+    <section class="panel">
+      <header class="panel-header">
+        <h2 class="panel-title">Resumen Global</h2>
+      </header>
+      <div class="panel-content">
+        <div id="interpretationHelp" class="interpretation-help"></div>
+        <div id="scoreCards" class="global-summary"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header class="panel-header">
+        <h2 class="panel-title">Insights clave</h2>
+      </header>
+      <div class="panel-content">
+        <div id="keyInsights" class="insights-grid"></div>
+      </div>
+    </section>
+    </section>
+
+    <div id="sectionsRoot">
+    <section id="tab-fidelity" class="panel tab-panel" role="tabpanel">
+      <details class="section" open>
+        <summary>
+          <span>Fidelidad</span>
+          <span class="summary-right" id="fidelitySummaryRight">-</span>
+        </summary>
+        <div class="panel-content">
+          <div id="fidelityAxisControl" class="axis-table-control"></div>
+          <div id="fidelityAxisScore" class="axis-score-banner"></div>
+          <div id="fidelityAggregated" class="metrics-grid"></div>
+          <div id="fidelityTvdBars" class="fidelity-bars"></div>
+
+          <div id="distComparisonAccuracy" class="dist-accuracy-box"></div>
+
+          <details class="detail-table" open>
+            <summary>Correlaciones</summary>
+            <p class="explain">
+              Estructura de correlaciones del dato real (gris) y sintetico (verde),
+              y la diferencia absoluta (rojo). Cuanto mas se parezcan real y sintetico,
+              mejor se conservan las relaciones entre variables.
+            </p>
+            <div id="correlationMatricesGrid" class="matrix-grid"></div>
+          </details>
+
+          <details class="detail-table" open>
+            <summary>Distribuciones univariantes</summary>
+            <p class="explain">
+              Para cada columna se compara la distribucion real (gris) con la
+              sintetica (verde). El area sombreada marca la diferencia entre ambas.
+            </p>
+            <div id="univariateDistributionPlots" class="dist-grid"></div>
+          </details>
+
+          <details class="detail-table">
+            <summary>Distribuciones bivariantes</summary>
+            <p class="explain">
+              Distribucion conjunta de pares de columnas: original (gris) frente a
+              sintetico (verde). Se muestran los pares peor reproducidos.
+            </p>
+            <div id="bivariateDistributionPlots" class="dist-grid"></div>
+          </details>
+
+          <details class="detail-table" open>
+            <summary>Exactitud</summary>
+            <p class="explain">
+              Exactitud por columna (1-TVD): univariante, y media de las exactitudes
+              bivariantes y trivariantes en las que participa cada columna. La matriz
+              muestra 1-TVD univariante en la diagonal y bivariante en el resto.
+            </p>
+            <div class="table-wrap">
+              <table id="accuracyByColumnTable"></table>
+            </div>
+            <div id="accuracyMatrixHeatmap" class="matrix-grid"></div>
+          </details>
+
+          <details class="detail-table">
+            <summary>CMD</summary>
+            <div class="table-wrap">
+              <table id="cmdTable"></table>
+            </div>
+          </details>
+        </div>
+      </details>
+    </section>
+
+    <section id="tab-privacy" class="panel tab-panel" role="tabpanel">
+      <details class="section" open>
+        <summary>
+          <span>Privacidad</span>
+          <span class="summary-right" id="privacySummaryRight">-</span>
+        </summary>
+        <div class="panel-content">
+          <div id="privacyAxisControl" class="axis-table-control"></div>
+          <div id="privacyAxisScore" class="axis-score-banner"></div>
+          <div id="privacyScoreBreakdown" class="score-breakdown"></div>
+          <p class="explain">
+            La penalización se muestra cuando el k-anonymity sintético empeora frente al real.
+          </p>
+          <div id="privacyAggregated" class="metrics-grid"></div>
+
+          <h3>Top riesgos de re-identificacion</h3>
+          <p class="explain">
+            k bajo implica mayor riesgo; si syn_k empeora respecto a real_k, se aplica penalizacion.
+          </p>
+          <div id="privacyRiskCards" class="privacy-risk-grid"></div>
+
+          <details class="detail-table" open>
+            <summary>Pares/subsets de k-Anonymity mas problematicos</summary>
+            <div class="table-wrap table-wrap-highlight">
+              <table id="kanonProblemTable"></table>
+            </div>
+          </details>
+
+          <details class="detail-table">
+            <summary>k-Anonymity por subset</summary>
+            <div class="table-wrap">
+              <table id="kanonSubsetTable"></table>
+            </div>
+          </details>
+
+          <details class="detail-table">
+            <summary>k-Anonymity por columna</summary>
+            <div class="table-wrap">
+              <table id="kanonColumnTable"></table>
+            </div>
+          </details>
+
+          <details class="detail-table">
+            <summary>EMR exacto y leave-one-out</summary>
+            <p class="explain">
+              EMR mide filas sintéticas idénticas a filas reales. El detalle leave-one-out no mide coincidencias de una columna aislada: compara la fila completa omitiendo solo esa columna. Si al omitir PESO aparecen matches, significa que PESO estaba impidiendo coincidencias exactas en registros que sí coinciden en el resto de variables.
+            </p>
+            <div id="exactMatchSummary" class="score-breakdown"></div>
+            <div class="table-wrap">
+              <table id="exactMatchTable"></table>
+            </div>
+          </details>
+
+          <details class="detail-table" id="exactMatchRowsDetails" style="display:none">
+            <summary>Filas coincidentes (registros reales copiados)</summary>
+            <p class="explain">
+              Estas son las filas reales que el dataset sintético reproduce de forma idéntica. Se muestran porque la opción «Mostrar filas coincidentes en el reporte» está activada en la configuración de privacidad. Contienen datos reales: trátalas con la misma confidencialidad que el dataset original.
+            </p>
+            <div class="table-wrap">
+              <table id="exactMatchRowsTable"></table>
+            </div>
+          </details>
+
+          <details class="detail-table">
+            <summary>l-diversity por subset</summary>
+            <p class="explain">
+              l-diversity mide diversidad de columnas sensibles dentro de clases definidas por quasi-identificadores. Valores bajos indican mayor riesgo.
+            </p>
+            <div id="lDiversitySummary" class="score-breakdown"></div>
+            <div class="table-wrap">
+              <table id="lDiversityTable"></table>
+            </div>
+          </details>
+        </div>
+      </details>
+    </section>
+
+    <section id="tab-utility" class="panel tab-panel" role="tabpanel">
+      <details class="section" open>
+        <summary>
+          <span>Utilidad</span>
+          <span class="summary-right" id="utilitySummaryRight">-</span>
+        </summary>
+        <div class="panel-content">
+          <div id="utilityAxisControl" class="axis-table-control"></div>
+          <section class="utility-subsection" id="predictiveUtilitySection">
+            <h3 class="utility-subsection-title">Utilidad predictiva</h3>
+            <p class="utility-subsection-copy">
+              Evalúa si los datos sintéticos sirven para entrenar modelos predictivos. Compara modelos entrenados con datos reales frente a modelos entrenados con datos sintéticos. Esta dimensión es informativa y no participa en el Balance Fidelidad/Privacidad.
+            </p>
+
+            <div class="predictive-score-block">
+              <h4>Score ponderado de utilidad predictiva</h4>
+              <p>Resume el rendimiento relativo de los modelos entrenados con datos sintéticos frente a la referencia real.</p>
+              <div id="utilityAxisScore" class="axis-score-banner"></div>
+            </div>
+
+            <p class="explain">
+              Real / GT es la referencia con datos reales. Sintético ID evalúa en distribución.
+            </p>
+            <div id="predictiveUtilityContext" class="score-breakdown utility-tests-meta"></div>
+            <div class="utility-model-grid">
+              <article class="utility-model-card utility-model-section">
+                <h4>Evaluación con modelo lineal</h4>
+                <p>Compara la referencia real con el modelo entrenado con sintéticos y evaluado en distribución.</p>
+                <div id="linearUtilityMetrics" class="utility-model-metrics"></div>
+                <div class="utility-model-chart">
+                  <canvas id="linearUtilityChart" aria-label="Rendimiento predictivo del modelo lineal"></canvas>
+                </div>
+              </article>
+              <article class="utility-model-card utility-model-section">
+                <h4>Evaluación con MLP</h4>
+                <p>Compara un modelo más flexible entrenado con datos reales frente a datos sintéticos.</p>
+                <div id="mlpUtilityMetrics" class="utility-model-metrics"></div>
+                <div class="utility-model-chart">
+                  <canvas id="mlpUtilityChart" aria-label="Rendimiento predictivo del modelo MLP"></canvas>
+                </div>
+              </article>
+            </div>
+            <details class="detail-table">
+              <summary>Métricas de utilidad predictiva en tabla</summary>
+              <div class="table-wrap">
+                <table id="utilityTable"></table>
+              </div>
+            </details>
+          </section>
+
+          <section class="utility-subsection" id="statisticalUtilitySection">
+            <h3 class="utility-subsection-title">Utilidad estadística</h3>
+            <p class="utility-subsection-copy">
+              Compara indicadores estadísticos definidos por el usuario entre el dataset real y el sintético: proporciones, medias, conteos, tasas u otras pruebas específicas del caso de uso.
+            </p>
+            <div class="statistical-score-block">
+              <h4>Score ponderado de utilidad estadística</h4>
+              <p>Resume la coincidencia de los indicadores definidos por el usuario entre el dataset real y el sintético.</p>
+              <div id="utilityTestsAxisScore" class="axis-score-banner"></div>
+            </div>
+            <div id="utilityTestsSummary" class="score-breakdown utility-tests-meta"></div>
+            <details class="detail-table" open>
+              <summary>Pruebas de utilidad estadística</summary>
+              <p class="explain">
+                Detalle de las pruebas definidas por el usuario.
+              </p>
+              <div class="table-wrap">
+                <table id="utilityTestsTable"></table>
+              </div>
+            </details>
+          </section>
+        </div>
+      </details>
+    </section>
+
+    </div>
+  </main>
+
+<script id="embeddedReportData" type="application/json">
+
+__REPORT_DATA_JSON__
+</script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    function scoreToColor(score) {
+      if (typeof score !== "number" || Number.isNaN(score)) {
+        return getComputedStyle(document.documentElement).getPropertyValue("--info").trim();
+      }
+      if (score >= 0.75) {
+        return getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+      }
+      if (score >= 0.5) {
+        return getComputedStyle(document.documentElement).getPropertyValue("--mid").trim();
+      }
+      return getComputedStyle(document.documentElement).getPropertyValue("--bad").trim();
+    }
+
+    function scoreToLabel(score) {
+      if (typeof score !== "number" || Number.isNaN(score)) return "Sin dato";
+      if (score >= 0.75) return "Bueno";
+      if (score >= 0.5) return "Medio";
+      return "Bajo";
+    }
+
+    function formatScore(value, digits = 2) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "-";
+
+      const maxDigits = Math.max(0, Math.min(typeof digits === "number" ? digits : 2, 6));
+
+      return value.toLocaleString("es-ES", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: maxDigits
+      });
+    }
+
+    function scorePercent(score) {
+      if (typeof score !== "number" || Number.isNaN(score)) return 0;
+      return Math.max(0, Math.min(100, score * 100));
+    }
+
+    function formatScorePart(label, value) {
+      return label + " " + formatScore(value, 2);
+    }
+
+    function lowerIsBetterScore(value, maxValue) {
+      if (typeof value !== "number" || Number.isNaN(value)) return null;
+      return 1 - Math.min(value / maxValue, 1);
+    }
+
+    function formatDate(raw) {
+      if (!raw) return "-";
+      const normalized = String(raw).replace(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/, "$1-$2-$3T$4:$5:$6Z");
+      const d = new Date(normalized);
+      if (Number.isNaN(d.getTime())) return String(raw);
+      return d.toLocaleString("es-ES", { hour12: false });
+    }
+
+    function parseMaybeNumber(value) {
+      if (value === null || value === undefined) return value;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : value;
+    }
+
+    function isValidNumber(value) {
+      return typeof value === "number" && Number.isFinite(value);
+    }
+
+    function tooltipSections(sections) {
+      return sections
+        .filter((section) => section && section.text)
+        .map((section) => section.title + ":\n" + section.text)
+        .join("\n\n");
+    }
+
+    function validMetricEntries(entries) {
+      return entries.filter((entry) => isValidNumber(entry[1]));
+    }
+
+    function createField(label, value, tooltipText) {
+      const wrapper = document.createElement("article");
+      wrapper.className = "field";
+      wrapper.innerHTML = '<div class="field-label"></div><div class="field-value"></div>';
+
+      const labelEl = wrapper.querySelector(".field-label");
+      labelEl.textContent = label;
+
+      if (tooltipText) {
+        const tip = document.createElement("span");
+        tip.className = "tooltip";
+        tip.dataset.tip = tooltipText;
+        tip.textContent = "i";
+        labelEl.appendChild(document.createTextNode(" "));
+        labelEl.appendChild(tip);
+      }
+
+      wrapper.querySelector(".field-value").textContent = value;
+      return wrapper;
+    }
+
+    function clamp01(value) {
+      return Math.max(0, Math.min(1, value));
+    }
+
+    function metricConfig(name, config) {
+      if (typeof config === "string") {
+        return {
+          label: name,
+          tooltip: config,
+          definition: "",
+          scaleNote: "Más alto suele ser mejor",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5,
+          scale: "bounded",
+          scaleType: "bounded_quality"
+        };
+      }
+      return {
+        label: name,
+        tooltip: "",
+        definition: "",
+        scaleNote: "",
+        direction: "higher",
+        good: 0.75,
+        warning: 0.5,
+        scale: "bounded",
+        scaleType: "bounded_quality",
+        ...(config || {})
+      };
+    }
+
+    function metricQuality(value, config) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "unknown";
+      if (config.direction === "none") return "unknown";
+      if (config.scale === "qualitative") return "unknown";
+      if (config.direction === "lower") {
+        if (value <= config.good) return "good";
+        if (value <= config.warning) return "mid";
+        return "bad";
+      }
+      if (config.direction === "target") {
+        const delta = Math.abs(value - config.target);
+        if (delta <= config.good) return "good";
+        if (delta <= config.warning) return "mid";
+        return "bad";
+      }
+      if (value >= config.good) return "good";
+      if (value >= config.warning) return "mid";
+      return "bad";
+    }
+
+    function metricQualityLabel(level) {
+      if (level === "good") return "Bueno";
+      if (level === "mid") return "Medio";
+      if (level === "bad") return "Bajo";
+      return "Info";
+    }
+
+    function metricProgress(value, config) {
+      if (typeof value !== "number" || Number.isNaN(value)) return 0;
+      if (config.direction === "lower") {
+        if (value <= config.good) return 1;
+        if (value >= config.warning) return 0;
+        return 1 - clamp01((value - config.good) / (config.warning - config.good));
+      }
+      if (config.direction === "target") {
+        return 1 - clamp01(Math.abs(value - config.target) / config.warning);
+      }
+      if (config.direction === "none") {
+        return clamp01(value);
+      }
+      return clamp01(value / config.good);
+    }
+
+    function metricScaleInfo(value, config) {
+      if (typeof value !== "number" || Number.isNaN(value)) {
+        return null;
+      }
+      const scaleType = config.scaleType || (config.scale === "qualitative" ? "direction_only" : "bounded_quality");
+      if (scaleType === "direction_only" || scaleType === "distance_direction" || scaleType === "none" || config.direction === "none") {
+        return null;
+      }
+      if (config.direction === "lower") {
+        const max = typeof config.max === "number" ? config.max : config.warning;
+        const position = max > 0 ? clamp01(value / max) : 0;
+        return {
+          className: "scale-lower",
+          marker: position,
+          left: config.lowLabel || "Bajo",
+          right: config.highLabel || "Alto"
+        };
+      }
+      if (config.direction === "target") {
+        const maxDelta = typeof config.maxDelta === "number" ? config.maxDelta : config.warning;
+        const low = (config.target ?? 0) - maxDelta;
+        const high = (config.target ?? 0) + maxDelta;
+        const span = high - low;
+        return {
+          className: "scale-target",
+          marker: span > 0 ? clamp01((value - low) / span) : 0.5,
+          left: config.edgeLabel || "Distinguible",
+          center: config.targetLabel || "Objetivo aprox.",
+          right: config.edgeLabel || "Distinguible"
+        };
+      }
+      const max = typeof config.max === "number" ? config.max : 1;
+      return {
+        className: "scale-higher",
+        marker: max > 0 ? clamp01(value / max) : 0,
+        left: config.lowLabel || "Bajo",
+        right: config.highLabel || "Alto"
+      };
+    }
+
+    function qualityColor(level) {
+      if (level === "good") return getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+      if (level === "mid") return getComputedStyle(document.documentElement).getPropertyValue("--mid").trim();
+      if (level === "bad") return getComputedStyle(document.documentElement).getPropertyValue("--bad").trim();
+      return getComputedStyle(document.documentElement).getPropertyValue("--info").trim();
+    }
+
+    function metricRawValue(value, config) {
+      if (isValidNumber(config.rawValue)) return config.rawValue;
+      if (typeof config.rawValueFromDisplayed === "function") {
+        const rawValue = config.rawValueFromDisplayed(value);
+        return isValidNumber(rawValue) ? rawValue : null;
+      }
+      return null;
+    }
+
+    function createMetricTooltip(metricKey, value, config) {
+      const hasTransparencyInfo = Boolean(
+        config.transformDescription ||
+        config.displayedValueLabel ||
+        config.rawValueLabel ||
+        config.displayedInterpretation ||
+        config.rawInterpretation ||
+        config.showRawValue
+      );
+
+      if (!hasTransparencyInfo) return config.tooltip || "";
+
+      const rawValue = metricRawValue(value, config);
+      const rawText = rawValue === null
+        ? (config.rawUnavailableText || "Valor original no disponible en este resumen.")
+        : formatScore(rawValue, 2);
+
+      return tooltipSections([
+        {
+          title: "Qué mide",
+          text: config.definition || config.tooltip || config.label || metricKey
+        },
+        {
+          title: "Transformación aplicada",
+          text: config.transformDescription || "El valor mostrado corresponde a la escala usada por el reporte."
+        },
+        {
+          title: config.displayedValueLabel || "Valor mostrado",
+          text: formatScore(value, 2)
+        },
+        {
+          title: config.rawValueLabel || "Valor original/crudo",
+          text: rawText
+        },
+        {
+          title: "Cómo interpretar",
+          text: [config.displayedInterpretation, config.rawInterpretation].filter(Boolean).join("\n")
+        }
+      ]);
+    }
+
+    function createMetricPill(name, value, metricOptions) {
+      const config = metricConfig(name, metricOptions);
+      const level = metricQuality(value, config);
+      const color = qualityColor(level);
+      const valueText = formatScore(value, 2);
+      const el = document.createElement("article");
+      el.className = "metric-pill";
+      el.style.borderLeftColor = color;
+      el.innerHTML = [
+        '<div class="metric-topline">',
+        '<div class="metric-name"></div>',
+        '</div>',
+        '<div class="metric-value"></div>',
+        '<div class="metric-note"></div>',
+        '<div class="metric-scale"></div>'
+      ].join("");
+
+      const metricName = el.querySelector(".metric-name");
+      const metricValue = el.querySelector(".metric-value");
+      const metricNote = el.querySelector(".metric-note");
+      const metricScale = el.querySelector(".metric-scale");
+
+      metricName.textContent = config.label || name;
+      metricValue.textContent = valueText;
+      metricValue.style.color = color;
+      metricNote.textContent = config.definition || "";
+
+      const scale = metricScaleInfo(value, config);
+      if (scale) {
+        const track = document.createElement("div");
+        track.className = "metric-scale-track " + scale.className;
+        const marker = document.createElement("span");
+        marker.className = "metric-scale-marker";
+        marker.style.left = Math.round(scale.marker * 100) + "%";
+        marker.style.background = color;
+        track.appendChild(marker);
+
+        const labels = document.createElement("div");
+        labels.className = "metric-scale-labels";
+        if (scale.center) {
+          labels.innerHTML = "<span></span><span></span><span></span>";
+          const spans = labels.querySelectorAll("span");
+          spans[0].textContent = scale.left;
+          spans[1].textContent = scale.center;
+          spans[2].textContent = scale.right;
+        } else {
+          labels.innerHTML = "<span></span><span></span>";
+          const spans = labels.querySelectorAll("span");
+          spans[0].textContent = scale.left;
+          spans[1].textContent = scale.right;
+        }
+        metricScale.replaceChildren(track, labels);
+      } else {
+        const direction = document.createElement("div");
+        direction.className = "metric-direction";
+        direction.textContent = config.scaleNote || "";
+        metricScale.replaceChildren(direction);
+      }
+
+      const tooltipText = createMetricTooltip(name, value, config);
+      if (tooltipText) {
+        const tip = document.createElement("span");
+        tip.className = "tooltip";
+        tip.dataset.tip = tooltipText;
+        tip.textContent = "i";
+        metricName.appendChild(document.createTextNode(" "));
+        metricName.appendChild(tip);
+      }
+      return el;
+    }
+
+    function renderAxisScore(rootId, label, score, copy) {
+      const root = document.getElementById(rootId);
+      if (!root) return;
+
+      const color = scoreToColor(score);
+      root.style.borderLeftColor = color;
+      root.innerHTML = [
+        '<div>',
+        '<div class="axis-score-label"></div>',
+        '<div class="axis-score-value"></div>',
+        '<div class="axis-score-bar"><div class="axis-score-bar-fill"></div></div>',
+        '</div>',
+        '<div class="axis-score-copy"></div>'
+      ].join("");
+
+      root.querySelector(".axis-score-label").textContent = label;
+      const value = root.querySelector(".axis-score-value");
+      const bar = root.querySelector(".axis-score-bar-fill");
+      const percent = typeof score === "number" && !Number.isNaN(score)
+        ? Math.max(0, Math.min(100, score * 100))
+        : 0;
+      value.textContent = formatScore(score, 2);
+      value.style.color = color;
+      bar.style.background = color;
+      bar.style.width = percent + "%";
+      root.querySelector(".axis-score-copy").textContent = copy;
+    }
+
+    function renderFidelityTvdBars(rows) {
+      const root = document.getElementById("fidelityTvdBars");
+      if (!root) return;
+
+      const prepared = (rows || [])
+        .map((row) => {
+          const rawValue = row.complementary_tvd;
+          const value = rawValue === null || rawValue === undefined || rawValue === ""
+            ? null
+            : Number(rawValue);
+          return {
+            column: row.column || "-",
+            complementary_tvd: Number.isFinite(value) ? value : null
+          };
+        })
+        .sort((a, b) => {
+          const av = a.complementary_tvd === null ? Number.POSITIVE_INFINITY : a.complementary_tvd;
+          const bv = b.complementary_tvd === null ? Number.POSITIVE_INFINITY : b.complementary_tvd;
+          return av - bv;
+        })
+        .slice(0, 15);
+
+      if (!prepared.length) {
+        root.style.display = "none";
+        root.replaceChildren();
+        return;
+      }
+
+      root.style.display = "";
+      const header = document.createElement("div");
+      header.innerHTML = [
+        '<h3 class="visual-title">Peores columnas por TVD complementaria</h3>',
+        '<p class="visual-caption">Se muestran las 15 columnas con menor complementary_tvd. Barras mas cortas indican peor reproduccion de la distribucion.</p>'
+      ].join("");
+
+      const list = document.createElement("div");
+      list.className = "tvd-bars-list";
+
+      prepared.forEach((row) => {
+        const value = row.complementary_tvd;
+        const item = document.createElement("div");
+        item.className = "tvd-bar-row";
+        item.innerHTML = [
+          '<div class="tvd-bar-name"></div>',
+          '<div class="tvd-bar-value"></div>',
+          '<div class="tvd-bar-track"><div class="tvd-bar-fill"></div></div>'
+        ].join("");
+
+        item.querySelector(".tvd-bar-name").textContent = row.column;
+        item.querySelector(".tvd-bar-value").textContent = formatScore(value, 2);
+        const fill = item.querySelector(".tvd-bar-fill");
+        fill.style.width = scorePercent(value) + "%";
+        fill.style.background = scoreToColor(value);
+        list.appendChild(item);
+      });
+
+      root.replaceChildren(header, list);
+    }
+
+    function renderCorrelationDiffHeatmap(matrix) {
+      const root = document.getElementById("correlationDiffHeatmap");
+      if (!root) return;
+
+      const header = document.createElement("div");
+      header.innerHTML = [
+        '<h3 class="visual-title">Diferencias de correlacion</h3>',
+        '<p class="visual-caption">Muestra diferencias entre la estructura de correlaciones real y sintetica. Valores altos indican relaciones entre variables peor preservadas.</p>'
+      ].join("");
+
+      if (!matrix || !Array.isArray(matrix.columns) || !Array.isArray(matrix.values)) {
+        const empty = document.createElement("p");
+        empty.className = "visual-caption corr-empty";
+        empty.textContent = "Matriz de diferencias de correlacion no disponible para esta evaluacion.";
+        root.replaceChildren(header, empty);
+        return;
+      }
+
+      const columns = matrix.columns.slice(0, 20);
+      const values = matrix.values.slice(0, 20).map((row) => row.slice(0, 20));
+
+      const wrap = document.createElement("div");
+      wrap.className = "corr-heatmap";
+
+      const table = document.createElement("table");
+      table.className = "corr-heatmap-table";
+
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      headerRow.appendChild(document.createElement("th"));
+
+      columns.forEach((col) => {
+        const th = document.createElement("th");
+        th.className = "corr-label";
+        th.textContent = col;
+        th.title = "Columna: " + col;
+        headerRow.appendChild(th);
+      });
+
+      thead.appendChild(headerRow);
+
+      const tbody = document.createElement("tbody");
+
+      values.forEach((row, i) => {
+        const tr = document.createElement("tr");
+
+        const rowHeader = document.createElement("th");
+        rowHeader.className = "corr-label";
+        rowHeader.textContent = columns[i];
+        rowHeader.title = "Fila: " + columns[i];
+        tr.appendChild(rowHeader);
+
+        columns.forEach((_, j) => {
+          const td = document.createElement("td");
+          const value = Number(row[j]);
+          td.className = "corr-cell";
+
+          if (!Number.isFinite(value)) {
+            td.textContent = "-";
+            td.style.background = "#edf2f6";
+          } else {
+            td.textContent = formatScore(value, 2);
+            td.style.background =
+              Math.abs(value) < 0.1 ? "#e6f4ec" :
+              Math.abs(value) < 0.25 ? "#fff6df" :
+              Math.abs(value) < 0.5 ? "#f7d9a8" :
+              "#f4b6b6";
+          }
+
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+
+      const children = [header, wrap];
+
+      if (matrix.columns.length > 20) {
+        const note = document.createElement("p");
+        note.className = "visual-caption";
+        note.textContent = "Mostrando las primeras 20 variables.";
+        children.push(note);
+      }
+
+      root.replaceChildren(...children);
+    }
+
+    // Escalas de color: original (gris), sintético (verde),
+    // diferencia (rojo), matriz de exactitud (azul).
+    const HEAT_SCALES = {
+      original: ["#ffffff", "#a7a7a7", "#7b7b7b", "#666666"],
+      synthetic: ["#ffffff", "#81eac3", "#43e0a5", "#24db96"],
+      difference: ["#ffffff", "#ffc7b8", "#ff7a55", "#ff3300"],
+      accuracy: ["#f5f6ff", "#3d4fff"]
+    };
+
+    function hexToRgb(hex) {
+      const h = hex.replace("#", "");
+      return [
+        parseInt(h.slice(0, 2), 16),
+        parseInt(h.slice(2, 4), 16),
+        parseInt(h.slice(4, 6), 16)
+      ];
+    }
+
+    function interpStops(stops, t) {
+      const x = Math.max(0, Math.min(1, t));
+      const seg = x * (stops.length - 1);
+      const i = Math.min(stops.length - 2, Math.floor(seg));
+      const f = seg - i;
+      const a = hexToRgb(stops[i]);
+      const b = hexToRgb(stops[i + 1]);
+      const mix = (j) => Math.round(a[j] + (b[j] - a[j]) * f);
+      return `rgb(${mix(0)}, ${mix(1)}, ${mix(2)})`;
+    }
+
+    function rgbLuminance(rgb) {
+      const m = /(\d+),\s*(\d+),\s*(\d+)/.exec(rgb);
+      if (!m) return 1;
+      const r = Number(m[1]);
+      const g = Number(m[2]);
+      const b = Number(m[3]);
+      return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    }
+
+    function heatColor(value, mode = "difference", scaleMax = 1) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "#edf2f6";
+      const stops = HEAT_SCALES[mode] || HEAT_SCALES.difference;
+      let t;
+      if (mode === "accuracy") {
+        t = (value - 0.8) / 0.2;
+      } else {
+        t = Math.abs(value) / (scaleMax || 1);
+      }
+      return interpStops(stops, t);
+    }
+
+    function renderHeatmapTable(payload, options = {}) {
+      const columns = (payload && payload.columns) || options.xLabels || [];
+      const rows = options.yLabels || columns;
+      const values = (payload && payload.values) || [];
+      const mode = options.mode || "difference";
+      const scaleMax = options.scaleMax || 1;
+      const digits = options.digits ?? 2;
+      const emptyText = options.emptyText || "Sin datos disponibles.";
+
+      const wrap = document.createElement("div");
+      wrap.className = "corr-heatmap";
+
+      if (!columns.length || !rows.length || !values.length) {
+        const empty = document.createElement("p");
+        empty.className = "visual-caption corr-empty";
+        empty.textContent = emptyText;
+        wrap.appendChild(empty);
+        return wrap;
+      }
+
+      const table = document.createElement("table");
+      table.className = "corr-heatmap-table";
+
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      headerRow.appendChild(document.createElement("th"));
+      columns.forEach((col) => {
+        const th = document.createElement("th");
+        th.className = "corr-label";
+        th.textContent = col;
+        th.title = "Columna: " + col;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+
+      const tbody = document.createElement("tbody");
+      rows.forEach((rowLabel, i) => {
+        const tr = document.createElement("tr");
+        const rowHeader = document.createElement("th");
+        rowHeader.className = "corr-label";
+        rowHeader.textContent = rowLabel;
+        rowHeader.title = "Fila: " + rowLabel;
+        tr.appendChild(rowHeader);
+
+        columns.forEach((_, j) => {
+          const td = document.createElement("td");
+          const value = Number((values[i] || [])[j]);
+          td.className = "corr-cell";
+          if (!Number.isFinite(value)) {
+            td.textContent = "-";
+            td.style.background = "#edf2f6";
+          } else {
+            const bg = heatColor(value, mode, scaleMax);
+            td.textContent = formatScore(value, digits);
+            td.style.background = bg;
+            td.style.color = rgbLuminance(bg) < 0.58 ? "#ffffff" : "#122231";
+            td.title = `${rowLabel} / ${columns[j]}: ${formatScore(value, 2)}`;
+          }
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      return wrap;
+    }
+
+    function renderCorrelationMatrices(correlations) {
+      const root = document.getElementById("correlationMatricesGrid");
+      if (!root) return;
+
+      const items = [
+        ["Original", correlations && correlations.real, "original"],
+        ["Sintético", correlations && correlations.synthetic, "synthetic"],
+        ["Diferencia", correlations && correlations.absolute_difference, "difference"]
+      ];
+
+      root.replaceChildren(
+        ...items.map(([title, payload, mode]) => {
+          const card = document.createElement("article");
+          card.className = "matrix-card";
+          const h = document.createElement("h4");
+          h.textContent = title;
+          card.appendChild(h);
+          card.appendChild(renderHeatmapTable(payload, { mode, digits: 2 }));
+          return card;
+        })
+      );
+    }
+
+    function renderAccuracyMatrix(matrix) {
+      const root = document.getElementById("accuracyMatrixHeatmap");
+      if (!root) return;
+      const card = document.createElement("article");
+      card.className = "matrix-card plot-card-wide";
+      const h = document.createElement("h4");
+      h.textContent = "1-TVD matrix";
+      const p = document.createElement("p");
+      p.className = "visual-caption";
+      p.textContent = "La diagonal contiene 1-TVD univariante; el resto contiene 1-TVD bivariante por par de columnas.";
+      card.appendChild(h);
+      card.appendChild(p);
+      card.appendChild(renderHeatmapTable(matrix, { mode: "accuracy", digits: 2 }));
+      root.replaceChildren(card);
+    }
+
+    function renderDistAccuracySummary(summary) {
+      const root = document.getElementById("distComparisonAccuracy");
+      if (!root) return;
+      const families = ["univariate", "bivariate", "trivariate"];
+      const means = families.map((f) => ((summary || {})[f] || {}).mean_1_tvd);
+      const overall = means.filter((v) => typeof v === "number" && !Number.isNaN(v));
+      const overallMean = overall.length
+        ? overall.reduce((a, b) => a + b, 0) / overall.length
+        : null;
+      const labels = {
+        univariate: "Univariante",
+        bivariate: "Bivariante",
+        trivariate: "Trivariante"
+      };
+
+      const overallBox = document.createElement("div");
+      overallBox.className = "dist-acc-overall";
+      overallBox.innerHTML = [
+        '<div class="dist-acc-overall-label">Exactitud (1-TVD)</div>',
+        '<div class="dist-acc-overall-value"></div>'
+      ].join("");
+      overallBox.querySelector(".dist-acc-overall-value").textContent =
+        formatScore(overallMean, 2);
+
+      const sep = document.createElement("div");
+      sep.className = "dist-acc-sep";
+
+      const breakdown = document.createElement("div");
+      breakdown.className = "dist-acc-breakdown";
+      families.forEach((family, idx) => {
+        const k = document.createElement("span");
+        k.className = "k";
+        const row = (summary || {})[family] || {};
+        const n = typeof row.n === "number" ? ` (${row.n})` : "";
+        k.textContent = labels[family] + n;
+        const v = document.createElement("span");
+        v.className = "v";
+        v.textContent = formatScore(means[idx], 2);
+        v.style.color = scoreToColor(means[idx]);
+        breakdown.appendChild(k);
+        breakdown.appendChild(v);
+      });
+
+      root.replaceChildren(overallBox, sep, breakdown);
+    }
+
+    function renderAccuracyByColumnTable(table, summary) {
+      const rows = (table || []).map((row) => ({
+        column: row.column,
+        univariate: row.univariate,
+        bivariate: row.bivariate,
+        trivariate: row.trivariate
+      }));
+      const totalRow = {
+        column: "Total",
+        univariate: ((summary || {}).univariate || {}).mean_1_tvd,
+        bivariate: ((summary || {}).bivariate || {}).mean_1_tvd,
+        trivariate: ((summary || {}).trivariate || {}).mean_1_tvd
+      };
+
+      const fmtScored = (v) => {
+        const span = document.createElement("span");
+        span.textContent = formatScore(v, 2);
+        if (typeof v === "number" && !Number.isNaN(v)) {
+          span.style.color = scoreToColor(v);
+          span.style.fontWeight = "800";
+        }
+        return span;
+      };
+
+      renderSimpleTable(
+        "accuracyByColumnTable",
+        [...rows, totalRow],
+        [
+          { key: "column", label: "Columna" },
+          { key: "univariate", label: "Univariante" },
+          { key: "bivariate", label: "Bivariante" },
+          { key: "trivariate", label: "Trivariante" }
+        ],
+        {
+          formatters: {
+            univariate: fmtScored,
+            bivariate: fmtScored,
+            trivariate: fmtScored
+          }
+        }
+      );
+    }
+
+    function destroyDistributionCharts() {
+      (window.__distributionCharts || []).forEach((chart) => chart.destroy());
+      window.__distributionCharts = [];
+    }
+
+    function renderUnivariateDistributionPlots(plots) {
+      const root = document.getElementById("univariateDistributionPlots");
+      if (!root) return;
+      const rows = plots || [];
+      if (!rows.length) {
+        const empty = document.createElement("p");
+        empty.className = "visual-caption corr-empty";
+        empty.textContent = "No hay distribuciones univariantes disponibles.";
+        root.replaceChildren(empty);
+        return;
+      }
+
+      const cards = rows.map((plot, index) => {
+        const card = document.createElement("article");
+        card.className = "dist-card";
+        card.innerHTML = [
+          '<div class="dist-card-title"></div>',
+          '<div class="dist-mini-chart"><canvas></canvas></div>'
+        ].join("");
+
+        const title = card.querySelector(".dist-card-title");
+        title.textContent = plot.column || "-";
+        if (typeof plot.one_minus_tvd === "number") {
+          const acc = document.createElement("span");
+          acc.className = "dist-acc";
+          acc.textContent = formatScore(plot.one_minus_tvd, 2);
+          title.appendChild(acc);
+        }
+
+        const canvas = card.querySelector("canvas");
+        canvas.id = `univariateDistributionChart${index}`;
+        if (window.Chart) {
+          const chart = new Chart(canvas, {
+            type: "line",
+            data: {
+              labels: plot.labels || [],
+              datasets: [
+                {
+                  label: "Original",
+                  data: plot.real || [],
+                  borderColor: "#666666",
+                  backgroundColor: "#666666",
+                  borderWidth: 1.6,
+                  pointRadius: 2.5,
+                  pointStyle: "rectRot",
+                  fill: false,
+                  tension: 0
+                },
+                {
+                  label: "Sintético",
+                  data: plot.synthetic || [],
+                  borderColor: "#24db96",
+                  backgroundColor: "#ffeded",
+                  borderWidth: 1.6,
+                  pointRadius: 2.5,
+                  pointStyle: "rectRot",
+                  fill: "-1",
+                  tension: 0
+                }
+              ]
+            },
+            options: {
+              maintainAspectRatio: false,
+              interaction: { mode: "index", intersect: false },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: (ctx) => `${ctx.dataset.label}: ${formatScore(ctx.raw, 2)}`
+                  }
+                }
+              },
+              scales: {
+                x: {
+                  grid: { display: false },
+                  ticks: {
+                    maxRotation: 60,
+                    minRotation: 0,
+                    autoSkip: true,
+                    font: { size: 8 },
+                    color: "#8aa0b2"
+                  }
+                },
+                y: {
+                  beginAtZero: true,
+                  grid: { color: "#edf2f6" },
+                  ticks: {
+                    font: { size: 8 },
+                    color: "#8aa0b2",
+                    callback: (value) => formatScore(Number(value), 2)
+                  }
+                }
+              }
+            }
+          });
+          window.__distributionCharts.push(chart);
+        }
+        return card;
+      });
+
+      root.replaceChildren(...cards);
+    }
+
+    function bivariateMatrixPayload(matrix) {
+      return { values: matrix || [] };
+    }
+
+    function renderBivariateDistributionPlots(plots) {
+      const root = document.getElementById("bivariateDistributionPlots");
+      if (!root) return;
+      const rows = plots || [];
+      if (!rows.length) {
+        const empty = document.createElement("p");
+        empty.className = "visual-caption corr-empty";
+        empty.textContent = "No hay distribuciones bivariantes disponibles.";
+        root.replaceChildren(empty);
+        return;
+      }
+
+      const cards = rows.map((plot) => {
+        const card = document.createElement("article");
+        card.className = "dist-card";
+
+        const title = document.createElement("div");
+        title.className = "dist-card-title";
+        title.textContent = (plot.columns || []).join("  ~  ");
+        if (typeof plot.one_minus_tvd === "number") {
+          const acc = document.createElement("span");
+          acc.className = "dist-acc";
+          acc.textContent = formatScore(plot.one_minus_tvd, 2);
+          title.appendChild(acc);
+        }
+
+        const flatten = (matrix) => (matrix || []).flat().filter((v) => typeof v === "number");
+        const sharedMax = Math.max(
+          0.0001,
+          ...flatten(plot.real),
+          ...flatten(plot.synthetic)
+        );
+
+        const pair = document.createElement("div");
+        pair.className = "biv-pair";
+        [
+          ["original", plot.real, "original"],
+          ["sintético", plot.synthetic, "synthetic"]
+        ].forEach(([label, values, mode]) => {
+          const cell = document.createElement("div");
+          cell.className = "biv-pair-cell";
+          const h5 = document.createElement("h5");
+          h5.textContent = label;
+          cell.appendChild(h5);
+          cell.appendChild(renderHeatmapTable(
+            bivariateMatrixPayload(values),
+            {
+              xLabels: plot.x_labels || [],
+              yLabels: plot.y_labels || [],
+              mode,
+              scaleMax: sharedMax,
+              digits: 3
+            }
+          ));
+          pair.appendChild(cell);
+        });
+
+        card.appendChild(title);
+        card.appendChild(pair);
+        return card;
+      });
+
+      root.replaceChildren(...cards);
+    }
+
+    function renderDistributionComparison(details) {
+      const comparison = (details || {}).distribution_comparison || {};
+      destroyDistributionCharts();
+      renderDistAccuracySummary(comparison.summary || {});
+      renderCorrelationMatrices(comparison.correlations || (details || {}).correlation_matrices || {});
+      renderUnivariateDistributionPlots(comparison.univariate_plots || []);
+      renderBivariateDistributionPlots(comparison.bivariate_plots || []);
+      renderAccuracyByColumnTable(comparison.accuracy_table || [], comparison.summary || {});
+      renderAccuracyMatrix(comparison.accuracy_matrix || {});
+    }
+
+    function chartValue(value) {
+      return typeof value === "number" && Number.isFinite(value) ? value : null;
+    }
+
+    function renderUtilityComparisonChart(summary) {
+      if (!window.Chart) return;
+
+      const linearCanvas = document.getElementById("linearUtilityChart");
+      const mlpCanvas = document.getElementById("mlpUtilityChart");
+      if (!linearCanvas && !mlpCanvas) return;
+
+      (window.__utilityModelCharts || []).forEach((chart) => chart.destroy());
+      window.__utilityModelCharts = [];
+
+      const axisColor = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
+      const infoColor = getComputedStyle(document.documentElement).getPropertyValue("--info").trim();
+      const goodColor = getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+      const midColor = getComputedStyle(document.documentElement).getPropertyValue("--mid").trim();
+
+      const makeChart = (canvas, title, values) => {
+        if (!canvas) return;
+        const chart = new Chart(canvas, {
+          type: "bar",
+          data: {
+            labels: ["Real / GT", "Sintético ID"],
+            datasets: [
+              {
+                label: title,
+                data: values.map(chartValue),
+                backgroundColor: [
+                  "rgba(47, 108, 179, 0.72)",
+                  "rgba(31, 143, 95, 0.72)"
+                ],
+                borderColor: [infoColor, goodColor],
+                borderWidth: 1
+              }
+            ]
+          },
+          options: {
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (context) => title + ": " + formatScore(context.raw, 2),
+                  afterTitle: (items) => {
+                    const label = items && items[0] ? items[0].label : "";
+                    if (label === "Real / GT") return "Referencia con datos reales";
+                    if (label === "Sintético ID") return "Entrenado con sintéticos y evaluado en distribución";
+                    return "";
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: { color: axisColor }
+              },
+              y: {
+                beginAtZero: true,
+                suggestedMax: 1,
+                ticks: {
+                  color: axisColor,
+                  callback: (value) => formatScore(Number(value), 2)
+                }
+              }
+            }
+          }
+        });
+        window.__utilityModelCharts.push(chart);
+      };
+
+      makeChart(
+        linearCanvas,
+        "Modelo lineal",
+        [summary.linear_gt, summary.linear_syn_id]
+      );
+      makeChart(
+        mlpCanvas,
+        "MLP",
+        [summary.mlp_gt, summary.mlp_syn_id]
+      );
+    }
+
+    function penaltyToColor(value) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "var(--muted)";
+      if (value <= 0.05) return getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+      if (value <= 0.12) return getComputedStyle(document.documentElement).getPropertyValue("--mid").trim();
+      return getComputedStyle(document.documentElement).getPropertyValue("--bad").trim();
+    }
+
+    function createScoreBreakdownCard(label, value, note, options = {}) {
+      const color = options.isPenalty
+        ? penaltyToColor(value)
+        : scoreToColor(typeof value === "number" ? value : 0);
+      const card = document.createElement("article");
+      card.className = "score-breakdown-card";
+      card.style.borderTopColor = color;
+      card.innerHTML = [
+        '<div class="score-breakdown-label"></div>',
+        '<div class="score-breakdown-value"></div>',
+        '<div class="score-breakdown-note"></div>'
+      ].join("");
+
+      card.querySelector(".score-breakdown-label").textContent = label;
+      const valueEl = card.querySelector(".score-breakdown-value");
+      valueEl.textContent = formatScore(value, 2);
+      valueEl.style.color = color;
+      card.querySelector(".score-breakdown-note").textContent = note;
+      return card;
+    }
+
+    function renderPrivacyScoreBreakdown(scores) {
+      const root = document.getElementById("privacyScoreBreakdown");
+      if (!root) return;
+
+      const finalScore = scores.privacy_score;
+      const baseScore = typeof scores.privacy_base_score === "number" ? scores.privacy_base_score : finalScore;
+      const penalty = typeof scores.privacy_penalty === "number"
+        ? scores.privacy_penalty
+        : (
+          typeof baseScore === "number" && typeof finalScore === "number"
+            ? Math.max(0, baseScore - finalScore)
+            : null
+        );
+
+      root.replaceChildren(
+        createScoreBreakdownCard("privacy_base_score", baseScore, "Media base de las metricas internas de privacidad."),
+        createScoreBreakdownCard(
+          "privacy_penalty",
+          penalty,
+          "Ajuste aplicado por k-anonymity bajo.",
+          { isPenalty: true }
+        ),
+        createScoreBreakdownCard("privacy_score", finalScore, "Score final usado en el resumen global.")
+      );
+    }
+
+    function decorateStatus(status) {
+      const val = String(status || "unknown").toLowerCase();
+      const color = val.includes("complete") ? "var(--good)" : val.includes("running") ? "var(--mid)" : "var(--bad)";
+      const bg = val.includes("complete") ? "#e6f4ec" : val.includes("running") ? "#fff6df" : "#fde9e9";
+      return { color, bg, label: val };
+    }
+
+    function renderSimpleTable(tableId, rows, columns, options = {}) {
+      const table = document.getElementById(tableId);
+      if (!table) return;
+
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      columns.forEach((col) => {
+        const th = document.createElement("th");
+        th.textContent = col.label;
+        th.classList.add("sortable");
+        th.dataset.key = col.key;
+        if (col.tooltip) {
+          th.title = col.tooltip;
+          th.style.cursor = "help";
+          const info = document.createElement("span");
+          info.textContent = " ⓘ";
+          info.style.opacity = "0.6";
+          th.appendChild(info);
+        }
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+
+      const tbody = document.createElement("tbody");
+      rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        columns.forEach((col) => {
+          const td = document.createElement("td");
+          let value = row[col.key];
+          if (options.formatters && typeof options.formatters[col.key] === "function") {
+            value = options.formatters[col.key](value, row);
+          }
+          if (value instanceof Node) {
+            td.appendChild(value);
+          } else if (typeof value === "number" && Number.isFinite(value)) {
+            td.textContent = formatScore(value, 2);
+          } else {
+            td.textContent = value === undefined || value === null ? "-" : String(value);
+          }
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      table.replaceChildren(thead, tbody);
+      enableTableSorting(table, rows, columns, options);
+    }
+
+    function enableTableSorting(table, originalRows, columns, options = {}) {
+      const headers = Array.from(table.querySelectorAll("th.sortable"));
+      let direction = 1;
+      let activeKey = null;
+
+      headers.forEach((th) => {
+        th.addEventListener("click", () => {
+          const key = th.dataset.key;
+          direction = activeKey === key ? direction * -1 : 1;
+          activeKey = key;
+          const sorted = [...originalRows].sort((a, b) => {
+            const av = parseMaybeNumber(a[key]);
+            const bv = parseMaybeNumber(b[key]);
+            if (typeof av === "number" && typeof bv === "number") {
+              return direction * (av - bv);
+            }
+            return direction * String(av).localeCompare(String(bv));
+          });
+          renderSimpleTable(table.id, sorted, columns, options);
+        });
+      });
+    }
+
+    function renderTrainingParameters(metadata) {
+      const grid = document.getElementById("trainingParametersGrid");
+      if (!grid) return;
+
+      const training = metadata.training_parameters || {};
+
+      const modelType = training.model_type || "No disponible";
+      const modelTypeFullName = training.model_type_full_name || "";
+      const modelSize = training.model_size || "-";
+      const epsilon = training.epsilon === null || training.epsilon === undefined
+        ? "Sin DP"
+        : training.epsilon;
+      const flexibleGeneration = training.flexible_generation === null || training.flexible_generation === undefined
+        ? "-"
+        : (training.flexible_generation ? "Sí" : "No");
+      const modelingConfig = training.modeling_configuration || {};
+      const formatMode = (mode) => {
+        if (!mode) {
+          return "No disponible";
+        }
+        if (mode === "sequential") {
+          return "Secuencial";
+        }
+        if (mode === "flat") {
+          return "Plano";
+        }
+        if (mode === "mixed") {
+          return "Mixto";
+        }
+        if (mode === "auto") {
+          return "Auto";
+        }
+        if (mode === "backend_default") {
+          return "Backend default";
+        }
+        return String(mode);
+      };
+      const modelingMode = formatMode(
+        training.modeling_mode || modelingConfig.detected_modeling_mode
+      );
+
+      const params = [
+        [
+          "Tipo de modelo",
+          modelType,
+          "Arquitectura generativa tabular usada por MostlyAI. TabularARGN significa Tabular Auto-Regressive Generative Network. Es un modelo auto-regresivo para datos tabulares que aprende distribuciones condicionadas entre columnas y permite generar registros sintéticos conservando relaciones estadísticas del dataset original." + (modelTypeFullName ? "\n\nNombre técnico: " + modelTypeFullName : "")
+        ],
+        [
+          "Modo de modelado",
+          modelingMode,
+          "Indica si el modelo entrenado preserva la estructura secuencial / longitudinal (contexto entre filas) o si se trata de un modelo plano."
+        ],
+        [
+          "Tamaño del Modelo",
+          modelSize,
+          "Capacidad del modelo generativo. Modelos mayores pueden capturar relaciones más complejas pero requieren más datos y computación."
+        ],
+        [
+          "Epsilon",
+          epsilon,
+          "Parámetro de privacidad diferencial. Valores menores implican mayor privacidad pero más ruido. 'Sin DP' significa que no se aplicó privacidad diferencial explícita."
+        ],
+        [
+          "Generación Flexible",
+          flexibleGeneration,
+          "Si el generador permite generación flexible/condicional. Mejora versatilidad pero puede reducir ligeramente la fidelidad en algunos casos."
+        ]
+      ];
+
+      grid.replaceChildren(...params.map((x) => {
+        const card = document.createElement("article");
+        card.className = "training-param-card";
+        card.innerHTML = '<div class="training-param-label"></div><div class="training-param-value"></div>';
+
+        const label = card.querySelector(".training-param-label");
+        label.textContent = x[0];
+
+        if (x[2]) {
+          const tip = document.createElement("span");
+          tip.className = "tooltip";
+          tip.dataset.tip = x[2];
+          tip.textContent = "i";
+          label.appendChild(document.createTextNode(" "));
+          label.appendChild(tip);
+        }
+
+        card.querySelector(".training-param-value").textContent = x[1];
+        return card;
+      }));
+    }
+
+    function renderMetadataGrid(metadata) {
+      const grid = document.getElementById("metadataGrid");
+      if (!grid) return;
+
+      const fields = [
+        [
+          "ID de Evaluación",
+          metadata.evaluation_id || "-",
+          "Identificador único para esta evaluación."
+        ],
+        [
+          "ID del Modelo",
+          metadata.model_id || "-",
+          "Identificador del modelo/generador entrenado."
+        ],
+        [
+          "ID de la Simulación",
+          metadata.simulation_id || "-",
+          "Identificador de la generación de datos sintéticos evaluada."
+        ],
+        [
+          "Marca de Tiempo",
+          formatDate(metadata.timestamp || metadata.evaluation_id),
+          "Fecha y hora de la evaluación."
+        ],
+        [
+          "Estado",
+          metadata.status || "-",
+          "Estado final de la evaluación."
+        ]
+      ];
+
+      grid.replaceChildren(...fields.map((x) => createField(x[0], x[1], x[2])));
+    }
+
+    function renderHeader(metadata) {
+      const statusBadge = document.getElementById("headerStatus");
+      const statusView = decorateStatus(metadata.status);
+      const previewNotice = document.getElementById("previewNotice");
+
+      statusBadge.textContent = statusView.label;
+      statusBadge.style.color = statusView.color;
+      statusBadge.style.background = statusView.bg;
+      statusBadge.style.borderColor = statusView.color;
+
+      if (previewNotice) {
+        previewNotice.textContent = "";
+        previewNotice.classList.remove("visible");
+      }
+
+      renderTrainingParameters(metadata);
+      renderMetadataGrid(metadata);
+      renderEvaluatedTableBanner(metadata);
+    }
+
+    function renderEvaluatedTableBanner(metadata) {
+      const banner = document.getElementById("evaluatedTableBanner");
+      if (!banner) return;
+      const params = (metadata && metadata.evaluation_parameters) || {};
+      const table = params.evaluated_table;
+      if (!table) {
+        banner.hidden = true;
+        return;
+      }
+      banner.hidden = false;
+      banner.replaceChildren();
+      const strong = document.createElement("strong");
+      strong.textContent = table;
+      banner.append(
+        document.createTextNode("Esta evaluación se realizó sobre la tabla "),
+        strong,
+        document.createTextNode(
+          ". La fidelidad, la privacidad y la utilidad predictiva se calculan solo sobre esa tabla."
+        )
+      );
+    }
+
+    function globalFormulaText(scores) {
+      if (
+        isValidNumber(scores.global_score) &&
+        isValidNumber(scores.fidelity_score) &&
+        isValidNumber(scores.privacy_score) &&
+        Math.abs(scores.global_score - ((scores.fidelity_score + scores.privacy_score) / 2)) < 0.000001
+      ) {
+        return "Balance Fidelidad/Privacidad = 50% Fidelidad + 50% Privacidad";
+      }
+      return "Balance Fidelidad/Privacidad calculado combinando Fidelidad y Privacidad.";
+    }
+
+    function createGlobalScoreCard(scores) {
+      const score = scores.global_score;
+      const color = getComputedStyle(document.documentElement).getPropertyValue("--balance").trim();
+      const card = document.createElement("article");
+      card.className = "global-score-card";
+      card.style.borderLeftColor = color;
+      card.innerHTML = [
+        '<div class="global-score-main">',
+        '<div>',
+        '<h3 class="global-score-title"></h3>',
+        '<div class="global-score-copy"></div>',
+        '</div>',
+        '<div class="global-score-value"></div>',
+        '</div>',
+        '<div class="score-scale"><div class="score-scale-bar"></div></div>'
+      ].join("");
+
+      const title = card.querySelector(".global-score-title");
+      const value = card.querySelector(".global-score-value");
+      const copy = card.querySelector(".global-score-copy");
+      const bar = card.querySelector(".score-scale-bar");
+
+      title.textContent = "Balance Fidelidad/Privacidad";
+      const tip = document.createElement("span");
+      tip.className = "tooltip";
+      tip.dataset.tip = tooltipSections([
+        {
+          title: "Qué mide",
+          text: "Resume la calidad global del dataset sintético a partir de Fidelidad y Privacidad."
+        },
+        {
+          title: "Valores altos",
+          text: "Indican mejor balance entre parecido estadístico y menor riesgo de privacidad."
+        },
+        {
+          title: "Nota",
+          text: "La Utilidad se muestra como información adicional y no participa en este balance."
+        }
+      ]);
+      tip.textContent = "i";
+      title.appendChild(tip);
+
+      value.textContent = formatScore(score, 2);
+      value.style.color = color;
+      copy.textContent = "Resume el equilibrio entre fidelidad y privacidad del dataset sintético. La utilidad se muestra como información complementaria y no participa en este balance.";
+      bar.style.background = color;
+      bar.style.width = scorePercent(score) + "%";
+
+      return card;
+    }
+
+    function createContributionBar(label, value, description, color) {
+      const card = document.createElement("article");
+      card.className = "contribution-card";
+      card.style.borderLeftColor = color;
+      card.innerHTML = [
+        '<div class="contribution-head">',
+        '<div class="contribution-label"></div>',
+        '<div class="contribution-value"></div>',
+        '</div>',
+        '<div class="contribution-description"></div>',
+        '<div class="contribution-track"><div class="contribution-fill"></div></div>'
+      ].join("");
+
+      card.querySelector(".contribution-label").textContent = label;
+      const valueEl = card.querySelector(".contribution-value");
+      valueEl.textContent = formatScore(value, 2);
+      valueEl.style.color = color;
+      card.querySelector(".contribution-description").textContent = description;
+      const fill = card.querySelector(".contribution-fill");
+      fill.style.background = color;
+      fill.style.width = scorePercent(value) + "%";
+      return card;
+    }
+
+    function createBalancePanel(fidelityScore, privacyScore) {
+      if (!isValidNumber(fidelityScore) || !isValidNumber(privacyScore) || fidelityScore + privacyScore <= 0) {
+        return null;
+      }
+
+      const panel = document.createElement("div");
+      panel.className = "balance-panel";
+      panel.innerHTML = [
+        '<div class="balance-title">Balance relativo entre Fidelidad y Privacidad (ayuda visual; no es una métrica nueva).</div>',
+        '<div class="balance-track"><span class="balance-marker"></span></div>',
+        '<div class="balance-labels"><span>Más fidelidad</span><span>Más privacidad</span></div>'
+      ].join("");
+
+      const privacyShare = privacyScore / (fidelityScore + privacyScore);
+      panel.querySelector(".balance-marker").style.left = Math.round(privacyShare * 100) + "%";
+      return panel;
+    }
+
+    function createContributionPanel(scores) {
+      const panel = document.createElement("section");
+      panel.className = "global-contribution-panel";
+
+      const formula = document.createElement("div");
+      formula.className = "global-formula";
+      formula.textContent = globalFormulaText(scores);
+
+      const grid = document.createElement("div");
+      grid.className = "contribution-grid";
+
+      if (isValidNumber(scores.fidelity_score)) {
+        grid.appendChild(createContributionBar(
+          "Fidelidad",
+          scores.fidelity_score,
+          "Contribuye al Balance Fidelidad/Privacidad. Mide el parecido estadístico entre el dataset real y el sintético.",
+          getComputedStyle(document.documentElement).getPropertyValue("--info").trim()
+        ));
+      }
+
+      if (isValidNumber(scores.privacy_score)) {
+        grid.appendChild(createContributionBar(
+          "Privacidad",
+          scores.privacy_score,
+          "Contribuye al Balance Fidelidad/Privacidad. Mide el riesgo de re-identificación o fuga de información.",
+          getComputedStyle(document.documentElement).getPropertyValue("--good").trim()
+        ));
+      }
+
+      const children = [formula, grid];
+      const balance = createBalancePanel(scores.fidelity_score, scores.privacy_score);
+      if (balance) children.push(balance);
+      panel.replaceChildren(...children);
+      return panel;
+    }
+
+    function createSupplementaryUtilityMetricCard(titleText, value, subtitleText, tooltipText, color) {
+      if (!isValidNumber(value)) return null;
+
+      const card = document.createElement("article");
+      card.className = "supplementary-score-card";
+      card.style.borderLeftColor = color;
+      card.innerHTML = [
+        '<div class="score-title"></div>',
+        '<div class="score-value"></div>',
+        '<div class="score-subtitle"></div>',
+        '<div class="score-scale"><div class="score-scale-bar"></div></div>'
+      ].join("");
+
+      const title = card.querySelector(".score-title");
+      title.textContent = titleText;
+      if (tooltipText) {
+        const tip = document.createElement("span");
+        tip.className = "tooltip";
+        tip.dataset.tip = tooltipText;
+        tip.textContent = "i";
+        title.appendChild(document.createTextNode(" "));
+        title.appendChild(tip);
+      }
+
+      const valueEl = card.querySelector(".score-value");
+      valueEl.textContent = formatScore(value, 2);
+      valueEl.style.color = color;
+      card.querySelector(".score-subtitle").textContent = subtitleText;
+      const bar = card.querySelector(".score-scale-bar");
+      bar.style.background = color;
+      bar.style.width = scorePercent(value) + "%";
+      return card;
+    }
+
+    function createSupplementaryUtilityCards(scores) {
+      const utility = (((window.__reportData || {}).summary || {}).utility || {});
+      const utilityDetails = (((window.__reportData || {}).details || {}).utility || {});
+      const utilityTestsSummary = utilityDetails.utility_tests_summary || {};
+      // Predictive facet only — never borrow the combined utility_score, or a
+      // failed/absent predictive run would falsely display the statistical score.
+      const predictiveValue = scores.utility_relative_score;
+      const statisticalValue = isValidNumber(utility.utility_tests_score)
+        ? utility.utility_tests_score
+        : utilityTestsSummary.score;
+
+      const predictiveColor = getComputedStyle(document.documentElement).getPropertyValue("--utility").trim();
+      const statisticalColor = getComputedStyle(document.documentElement).getPropertyValue("--mid").trim();
+
+      const predictiveCard = createSupplementaryUtilityMetricCard(
+        "Utilidad predictiva relativa",
+        predictiveValue,
+        "Dimensión complementaria. Evalúa si los datos sintéticos siguen siendo útiles para entrenar modelos predictivos. No incluida en el Balance Fidelidad/Privacidad.",
+        tooltipSections([
+          {
+            title: "Qué mide",
+            text: "Evalúa si los datos sintéticos siguen siendo útiles para entrenar modelos predictivos."
+          },
+          {
+            title: "Interpretación",
+            text: "Un valor cercano a 1 indica que el rendimiento con sintéticos se aproxima al rendimiento con datos reales."
+          },
+          {
+            title: "Valor mostrado",
+            text: formatScore(predictiveValue, 2)
+          },
+          {
+            title: "Nota",
+            text: "Dimensión informativa. No incluida en el Balance Fidelidad/Privacidad."
+          }
+        ]),
+        predictiveColor
+      );
+
+      const statisticalCard = createSupplementaryUtilityMetricCard(
+        "Utilidad estadística",
+        statisticalValue,
+        "Dimensión complementaria. Compara indicadores definidos por el usuario entre el dataset real y el sintético. No incluida en el Balance Fidelidad/Privacidad.",
+        tooltipSections([
+          {
+            title: "Qué mide",
+            text: "Compara indicadores estadísticos definidos por el usuario, como proporciones, medias, conteos, únicos o tasas."
+          },
+          {
+            title: "Interpretación",
+            text: "Valores altos indican que los indicadores calculados sobre el sintético se aproximan a los del dataset real."
+          },
+          {
+            title: "Valor mostrado",
+            text: formatScore(statisticalValue, 2)
+          },
+          {
+            title: "Nota",
+            text: "Dimensión informativa. No incluida en el Balance Fidelidad/Privacidad."
+          }
+        ]),
+        statisticalColor
+      );
+
+      const cards = [predictiveCard, statisticalCard].filter(Boolean);
+      if (!cards.length) return null;
+
+      const grid = document.createElement("section");
+      grid.className = "supplementary-utility-grid";
+      grid.replaceChildren(...cards);
+      return grid;
+    }
+
+    function renderScores(scores) {
+      const root = document.getElementById("scoreCards");
+      if (!root) return;
+
+      root.className = "global-summary";
+      const children = [
+        createGlobalScoreCard(scores),
+        createContributionPanel(scores)
+      ];
+      const utilityCards = createSupplementaryUtilityCards(scores);
+      if (utilityCards) children.push(utilityCards);
+      root.replaceChildren(...children);
+    }
+
+    function renderAxisQuestions(scores) {
+      const root = document.getElementById("interpretationHelp");
+      if (!root) return;
+      const data = window.__combinedReportData || {};
+      const order = Array.isArray(data.table_order) ? data.table_order : [];
+      root.replaceChildren();
+      if (!order.length) return;
+      const note = document.createElement("p");
+      note.className = "global-mean-note";
+      const tablesText = order.length === 1
+        ? "la tabla evaluada"
+        : "las " + order.length + " tablas evaluadas";
+      note.append(
+        document.createTextNode("Las puntuaciones globales son la "),
+        Object.assign(document.createElement("strong"), { textContent: "media no ponderada" }),
+        document.createTextNode(" de " + tablesText + " (" + order.join(", ") + "): cada tabla pesa igual, sin importar su tamaño, y pueden no ser todas las tablas generadas. En cada eje, usa el desplegable para ver el detalle por tabla.")
+      );
+      root.append(note);
+    }
+
+    function addInsight(insights, condition, text, level = "info") {
+      if (condition && insights.length < 6) {
+        insights.push({ text, level });
+      }
+    }
+
+    function insightColor(level) {
+      if (level === "good") return getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+      if (level === "warning") return getComputedStyle(document.documentElement).getPropertyValue("--mid").trim();
+      if (level === "bad") return getComputedStyle(document.documentElement).getPropertyValue("--bad").trim();
+      return getComputedStyle(document.documentElement).getPropertyValue("--info").trim();
+    }
+
+    function renderKeyInsights(scores) {
+      const root = document.getElementById("keyInsights");
+      if (!root) return;
+
+      // Predictive facet only (see renderUtility): no fallback to utility_score.
+      const utilityRelativeScore = scores.utility_relative_score;
+      const insights = [];
+
+      addInsight(insights, scores.fidelity_score >= 0.75, "Buena fidelidad global.", "good");
+      addInsight(
+        insights,
+        scores.fidelity_structure_score < 0.5,
+        "Las relaciones entre variables parecen degradadas.",
+        "bad"
+      );
+      addInsight(
+        insights,
+        scores.privacy_penalty > 0.1,
+        "Hay penalizacion de privacidad por empeoramiento de k-anonymity.",
+        "warning"
+      );
+      addInsight(
+        insights,
+        scores.privacy_score >= 0.75,
+        "Riesgo de privacidad global bajo segun las metricas agregadas.",
+        "good"
+      );
+      addInsight(
+        insights,
+        utilityRelativeScore >= 0.9,
+        "La utilidad sintetica se mantiene cercana a la real.",
+        "good"
+      );
+      addInsight(
+        insights,
+        utilityRelativeScore < 0.75,
+        "La utilidad predictiva se degrada de forma relevante.",
+        "warning"
+      );
+
+      addInsight(
+        insights,
+        insights.length < 3 && scores.fidelity_score < 0.75,
+        "Fidelidad global moderada; conviene revisar las columnas peor reproducidas.",
+        "warning"
+      );
+      addInsight(
+        insights,
+        insights.length < 3 && scores.privacy_penalty <= 0.1,
+        "La penalizacion de privacidad es baja.",
+        "good"
+      );
+      addInsight(
+        insights,
+        insights.length < 3 && utilityRelativeScore >= 0.75 && utilityRelativeScore < 0.9,
+        "La utilidad relativa se mantiene en un rango aceptable.",
+        "info"
+      );
+
+      // Surface notable per-table warnings so the unified summary flags issues
+      // that the cross-table mean would otherwise hide (e.g. one weak table).
+      const tables = (window.__combinedReportData || {}).tables || {};
+      const order = (window.__combinedReportData || {}).table_order || Object.keys(tables);
+      const tableWarnings = [];
+      order.forEach((name) => {
+        const ts = (tables[name] || {}).scores || {};
+        if (ts.fidelity_score != null && ts.fidelity_score < 0.5) {
+          tableWarnings.push({ text: name + ": fidelidad baja (" + formatScore(ts.fidelity_score, 2) + ").", level: "bad" });
+        }
+        if (ts.privacy_score != null && ts.privacy_score < 0.5) {
+          tableWarnings.push({ text: name + ": riesgo de privacidad elevado (" + formatScore(ts.privacy_score, 2) + ").", level: "bad" });
+        }
+        if (ts.utility_relative_score != null && ts.utility_relative_score < 0.6) {
+          tableWarnings.push({ text: name + ": utilidad predictiva degradada (" + formatScore(ts.utility_relative_score, 2) + ").", level: "warning" });
+        }
+      });
+
+      const combined = insights.slice(0, 4).concat(tableWarnings);
+
+      root.replaceChildren(
+        ...combined.slice(0, 10).map((insight) => {
+          const card = document.createElement("article");
+          card.className = "insight-card";
+          card.style.borderLeftColor = insightColor(insight.level);
+          card.textContent = insight.text;
+          return card;
+        })
+      );
+    }
+
+    function renderFidelity(summary, details) {
+      const aggRoot = document.getElementById("fidelityAggregated");
+      const scores = (window.__reportData && window.__reportData.scores) || {};
+      const mapTips = {
+        jsd: {
+          label: "JSD",
+          definition: "JSD (Jensen-Shannon Distance): diferencia entre distribuciones reales y sintéticas.",
+          displayedValueLabel: "Valor mostrado (score de similitud)",
+          rawValueLabel: "JSD cruda",
+          rawValue: summary.jsd,
+          transformDescription: "El reporte transforma la JSD cruda a una escala de similitud para que valores más altos indiquen mayor fidelidad.",
+          displayedInterpretation: "En el valor mostrado, más alto indica distribuciones más parecidas.",
+          rawInterpretation: "En la JSD cruda, valores más bajos indican distribuciones más parecidas.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5,
+          max: 1,
+          scaleType: "bounded_quality"
+        },
+        inv_kl: {
+          label: "Similitud KL",
+          definition: "Similitud KL (Kullback-Leibler): similitud probabilística derivada de la divergencia KL.",
+          displayedValueLabel: "Valor mostrado (similitud KL)",
+          rawValueLabel: "KL cruda",
+          transformDescription: "La KL cruda mide divergencia y valores bajos son mejores. El reporte muestra una versión transformada para que valores altos indiquen mayor similitud.",
+          rawUnavailableText: "Valor original no disponible en este resumen.",
+          displayedInterpretation: "Más alto indica mayor similitud respecto al dato real.",
+          rawInterpretation: "En la KL cruda, valores más bajos indicarían menor divergencia.",
+          showRawValue: true,
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5,
+          max: 1,
+          scaleType: "inverse_similarity",
+          lowLabel: "Bajo",
+          highLabel: "Alto"
+        },
+        inv_tvd: {
+          label: "Similitud TVD (1 - TVD)",
+          definition: "TVD (Total Variation Distance): se muestra como 1 − TVD (similitud complementaria) comparando distribuciones.",
+          displayedValueLabel: "Valor mostrado (1 - TVD)",
+          rawValueLabel: "TVD cruda estimada",
+          rawValueFromDisplayed: (displayedValue) => (
+            displayedValue >= 0 && displayedValue <= 1 ? 1 - displayedValue : null
+          ),
+          transformDescription: "El reporte muestra 1 - TVD para que valores más altos indiquen mayor fidelidad.",
+          displayedInterpretation: "En el valor mostrado, valores cercanos a 1 indican distribuciones más parecidas.",
+          rawInterpretation: "En la TVD cruda, 0 indica distribuciones iguales y 1 indica máxima diferencia.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5,
+          max: 1,
+          scaleType: "inverse_similarity",
+          lowLabel: "Bajo",
+          highLabel: "Alto"
+        },
+        cmd: {
+          label: "CMD",
+          definition: "CMD (Correlation Matrix Distance): mide conservación de relaciones y correlaciones entre variables.",
+          displayedValueLabel: "Valor mostrado (score de estructura)",
+          rawValueLabel: "CMD cruda",
+          rawValue: summary.cmd,
+          transformDescription: "El reporte transforma la distancia CMD a una escala de similitud para que valores más altos indiquen mejor conservación estructural.",
+          displayedInterpretation: "En el valor mostrado, más alto indica estructura más parecida.",
+          rawInterpretation: "En la CMD cruda, valores más bajos indican menor diferencia estructural.",
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5,
+          max: 1,
+          scaleType: "bounded_quality"
+        }
+      };
+      const metricRows = [
+        ["jsd", lowerIsBetterScore(summary.jsd, 0.2)],
+        ["inv_kl", summary.inv_kl],
+        ["inv_tvd", summary.inv_tvd],
+        ["cmd", lowerIsBetterScore(summary.cmd, 1.0)]
+      ];
+
+      renderAxisScore(
+        "fidelityAxisScore",
+        "Score de Fidelidad",
+        scores.fidelity_score,
+        "Evalúa si el sintético reproduce las distribuciones, estadísticos y relaciones entre variables del dataset real. Valores más altos indican mayor parecido estadístico."
+      );
+
+      aggRoot.replaceChildren(
+        ...validMetricEntries(metricRows).map(([k, v]) => createMetricPill(k, v, mapTips[k]))
+      );
+
+      document.getElementById("fidelitySummaryRight").textContent =
+        "Score " + formatScore(scores.fidelity_score, 2);
+
+      renderFidelityTvdBars(details.tvd_by_column || []);
+      renderDistributionComparison(details);
+
+      renderSimpleTable(
+        "cmdTable",
+        details.cmd || [],
+        [
+          { key: "metric", label: "Métrica" },
+          { key: "value", label: "Valor" }
+        ],
+        {
+          formatters: {
+            value: (v) => formatScore(v, 2)
+          }
+        }
+      );
+    }
+
+    function hasDateToken(text) {
+      const raw = String(text || "").toLowerCase();
+      return raw.includes("dob") || raw.includes("admittime") || raw.includes("dischtime");
+    }
+
+    function riskFromK(synK) {
+      const value = Number(synK);
+      if (!Number.isFinite(value)) return "desconocido";
+      if (value <= 2) return "alto";
+      if (value < 5) return "medio";
+      return "bajo";
+    }
+
+    function createRiskTag(value) {
+      const level = String(value || "desconocido").toLowerCase();
+      const span = document.createElement("span");
+      span.className = "risk-tag risk-" + level;
+      span.textContent = level;
+      return span;
+    }
+
+    function signedNumber(value) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "-";
+      return (value > 0 ? "+" : "") + formatScore(value, 0);
+    }
+
+    function privacyColumnsLabel(row) {
+      if (row.columns) {
+        return Array.isArray(row.columns) ? row.columns.join(", ") : String(row.columns);
+      }
+      if (row.pair) {
+        return Array.isArray(row.pair) ? row.pair.join(", ") : String(row.pair);
+      }
+      return row.subset || row.name || "-";
+    }
+
+    function normalizePrivacyRiskRow(row) {
+      const realK = Number(row.real_k);
+      const synK = Number(row.syn_k);
+      const rawGap = row.gap ?? row.k_gap;
+      const parsedGap = Number(rawGap);
+      const gap = Number.isFinite(parsedGap)
+        ? parsedGap
+        : (Number.isFinite(realK) && Number.isFinite(synK) ? synK - realK : null);
+
+      return {
+        label: privacyColumnsLabel(row),
+        subset: row.subset || row.name || "-",
+        real_k: Number.isFinite(realK) ? realK : null,
+        syn_k: Number.isFinite(synK) ? synK : null,
+        gap,
+        risk: row.risk || riskFromK(row.syn_k)
+      };
+    }
+
+    function renderPrivacyRiskCards(details) {
+      const root = document.getElementById("privacyRiskCards");
+      if (!root) return;
+
+      const source = details.worst_k_anonymity_pairs || details.k_anonymity_subsets || [];
+      const sourceRows = Array.isArray(source) ? source : Object.values(source);
+      const rows = sourceRows
+        .map(normalizePrivacyRiskRow)
+        .sort((a, b) => {
+          const av = a.syn_k === null ? Number.POSITIVE_INFINITY : a.syn_k;
+          const bv = b.syn_k === null ? Number.POSITIVE_INFINITY : b.syn_k;
+          return av - bv;
+        })
+        .slice(0, 10);
+
+      if (!rows.length) {
+        root.replaceChildren();
+        root.style.display = "none";
+        return;
+      }
+
+      root.style.display = "";
+      const cards = rows.map((row) => {
+        const card = document.createElement("article");
+        const risk = String(row.risk || "desconocido").toLowerCase();
+        const color = risk === "alto"
+          ? "var(--bad)"
+          : risk === "medio"
+            ? "var(--mid)"
+            : risk === "bajo"
+              ? "var(--good)"
+              : "var(--info)";
+        card.className = "privacy-risk-card";
+        card.style.borderLeftColor = color;
+        card.innerHTML = [
+          '<div class="privacy-risk-head">',
+          '<div class="privacy-risk-title"></div>',
+          '<span class="risk-tag"></span>',
+          '</div>',
+          '<div class="privacy-risk-values">',
+          '<span>Real k <strong></strong></span>',
+          '<span>Sintético k <strong></strong></span>',
+          '<span class="risk-gap">Delta <strong></strong></span>',
+          '</div>'
+        ].join("");
+
+        card.querySelector(".privacy-risk-title").textContent = row.label;
+        const tag = card.querySelector(".risk-tag");
+        tag.className = "risk-tag risk-" + risk;
+        tag.textContent = risk;
+        const values = card.querySelectorAll(".privacy-risk-values strong");
+        values[0].textContent = formatScore(row.real_k, 0);
+        values[1].textContent = formatScore(row.syn_k, 0);
+        values[2].textContent = row.gap === null ? "-" : signedNumber(row.gap);
+        return card;
+      });
+
+      root.replaceChildren(...cards);
+    }
+
+    function createPrivacyInfoCard(label, value, note, color = null) {
+      const card = document.createElement("article");
+      const cardColor = color || getComputedStyle(document.documentElement).getPropertyValue("--info").trim();
+      card.className = "score-breakdown-card";
+      card.style.borderTopColor = cardColor;
+      card.innerHTML = [
+        '<div class="score-breakdown-label"></div>',
+        '<div class="score-breakdown-value"></div>',
+        '<div class="score-breakdown-note"></div>'
+      ].join("");
+      card.querySelector(".score-breakdown-label").textContent = label;
+      card.querySelector(".score-breakdown-value").textContent = value;
+      card.querySelector(".score-breakdown-value").style.color = cardColor;
+      card.querySelector(".score-breakdown-note").textContent = note;
+      return card;
+    }
+
+    function renderExactMatchDetails(details) {
+      const summaryRoot = document.getElementById("exactMatchSummary");
+      const summary = (details && details.exact_match_summary) || {};
+      const rows = Array.isArray(summary.leave_one_out) ? summary.leave_one_out : [];
+      const emrValue = isValidNumber(summary.proportion)
+        ? summary.proportion
+        : (((window.__reportData || {}).summary || {}).privacy || {}).emr;
+      const count = isValidNumber(summary.count) ? summary.count : 0;
+      const source = (((window.__reportData || {}).summary || {}).privacy || {}).emr_source;
+
+      if (summaryRoot) {
+        const emrColor = isValidNumber(emrValue) && emrValue > 0
+          ? getComputedStyle(document.documentElement).getPropertyValue("--bad").trim()
+          : getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+        summaryRoot.replaceChildren(
+          createPrivacyInfoCard("EMR", formatScore(emrValue, 4), "Proporción de filas sintéticas que coinciden exactamente con filas reales.", emrColor),
+          createPrivacyInfoCard("Coincidencias", formatScore(count, 0), "Número de filas sintéticas con match exacto completo.", emrColor),
+          createPrivacyInfoCard("Leave-one-out", "Fila sin 1 columna", "Cada fila de la tabla compara todas las columnas salvo la indicada; no es una comparación por variable aislada."),
+          createPrivacyInfoCard("Fuente", source === "exact_match_rows" ? "ExactMatchRows" : "Common Rows", "ExactMatchRows contiene el cálculo detallado; Common Rows se usa solo como fallback histórico.")
+        );
+      }
+
+      renderSimpleTable(
+        "exactMatchTable",
+        rows,
+        [
+          { key: "excluded_column", label: "Columna omitida" },
+          { key: "count", label: "Matches al omitirla" },
+          { key: "extra_matches", label: "Extra vs fila completa" },
+          { key: "proportion", label: "Proporción" }
+        ],
+        {
+          formatters: {
+            count: (value) => formatScore(value, 0),
+            extra_matches: (value) => formatScore(value, 0),
+            proportion: (value) => formatScore(value, 4)
+          }
+        }
+      );
+
+      // Matched real rows are only present when the privacy toggle
+      // "show_filtered_rows" is enabled; otherwise hide the whole section.
+      const matchedRows = (((details || {}).exact_match_rows || {}).full_match || {}).rows;
+      const rowsDetails = document.getElementById("exactMatchRowsDetails");
+      if (rowsDetails) {
+        const hasRows = Array.isArray(matchedRows) && matchedRows.length > 0;
+        rowsDetails.style.display = hasRows ? "" : "none";
+        if (hasRows) {
+          const columns = Object.keys(matchedRows[0]).map((key) => ({ key, label: key }));
+          renderSimpleTable("exactMatchRowsTable", matchedRows, columns, {});
+        }
+      }
+    }
+
+    function renderLDiversityDetails(details) {
+      const summaryRoot = document.getElementById("lDiversitySummary");
+      const summary = (details && details.l_diversity_summary) || {};
+      const rows = Array.isArray(details && details.l_diversity_subsets)
+        ? details.l_diversity_subsets
+        : [];
+
+      if (summaryRoot) {
+        if (summary.skipped) {
+          summaryRoot.replaceChildren(
+            createPrivacyInfoCard("Estado", "Omitido", "Motivo: " + (summary.skip_reason || "sin detalle"))
+          );
+        } else {
+          summaryRoot.replaceChildren(
+            createPrivacyInfoCard("Real l", formatScore(summary.real_l, 0), "Mínimo l-diversity observado en datos reales."),
+            createPrivacyInfoCard("Sintético l", formatScore(summary.syn_l, 0), "Mínimo l-diversity observado en datos sintéticos."),
+            createPrivacyInfoCard("Subsets", formatScore(summary.n_subsets, 0), "Número de subconjuntos evaluados.")
+          );
+        }
+      }
+
+      renderSimpleTable(
+        "lDiversityTable",
+        rows,
+        [
+          { key: "risk", label: "Riesgo" },
+          { key: "subset", label: "Subset" },
+          { key: "columns", label: "QI" },
+          { key: "sensitive_columns", label: "Sensibles" },
+          { key: "real_l", label: "Real l" },
+          { key: "syn_l", label: "Sintético l" },
+          { key: "l_gap", label: "Delta l" }
+        ],
+        {
+          formatters: {
+            risk: (value) => createRiskTag(value),
+            real_l: (value) => formatScore(value, 0),
+            syn_l: (value) => formatScore(value, 0),
+            l_gap: (value) => signedNumber(value)
+          }
+        }
+      );
+    }
+
+    function renderPredictiveUtilityContext() {
+      const root = document.getElementById("predictiveUtilityContext");
+      if (!root) return;
+      const metadata = (window.__reportData && window.__reportData.metadata) || {};
+      const params = metadata.evaluation_parameters || {};
+      const targetColumn = params.target_column || "-";
+      const taskType = params.task_type || "-";
+      const taskLabels = {
+        classification: "Clasificación",
+        regression: "Regresión",
+        survival_analysis: "Supervivencia"
+      };
+      const taskLabel = taskLabels[String(taskType)] || taskType;
+
+      const scores = (window.__reportData && window.__reportData.scores) || {};
+      const cards = [
+        createPrivacyInfoCard(
+          "Variable objetivo",
+          String(targetColumn),
+          "Columna usada como target para calcular utilidad predictiva."
+        ),
+        createPrivacyInfoCard(
+          "Tarea ejecutada",
+          String(taskLabel),
+          "Tipo de problema usado por las métricas predictivas."
+        )
+      ];
+
+      // When no predictive score is available, the charts/banner are empty by
+      // design; spell out why so the user does not read it as a silent 0/100%.
+      if (!isValidNumber(scores.utility_relative_score)) {
+        cards.push(
+          createPrivacyInfoCard(
+            "Sin resultado predictivo",
+            "No disponible",
+            "Las métricas predictivas no produjeron resultados en esta evaluación. " +
+            "Suele deberse a que la columna objetivo no está presente en la tabla evaluada " +
+            "(p. ej. el target vive en otra tabla y se evalúa solo la primera), a que el " +
+            "modelo predictivo falló, o a que la tarea no encaja con el tipo de la columna. " +
+            "Revisa el log de la evaluación para el detalle."
+          )
+        );
+      }
+
+      root.replaceChildren(...cards);
+    }
+
+    function renderPrivacy(summary, details) {
+      const aggRoot = document.getElementById("privacyAggregated");
+      const scores = (window.__reportData && window.__reportData.scores) || {};
+      const mapTips = {
+        dcr: {
+          label: "DCR",
+          definition: "DCR (Distance to Closest Record): mide la distancia al registro real más cercano.",
+          displayedValueLabel: "Valor mostrado",
+          rawValueLabel: "Valor crudo",
+          rawValue: summary.dcr,
+          transformDescription: "Esta tarjeta muestra la distancia DCR disponible en el resumen. No se inventa un máximo natural para esta métrica.",
+          displayedInterpretation: "Más alto suele indicar mayor separación respecto a registros reales.",
+          rawInterpretation: "Más bajo puede indicar mayor cercanía a registros reales.",
+          direction: "higher",
+          good: 0.5,
+          warning: 0.25,
+          scale: "qualitative",
+          scaleType: "distance_direction",
+          scaleNote: "Más alto suele ser mejor"
+        },
+        nndr: {
+          label: "NNDR",
+          definition: "NNDR (Nearest Neighbor Distance Ratio): compara la cercanía del primer vecino frente al segundo.",
+          displayedValueLabel: "Valor mostrado",
+          rawValueLabel: "Valor crudo",
+          rawValue: summary.nndr,
+          transformDescription: "Esta tarjeta muestra el NNDR disponible en el resumen. No se aplica una inversión adicional en el HTML.",
+          displayedInterpretation: "Valores altos indican que el vecino más cercano no destaca tanto frente al segundo.",
+          rawInterpretation: "Valores bajos pueden señalar un registro real demasiado identificable.",
+          direction: "higher",
+          good: 0.8,
+          warning: 0.5,
+          max: 1,
+          scaleType: "bounded_quality"
+        },
+        k_anonymity: {
+          label: "k-Anonymity",
+          definition: "Mide cuántos registros son indistinguibles para combinaciones de variables.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Cuántos registros son indistinguibles para combinaciones de variables." },
+            { title: "Valores altos", text: "Más registros comparten la misma combinación; suele bajar el riesgo." },
+            { title: "Valores bajos", text: "Pocos registros son indistinguibles; sube el riesgo de re-identificación." },
+            { title: "Rango", text: "No hay máximo natural cerrado." }
+          ]),
+          direction: "higher",
+          good: 5,
+          warning: 2,
+          scale: "qualitative",
+          scaleType: "direction_only",
+          scaleNote: "Más alto suele ser mejor"
+        },
+        l_diversity_real: {
+          label: "l-diversity real",
+          definition: "Mínimo l-diversity observado en los datos reales para los subsets configurados.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Diversidad de columnas sensibles dentro de clases definidas por quasi-identificadores en el dataset real." },
+            { title: "Uso", text: "Sirve como referencia para interpretar el l-diversity sintético." },
+            { title: "Nota", text: "Valores mayores indican más diversidad sensible dentro de las clases equivalentes." }
+          ]),
+          direction: "higher",
+          good: 3,
+          warning: 2,
+          scale: "qualitative",
+          scaleType: "direction_only",
+          scaleNote: "Referencia real"
+        },
+        l_diversity_syn: {
+          label: "l-diversity sintético",
+          definition: "Mínimo l-diversity observado en los datos sintéticos para los subsets configurados.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Diversidad de columnas sensibles dentro de clases sintéticas definidas por quasi-identificadores." },
+            { title: "Valores altos", text: "Más diversidad sensible por clase; suele reducir riesgo de homogeneidad." },
+            { title: "Valores bajos", text: "Clases con poca diversidad sensible; conviene revisar los subsets detallados." }
+          ]),
+          direction: "higher",
+          good: 3,
+          warning: 2,
+          scale: "qualitative",
+          scaleType: "direction_only",
+          scaleNote: "Más alto suele ser mejor"
+        },
+        l_diversity_score: {
+          label: "Score l-diversity",
+          definition: "Componente normalizado de l-diversity usado en el score de privacidad.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Resume si el sintético mantiene diversidad suficiente de columnas sensibles dentro de clases equivalentes." },
+            { title: "Cálculo", text: "Combina un umbral absoluto de l-diversity sintético con la comparación frente al l-diversity real." },
+            { title: "Uso", text: "Este componente se incluye en la media base del score de privacidad junto con DCR, NNDR, EMR y otras señales disponibles." }
+          ]),
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5,
+          max: 1,
+          scaleType: "bounded_quality"
+        },
+        emr: {
+          label: "EMR",
+          definition: "EMR (Exact Match Rows): proporción de filas sintéticas idénticas a filas reales.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "EMR (Exact Match Rows): proporción de filas sintéticas idénticas a filas reales." },
+            { title: "Fuente", text: summary.emr_source === "exact_match_rows" ? "Calculado con ExactMatchRows, que compara filas completas y conserva detalle de coincidencias." : "Fallback histórico basado en Common Rows Proportion." },
+            { title: "Valores altos", text: "Hay más coincidencias exactas y mayor riesgo de fuga." },
+            { title: "Valores bajos", text: "Hay pocas o ninguna coincidencia exacta." }
+          ]),
+          direction: "lower",
+          good: 0,
+          warning: 0.01,
+          max: 1,
+          scaleType: "bounded_quality"
+        },
+        detection_mlp: {
+          label: "Detection MLP",
+          definition: "Detection MLP (Multi-Layer Perceptron): mide si un clasificador distingue real frente a sintético.",
+          displayedValueLabel: "Valor mostrado",
+          rawValueLabel: "Valor crudo",
+          rawValue: summary.detection_mlp,
+          transformDescription: "No es una métrica de 'más alto es mejor'. Se interpreta por cercanía al objetivo aproximado 0,5.",
+          displayedInterpretation: "Valores cercanos a 0,5 indican que real y sintético son difíciles de distinguir.",
+          rawInterpretation: "Valores cercanos a 1 indican que real y sintético son fáciles de distinguir para el clasificador.",
+          direction: "target",
+          target: 0.5,
+          good: 0.05,
+          warning: 0.15,
+          maxDelta: 0.5,
+          scaleType: "target",
+          targetLabel: "Objetivo aprox. 0,5",
+          edgeLabel: "Distinguible"
+        }
+      };
+
+      renderAxisScore(
+        "privacyAxisScore",
+        "Score de Privacidad",
+        scores.privacy_score,
+        "Evalúa el riesgo de re-identificación, cercanía excesiva a registros reales o fuga de información. Valores más altos indican menor riesgo."
+      );
+      renderPrivacyScoreBreakdown(scores);
+
+      aggRoot.replaceChildren(
+        ...validMetricEntries(Object.entries(summary || {})
+          .filter(([k]) => k !== "detection_mlp")
+        ).map(([k, v]) => createMetricPill(k, v, mapTips[k]))
+      );
+
+      document.getElementById("privacySummaryRight").textContent =
+        "Score " + formatScore(scores.privacy_score, 2);
+
+      renderPrivacyRiskCards(details || {});
+
+      const subsetRows = (details.k_anonymity_subsets || []).map((r) => ({
+        subset: r.subset,
+        columns: r.columns,
+        has_date_column: r.has_date_column ? "si" : "no",
+        real_k: r.real_k,
+        syn_k: r.syn_k,
+        real_n_eq_classes: r.real_n_eq_classes,
+        syn_n_eq_classes: r.syn_n_eq_classes,
+        real_size_median: r.real_size_median,
+        syn_size_median: r.syn_size_median
+      }));
+
+      const problemRows = (details.k_anonymity_problem_subsets || details.k_anonymity_subsets || []).map((r) => {
+        const realK = Number(r.real_k);
+        const synK = Number(r.syn_k);
+        const kGap = typeof r.k_gap === "number"
+          ? r.k_gap
+          : (Number.isFinite(realK) && Number.isFinite(synK) ? synK - realK : null);
+
+        return {
+          risk: r.risk || riskFromK(r.syn_k),
+          subset: r.subset,
+          columns: r.columns,
+          has_date_column: r.has_date_column ? "si" : "no",
+          real_k: r.real_k,
+          syn_k: r.syn_k,
+          k_gap: kGap,
+          syn_n_eq_classes: r.syn_n_eq_classes,
+          syn_size_median: r.syn_size_median
+        };
+      }).slice(0, 8);
+
+      renderSimpleTable(
+        "kanonProblemTable",
+        problemRows,
+        [
+          { key: "risk", label: "Riesgo" },
+          { key: "subset", label: "Subset" },
+          { key: "columns", label: "Columnas" },
+          { key: "real_k", label: "Real k" },
+          { key: "syn_k", label: "Sintético k" },
+          { key: "k_gap", label: "Delta k" },
+          { key: "syn_n_eq_classes", label: "Clases sintéticas" },
+          { key: "syn_size_median", label: "Tamaño mediano sintético" }
+        ],
+        {
+          formatters: {
+            risk: (value) => createRiskTag(value),
+            columns: (value, row) => {
+              if (!(row.has_date_column === "si" || hasDateToken(value))) return value;
+              const span = document.createElement("span");
+              span.textContent = value + " ";
+              const tag = document.createElement("span");
+              tag.className = "tag-date";
+              tag.textContent = "fecha";
+              span.appendChild(tag);
+              return span;
+            },
+            k_gap: (value) => signedNumber(value)
+          }
+        }
+      );
+
+      renderSimpleTable(
+        "kanonSubsetTable",
+        subsetRows,
+        [
+          { key: "subset", label: "Subset" },
+          { key: "columns", label: "Columnas" },
+          { key: "has_date_column", label: "Tiene fecha" },
+          { key: "real_k", label: "Real k" },
+          { key: "syn_k", label: "Sintético k" },
+          { key: "real_n_eq_classes", label: "Clases reales" },
+          { key: "syn_n_eq_classes", label: "Clases sintéticas" },
+          { key: "real_size_median", label: "Tamaño mediano real" },
+          { key: "syn_size_median", label: "Tamaño mediano sintético" }
+        ],
+        {
+          formatters: {
+            columns: (value, row) => {
+              if (!(row.has_date_column === "si" || hasDateToken(value))) return value;
+              const span = document.createElement("span");
+              span.textContent = value + " ";
+              const tag = document.createElement("span");
+              tag.className = "tag-date";
+              tag.textContent = "fecha";
+              span.appendChild(tag);
+              return span;
+            }
+          }
+        }
+      );
+
+      renderSimpleTable(
+        "kanonColumnTable",
+        details.k_anonymity_column_granularity || [],
+        [
+          { key: "column", label: "Columna" },
+          { key: "real_k", label: "Real k" },
+          { key: "syn_k", label: "Sintético k" },
+          { key: "real_n_unique", label: "Únicos reales" },
+          { key: "syn_n_unique", label: "Únicos sintéticos" },
+          { key: "is_date_column", label: "Fecha" }
+        ],
+        {
+          formatters: {
+            is_date_column: (v) => (v ? "si" : "no")
+          }
+        }
+      );
+
+      renderExactMatchDetails(details || {});
+      renderLDiversityDetails(details || {});
+    }
+
+    function renderUtility(summary, details) {
+      const aggRoot = document.getElementById("utilityAggregated");
+      const scores = (window.__reportData && window.__reportData.scores) || {};
+      // Predictive facet only — must NOT fall back to the combined utility_score,
+      // otherwise a failed/absent predictive run shows the statistical value.
+      const utilityRelativeScore = scores.utility_relative_score;
+      const mapTips = {
+        utility_relative_score: {
+          label: "Utilidad relativa",
+          definition: "Mide la utilidad sintética respecto a la utilidad real.",
+          displayedValueLabel: "Valor mostrado (ratio relativo)",
+          rawValueLabel: "Valor crudo",
+          rawValue: utilityRelativeScore,
+          transformDescription: "Es un ratio relativo: compara el rendimiento con datos sintéticos frente al rendimiento con datos reales.",
+          displayedInterpretation: "Un valor cercano a 1 indica que el rendimiento con sintéticos se aproxima al rendimiento con datos reales.",
+          rawInterpretation: "Valores bajos indican pérdida de utilidad predictiva. Valores mayores que 1 pueden ocurrir; interprétalos junto a GT.",
+          direction: "higher",
+          good: 0.85,
+          warning: 0.6,
+          scale: "qualitative",
+          scaleNote: "Más cercano a 1 suele ser mejor"
+        },
+        linear_gt: {
+          label: "Lineal - Real",
+          definition: "Mide el rendimiento del modelo lineal con datos reales.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Rendimiento del modelo lineal entrenado y evaluado con datos reales." },
+            { title: "Interpretación", text: "Es la referencia para comparar SYN_ID." }
+          ]),
+          direction: "none",
+          scaleNote: "Referencia real"
+        },
+        linear_syn_id: {
+          label: "Lineal - Sintético ID",
+          definition: "Mide rendimiento lineal entrenando con sintéticos en distribución.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Rendimiento lineal entrenando con sintéticos y evaluando en distribución." },
+            { title: "Valores altos", text: "El sintético conserva señal predictiva." },
+            { title: "Valores bajos", text: "El modelo pierde utilidad al entrenar con sintéticos." },
+            { title: "Referencia", text: "Compáralo con Lineal - Real." }
+          ]),
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5,
+          scale: "qualitative",
+          scaleNote: "Más alto suele ser mejor"
+        },
+        mlp_gt: {
+          label: "MLP - Real",
+          definition: "Mide el rendimiento del MLP con datos reales.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Rendimiento del MLP entrenado y evaluado con datos reales." },
+            { title: "Interpretación", text: "Es la referencia para comparar MLP - Sintético ID." }
+          ]),
+          direction: "none",
+          scaleNote: "Referencia real"
+        },
+        mlp_syn_id: {
+          label: "MLP - Sintético ID",
+          definition: "Mide rendimiento MLP entrenando con sintéticos en distribución.",
+          tooltip: tooltipSections([
+            { title: "Qué mide", text: "Rendimiento MLP entrenando con sintéticos y evaluando en distribución." },
+            { title: "Valores altos", text: "El sintético conserva patrones predictivos útiles." },
+            { title: "Valores bajos", text: "Hay pérdida de utilidad predictiva." },
+            { title: "Referencia", text: "Compáralo con MLP - Real." }
+          ]),
+          direction: "higher",
+          good: 0.75,
+          warning: 0.5,
+          scale: "qualitative",
+          scaleNote: "Más alto suele ser mejor"
+        }
+      };
+      const linearRows = [
+        ["linear_gt", (summary || {}).linear_gt],
+        ["linear_syn_id", (summary || {}).linear_syn_id]
+      ];
+      const mlpRows = [
+        ["mlp_gt", (summary || {}).mlp_gt],
+        ["mlp_syn_id", (summary || {}).mlp_syn_id]
+      ];
+
+      renderAxisScore(
+        "utilityAxisScore",
+        "Score ponderado de utilidad predictiva",
+        utilityRelativeScore,
+        "Resume el rendimiento relativo de los modelos entrenados con datos sintéticos frente a la referencia real. Esta dimensión es informativa y no participa en el Balance Fidelidad/Privacidad."
+      );
+      renderPredictiveUtilityContext();
+
+      if (aggRoot) {
+        aggRoot.replaceChildren();
+      }
+
+      const linearRoot = document.getElementById("linearUtilityMetrics");
+      if (linearRoot) {
+        linearRoot.replaceChildren(
+          ...validMetricEntries(linearRows).map(([k, v]) => createMetricPill(k, v, mapTips[k]))
+        );
+      }
+
+      const mlpRoot = document.getElementById("mlpUtilityMetrics");
+      if (mlpRoot) {
+        mlpRoot.replaceChildren(
+          ...validMetricEntries(mlpRows).map(([k, v]) => createMetricPill(k, v, mapTips[k]))
+        );
+      }
+
+      document.getElementById("utilitySummaryRight").textContent =
+        "Score " + formatScore(utilityRelativeScore, 2);
+
+      renderUtilityComparisonChart(summary || {});
+
+      const metricLabels = {
+        linear_gt: "Lineal - Real",
+        linear_syn_id: "Lineal - Sintético ID",
+        mlp_gt: "MLP - Real",
+        mlp_syn_id: "MLP - Sintético ID"
+      };
+      const utilityRows = Object.entries((details && details.metrics) || {})
+        .filter(([metric, value]) => metric !== "utility_tests_score" && !metric.endsWith("_syn_ood") && isValidNumber(value))
+        .map(([metric, value]) => ({
+          metric: metricLabels[metric] || metric,
+          value,
+          quality: scoreToLabel(Number(value))
+        }));
+
+      renderSimpleTable(
+        "utilityTable",
+        utilityRows,
+        [
+          { key: "metric", label: "Métrica" },
+          { key: "value", label: "Valor" },
+          { key: "quality", label: "Nivel" }
+        ],
+        {
+          formatters: {
+            value: (v) => formatScore(v, 2),
+            quality: (v, row) => {
+              const span = document.createElement("span");
+              span.textContent = v;
+              span.style.color = scoreToColor(Number(row.value));
+              span.style.fontWeight = "700";
+              return span;
+            }
+          }
+        }
+      );
+    }
+
+    function renderUtilityTests(utilityDetails) {
+      const summaryRoot = document.getElementById("utilityTestsSummary");
+      const tableId = "utilityTestsTable";
+
+      const summary = (utilityDetails && utilityDetails.utility_tests_summary) || {};
+      const rows = (utilityDetails && utilityDetails.utility_tests_rows) || [];
+
+      const score = summary.score;
+      const nTests = summary.n_tests;
+      const nValid = summary.n_valid_tests;
+      const totalWeight = summary.total_weight;
+
+      renderAxisScore(
+        "utilityTestsAxisScore",
+        "Score ponderado de utilidad estadística",
+        score,
+        "Compara indicadores definidos por el usuario entre el dataset real y el sintético. Más alto indica mayor coincidencia. Esta dimensión es informativa y no participa en el Balance Fidelidad/Privacidad."
+      );
+
+      if (summaryRoot) {
+        const items = [
+          {
+            label: "Pruebas válidas",
+            value: typeof nValid === "number" && typeof nTests === "number" ? `${nValid}/${nTests}` : "-",
+            note: "Número de pruebas calculadas correctamente."
+          },
+          {
+            label: "Peso total",
+            value: typeof totalWeight === "number" ? totalWeight.toFixed(1) : "-",
+            note: "Suma de pesos usados en la agregación."
+          }
+        ];
+
+        summaryRoot.replaceChildren(
+          ...items.map((item) => {
+            const card = document.createElement("article");
+            const isScore = typeof item.value === "number";
+            const color = isScore ? scoreToColor(item.value) : qualityColor("unknown");
+
+            card.className = "score-breakdown-card";
+            card.style.borderTopColor = color;
+            card.innerHTML = [
+              '<div class="score-breakdown-label"></div>',
+              '<div class="score-breakdown-value"></div>',
+              '<div class="score-breakdown-note"></div>'
+            ].join("");
+
+            card.querySelector(".score-breakdown-label").textContent = item.label;
+            card.querySelector(".score-breakdown-value").textContent =
+              isScore ? formatScore(item.value, 2) : item.value;
+            card.querySelector(".score-breakdown-value").style.color = color;
+            card.querySelector(".score-breakdown-note").textContent = item.note;
+
+            return card;
+          })
+        );
+      }
+
+      const fmtNumber = (value, digits = 2) => {
+        if (typeof value !== "number" || Number.isNaN(value)) return "-";
+        return formatScore(value, digits);
+      };
+      
+      const fmtPercent = (value) => {
+        if (typeof value !== "number" || Number.isNaN(value)) return "-";
+        return formatScore(value * 100, 2) + "%";
+      };
+
+      const fmtScore = (value, row) => {
+        // Failed tests carry no score; surface the reason inline instead of a
+        // blank cell so the user understands why the row is empty.
+        if (row && row.status === "failed") {
+          const span = document.createElement("span");
+          span.textContent = "⚠ Falló";
+          span.style.color = qualityColor("bad");
+          span.style.fontWeight = "700";
+          if (row.error) {
+            span.title = String(row.error);
+            span.style.cursor = "help";
+          }
+          return span;
+        }
+        const span = document.createElement("span");
+        span.textContent = fmtNumber(value, 2);
+        if (typeof value === "number" && !Number.isNaN(value)) {
+          span.style.color = scoreToColor(value);
+          span.style.fontWeight = "800";
+        }
+        return span;
+      };
+
+      renderSimpleTable(
+        tableId,
+        rows,
+        [
+          { key: "name", label: "Prueba" },
+          { key: "metric", label: "Métrica" },
+          { key: "column", label: "Columna", tooltip: "Columna del dataset sobre la que se calcula la métrica. En métricas que no operan sobre una columna concreta (count/proportion/fórmulas) aparece «-»." },
+          { key: "real_value", label: "Valor real" },
+          { key: "synthetic_value", label: "Valor sintético" },
+          { key: "real_std", label: "Std real", tooltip: "Desviación estándar de la columna evaluada en el dataset real. Solo aplica a métricas sobre una columna (mean, median, etc.); en count/proportion/fórmulas aparece «-»." },
+          { key: "synthetic_std", label: "Std sintético", tooltip: "Desviación estándar de la columna evaluada en el dataset sintético. Solo aplica a métricas sobre una columna; en count/proportion/fórmulas aparece «-»." },
+          { key: "relative_discrepancy", label: "Discrepancia rel.", tooltip: "Discrepancia relativa simétrica: |real − sintético| / (|real| + |sintético|). Acotada entre 0% y 100% e independiente de cuál sea mayor (no es el error relativo clásico, que divide solo por el real)." },
+          { key: "relative_precision", label: "Precisión rel.", tooltip: "Precisión relativa = 1 − discrepancia relativa = 1 − |real − sintético| / (|real| + |sintético|). Escala simétrica y acotada en [0,1]: 1 = idéntico, 0 = máxima discrepancia. La utilidad estadística global es su media ponderada por el peso de cada prueba. Las pruebas que fallaron no entran en el score." }
+        ],
+        {
+          formatters: {
+            real_value: (v) => fmtNumber(v, 2),
+            synthetic_value: (v) => fmtNumber(v, 2),
+            relative_discrepancy: (v) => fmtPercent(v),
+            relative_precision: fmtScore,
+            real_std: (v) => fmtNumber(v, 2),
+            synthetic_std: (v) => fmtNumber(v, 2),
+          }
+        }
+      );
+    }
+
+    function renderTechnical(details) {
+      const logs = (details.logs || {}).time_report || "Sin time_report disponible.";
+      const root = document.getElementById("timeReport");
+      if (root) root.textContent = logs;
+    }
+
+    function resizeVisibleCharts() {
+      setTimeout(() => {
+        (window.__distributionCharts || []).forEach((chart) => {
+          if (chart && typeof chart.resize === "function") chart.resize();
+        });
+        (window.__utilityModelCharts || []).forEach((chart) => {
+          if (chart && typeof chart.resize === "function") chart.resize();
+        });
+      }, 50);
+    }
+
+    function setActiveTab(tabName) {
+      const buttons = Array.from(document.querySelectorAll(".tab-button"));
+      const panels = Array.from(document.querySelectorAll(".tab-panel"));
+
+      buttons.forEach((button) => {
+        const active = button.dataset.tab === tabName;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-selected", active ? "true" : "false");
+      });
+
+      panels.forEach((panel) => {
+        const active = panel.id === "tab-" + tabName;
+        panel.classList.toggle("active", active);
+        panel.setAttribute("aria-hidden", active ? "false" : "true");
+      });
+
+      resizeVisibleCharts();
+    }
+
+    function initTabs() {
+      const buttons = Array.from(document.querySelectorAll(".tab-button"));
+      if (!buttons.length) return;
+
+      buttons.forEach((button) => {
+        button.addEventListener("click", () => setActiveTab(button.dataset.tab));
+      });
+
+      setActiveTab("summary");
+    }
+
+    function initFloatingTooltips() {
+      let tooltipEl = null;
+
+      function removeTooltip() {
+        if (tooltipEl) {
+          tooltipEl.remove();
+          tooltipEl = null;
+        }
+      }
+
+      function positionTooltip(anchor) {
+        if (!tooltipEl || !anchor) return;
+
+        const gap = 10;
+        const anchorRect = anchor.getBoundingClientRect();
+        const tooltipRect = tooltipEl.getBoundingClientRect();
+
+        let left = anchorRect.left + anchorRect.width / 2 - tooltipRect.width / 2;
+        let top = anchorRect.bottom + gap;
+
+        const minLeft = 12;
+        const maxLeft = window.innerWidth - tooltipRect.width - 12;
+        left = Math.min(Math.max(left, minLeft), Math.max(minLeft, maxLeft));
+
+        if (top + tooltipRect.height > window.innerHeight - 12) {
+          top = anchorRect.top - tooltipRect.height - gap;
+        }
+        if (top < 12) {
+          top = 12;
+        }
+
+        tooltipEl.style.left = `${left}px`;
+        tooltipEl.style.top = `${top}px`;
+      }
+
+      function showTooltip(anchor) {
+        const text = anchor && anchor.dataset ? anchor.dataset.tip : "";
+        if (!text) return;
+        removeTooltip();
+        tooltipEl = document.createElement("div");
+        tooltipEl.className = "floating-tooltip";
+        tooltipEl.textContent = text;
+        document.body.appendChild(tooltipEl);
+        positionTooltip(anchor);
+      }
+
+      document.addEventListener("mouseover", (event) => {
+        const anchor = event.target.closest && event.target.closest(".tooltip[data-tip]");
+        if (!anchor) return;
+        showTooltip(anchor);
+      });
+
+      document.addEventListener("mousemove", (event) => {
+        const anchor = event.target.closest && event.target.closest(".tooltip[data-tip]");
+        if (!anchor) return;
+        positionTooltip(anchor);
+      });
+
+      document.addEventListener("mouseout", (event) => {
+        const anchor = event.target.closest && event.target.closest(".tooltip[data-tip]");
+        if (!anchor) return;
+        const related = event.relatedTarget;
+        if (related && related.closest && related.closest(".tooltip[data-tip]") === anchor) return;
+        removeTooltip();
+      });
+
+      document.addEventListener("focusin", (event) => {
+        const anchor = event.target.closest && event.target.closest(".tooltip[data-tip]");
+        if (anchor) showTooltip(anchor);
+      });
+
+      document.addEventListener("focusout", (event) => {
+        const anchor = event.target.closest && event.target.closest(".tooltip[data-tip]");
+        if (anchor) removeTooltip();
+      });
+
+      window.addEventListener("scroll", removeTooltip, true);
+      window.addEventListener("resize", removeTooltip);
+    }
+
+    async function loadData() {
+      const embedded = document.getElementById("embeddedReportData");
+      const embeddedText = embedded ? embedded.textContent.trim() : "";
+
+      if (!embeddedText) {
+        throw new Error("No hay datos embebidos en el reporte.");
+      }
+
+      return JSON.parse(embeddedText);
+    }
+
+    // ── Multi-table report ──────────────────────────────────────────────────
+    // The report is unified: headline scores (Resumen) are the per-axis mean
+    // across every evaluated table, while each axis page can switch the
+    // per-metric detail by table from a dropdown. The "Media (todas las tablas)"
+    // option shows the averaged axis score with no per-table detail.
+    const MEAN_KEY = "__mean__";
+    const AXIS_MEAN_SCORE_KEY = {
+      fidelity: "fidelity_score",
+      privacy: "privacy_score",
+      utility: "utility_relative_score"
+    };
+    const AXIS_LABEL = {
+      fidelity: "Fidelidad",
+      privacy: "Privacidad",
+      utility: "Utilidad predictiva"
+    };
+
+    function viewDataForTable(key) {
+      const data = window.__combinedReportData || {};
+      if (key === MEAN_KEY) {
+        return { scores: data.scores || {}, summary: data.summary || {}, details: {} };
+      }
+      return (data.tables || {})[key] || { scores: {}, summary: {}, details: {} };
+    }
+
+    function renderAxisForTable(axis, key) {
+      const view = viewDataForTable(key);
+      const previous = window.__reportData;
+      // The axis render functions read scores from window.__reportData; point it
+      // at the selected table's view so the axis banner and per-metric cards
+      // reflect that table, then restore the combined data for the Resumen tab.
+      window.__reportData = view;
+      try {
+        const summary = view.summary || {};
+        const details = view.details || {};
+        if (axis === "fidelity") {
+          renderFidelity(summary.fidelity || {}, details.fidelity || {});
+        } else if (axis === "privacy") {
+          renderPrivacy(summary.privacy || {}, details.privacy || {});
+        } else if (axis === "utility") {
+          renderUtility(summary.utility || {}, details.utility || {});
+          renderUtilityTests(details.utility || {});
+        }
+      } finally {
+        window.__reportData = previous;
+      }
+      const notice = document.getElementById(axis + "AxisNotice");
+      if (notice) notice.hidden = key !== MEAN_KEY;
+    }
+
+    function buildAxisControl(axis, data) {
+      const root = document.getElementById(axis + "AxisControl");
+      if (!root) return;
+      const order = Array.isArray(data.table_order) ? data.table_order : [];
+      const meanScore = (data.scores || {})[AXIS_MEAN_SCORE_KEY[axis]];
+
+      const label = document.createElement("div");
+      label.className = "axis-mean-label";
+      label.title = "Media no ponderada sobre las tablas evaluadas (" + order.join(", ") + "). Cada tabla pesa igual, sin importar su número de filas; pueden no ser todas las tablas generadas.";
+      const strong = document.createElement("strong");
+      strong.textContent = formatScore(meanScore, 2);
+      label.append(
+        document.createTextNode("Media de " + AXIS_LABEL[axis] + " (" + order.length + " tabla" + (order.length === 1 ? "" : "s") + "): "),
+        strong
+      );
+
+      const picker = document.createElement("label");
+      picker.className = "axis-table-picker";
+      picker.append(document.createTextNode("Tabla:"));
+      const select = document.createElement("select");
+      const meanOption = document.createElement("option");
+      meanOption.value = MEAN_KEY;
+      meanOption.textContent = "Media (todas las tablas)";
+      select.append(meanOption);
+      order.forEach((name) => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        select.append(option);
+      });
+      select.addEventListener("change", () => renderAxisForTable(axis, select.value));
+      picker.append(select);
+
+      const notice = document.createElement("p");
+      notice.className = "axis-table-notice";
+      notice.id = axis + "AxisNotice";
+      notice.textContent = "Mostrando la media de todas las tablas. Selecciona una tabla para ver el detalle por métrica.";
+
+      root.replaceChildren(label, picker);
+      root.after(notice);
+
+      // Only show the picker when there is more than one table to choose from.
+      if (order.length <= 1) picker.style.display = "none";
+    }
+
+    function initMultiTableAxes(data) {
+      ["fidelity", "privacy", "utility"].forEach((axis) => {
+        buildAxisControl(axis, data);
+        renderAxisForTable(axis, MEAN_KEY);
+      });
+    }
+
+    function renderReport(data) {
+      window.__reportData = data;
+      window.__combinedReportData = data;
+      renderHeader(data.metadata || {});
+      renderScores(data.scores || {});
+      renderAxisQuestions(data.scores || {});
+      renderKeyInsights(data.scores || {});
+      initMultiTableAxes(data);
+      renderTechnical((data.details || {}));
+      initTabs();
+      initFloatingTooltips();
+    }
+
+    loadData()
+      .then(renderReport)
+      .catch((error) => {
+        console.error(error);
+        const root = document.querySelector(".container");
+        root.innerHTML = [
+          '<section class="panel"><div class="panel-content">',
+          '<h2>Error cargando el reporte</h2>',
+          '<p class="explain">No se pudo cargar <strong>report_data.json</strong>. ',
+          'Asegurate de abrir el HTML desde la carpeta donde esta el JSON, ',
+          'o pega el JSON dentro del script <strong>#embeddedReportData</strong>.</p>',
+          '<pre class="code-block"></pre>',
+          '</div></section>'
+        ].join("");
+        const pre = document.querySelector(".code-block");
+        pre.textContent = String(error);
+      });
+  </script>
+</body>
+</html>

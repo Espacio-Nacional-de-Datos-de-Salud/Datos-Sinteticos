@@ -1,0 +1,100 @@
+# Evaluation-only pipeline for simulations from pipeline_20260313_231301.
+#
+# Re-evaluates all 13 simulations with the latest metric set, including:
+#   - MIA (DomiasMIA_BNAF)
+#   - AverageComplementaryTVD (previously misconfigured as average_inverse_tvd)
+#
+# Run with:
+#   python -m src.pipeline --config config/pipelines/evaluate_pipeline_20260313.yaml
+
+jobs:
+  - name: "eval_sim_231305"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260413_180513"
+      model_id: "model_20260413_180513"
+
+  - name: "eval_sim_232316"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260313_232316"
+      model_id: "model_20260313_232316"
+
+  - name: "eval_sim_233442"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260313_233442"
+      model_id: "model_20260313_233442"
+
+  - name: "eval_sim_235650"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260313_235650"
+      model_id: "model_20260313_235650"
+
+  - name: "eval_sim_001903"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260314_001903"
+      model_id: "model_20260314_001903"
+
+  - name: "eval_sim_004116"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260314_004116"
+      model_id: "model_20260314_004116"
+
+  - name: "eval_sim_005255"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260314_005255"
+      model_id: "model_20260314_005255"
+
+  - name: "eval_sim_010351"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260314_010351"
+      model_id: "model_20260314_010351"
+
+  - name: "eval_sim_011518"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260314_011518"
+      model_id: "model_20260314_011518"
+
+  - name: "eval_sim_013724"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260314_013724"
+      model_id: "model_20260314_013724"
+
+  - name: "eval_sim_015930"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260314_015930"
+      model_id: "model_20260314_015930"
+
+  - name: "eval_sim_022135"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260314_022135"
+      model_id: "model_20260314_022135"
+
+  - name: "eval_sim_024338"
+    evaluate:
+      real_data:
+        - "data/dataset_prueba_tecnica_v2.csv"
+      simulation_id: "simulation_20260314_024338"
+      model_id: "model_20260314_024338"
